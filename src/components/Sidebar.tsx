@@ -487,7 +487,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Vault Location</span>
           <button 
             onClick={onSelectVault}
-            className="text-[10px] font-semibold text-brand-400 hover:text-brand-300 transition-colors flex items-center gap-1"
+            className="gloss-text-button text-[10px] font-semibold text-brand-400 hover:text-brand-300 transition-colors flex items-center gap-1"
           >
             <FolderOpen className="w-3 h-3" /> Change
           </button>
@@ -505,7 +505,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         ) : (
           <button 
             onClick={onSelectVault}
-            className="w-full text-left text-xs bg-brand-950/30 hover:bg-brand-950/50 border border-brand-900/50 text-brand-300 rounded px-3 py-2 flex items-center justify-center gap-1.5 transition-all font-medium"
+            className="gloss-text-button w-full text-left text-xs bg-brand-950/30 hover:bg-brand-950/50 border border-brand-900/50 text-brand-300 rounded px-3 py-2 flex items-center justify-center gap-1.5 transition-all font-medium"
           >
             <FolderOpen className="w-4 h-4" /> Connect Note Folder
           </button>
@@ -580,7 +580,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             <Plus className="w-4.5 h-4.5" />
           </button>
           {createMenuOpen && vaultPath && (
-            <div className="absolute right-0 top-full mt-1 z-50 w-44 py-1 rounded-lg border border-neutral-800 bg-neutral-950/95 backdrop-blur-sm shadow-2xl shadow-black/60">
+            <div className="gloss-dropdown-surface absolute right-0 top-full mt-1 z-50 w-44 py-1">
               <button
                 onClick={() => {
                   setCreateMenuOpen(false);

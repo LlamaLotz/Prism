@@ -55,7 +55,7 @@ export const IngestModal: React.FC<IngestModalProps> = ({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
       <div 
-        className="w-full max-w-lg bg-neutral-900 border border-neutral-800 rounded-xl shadow-2xl flex flex-col animate-in fade-in duration-200"
+        className="ingest-modal w-full max-w-lg bg-neutral-900 border border-neutral-800 rounded-xl shadow-2xl flex flex-col animate-in fade-in duration-200"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
@@ -192,7 +192,7 @@ export const IngestModal: React.FC<IngestModalProps> = ({
          </div>
  
          {/* Footer */}
-         <div className="px-6 py-4 border-t border-neutral-800 bg-neutral-950/30 flex justify-end gap-3 rounded-b-xl shrink-0">
+         <div className="ingest-modal-footer px-6 py-4 border-t border-neutral-800 bg-neutral-950/30 flex justify-end gap-3 shrink-0">
            <button
              onClick={onClose}
              className="px-4 py-2 text-xs font-semibold text-neutral-400 hover:text-neutral-200 hover:bg-neutral-800 rounded-lg transition-colors"

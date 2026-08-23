@@ -14,7 +14,8 @@ interface GraphView3DProps {
   autoRotateOnLoad?: boolean;
   autoRotateSpeed?: number;
   labelQuality?: 'standard' | 'high';
-  themeStyle?: 'industrial' | 'glass';
+  nodeColor?: string;
+  themeStyle?: 'industrial' | 'glass' | 'gloss';
   themeMode?: 'dark' | 'light';
 }
 
@@ -60,6 +61,7 @@ export const GraphView3D: React.FC<GraphView3DProps> = ({
   autoRotateOnLoad = false,
   autoRotateSpeed = 0.67,
   labelQuality = 'high',
+  nodeColor = '#FEB05D',
   themeStyle = 'industrial',
   themeMode = 'dark',
 }) => {
@@ -144,8 +146,11 @@ export const GraphView3D: React.FC<GraphView3DProps> = ({
     return { nodes, links };
   }, [graphData]);
 
-  const isGlassTheme = themeStyle === 'glass';
+  const isGlassTheme = themeStyle === 'glass' || themeStyle === 'gloss';
   const isDarkMode = themeMode === 'dark';
+  const configuredNodeColor = /^#[0-9a-f]{6}$/i.test(nodeColor) ? nodeColor : COLOR_ACTIVE;
+  const configuredExistsColor = mixHex(configuredNodeColor, '#ffffff', 0.22);
+  const configuredHoverColor = mixHex(configuredNodeColor, '#ffffff', 0.35);
   const themeCacheKey = `|${themeStyle}|${themeMode}`;
 
   // ── Scene lighting for glass materials ──────────────────────────────
@@ -156,21 +161,21 @@ export const GraphView3D: React.FC<GraphView3DProps> = ({
     for (const l of lightsRef.current) { scene.remove(l); if ((l as any).dispose) (l as any).dispose(); }
     lightsRef.current = [];
     if (!isGlassTheme) return;
-    const accent = new THREE.Color(accentColor);
+    const accent = new THREE.Color(configuredNodeColor || accentColor);
     const top = new THREE.DirectionalLight(0xffffff, 2.5);
     top.position.set(10, 20, 15); scene.add(top); lightsRef.current.push(top);
     const rim = new THREE.DirectionalLight(accent, 1.8);
     rim.position.set(-15, -10, -10); scene.add(rim); lightsRef.current.push(rim);
     const amb = new THREE.AmbientLight(0xffffff, 0.6);
     scene.add(amb); lightsRef.current.push(amb);
-  }, [isGlassTheme]);
+  }, [configuredNodeColor, isGlassTheme]);
 
   // Rebuild materials when theme/mode change.
   useEffect(() => {
     for (const m of matCacheRef.current.values()) m.dispose();
     matCacheRef.current.clear();
     if (hoverMatRef.current) { hoverMatRef.current.dispose(); hoverMatRef.current = null; }
-  }, [isGlassTheme, isDarkMode]);
+  }, [backgroundPattern, configuredNodeColor, isGlassTheme, isDarkMode]);
 
   const materialFor = (color: string, isActive: boolean) => {
     const key = `${color}|${isActive ? 'a' : 'n'}${themeCacheKey}`;
@@ -178,7 +183,7 @@ export const GraphView3D: React.FC<GraphView3DProps> = ({
     if (!m) {
       if (isGlassTheme) {
         m = new THREE.MeshPhysicalMaterial({
-          color: new THREE.Color(isDarkMode ? '#1f242d' : '#ffffff'),
+          color: new THREE.Color(color),
           emissive: new THREE.Color(color),
           emissiveIntensity: isActive ? 0.65 : 0.15,
           roughness: 0.05,
@@ -191,7 +196,7 @@ export const GraphView3D: React.FC<GraphView3DProps> = ({
         });
       } else {
         m = new THREE.MeshStandardMaterial({
-          color: isDarkMode ? '#2B2A2A' : '#D1D1D6',
+          color,
           emissive: color,
           emissiveIntensity: 0.35,
           roughness: 0.45,
@@ -206,8 +211,8 @@ export const GraphView3D: React.FC<GraphView3DProps> = ({
   if (!hoverMatRef.current) {
     if (isGlassTheme) {
       hoverMatRef.current = new THREE.MeshPhysicalMaterial({
-        color: new THREE.Color(isDarkMode ? '#1f242d' : '#ffffff'),
-        emissive: new THREE.Color(COLOR_HOVER),
+        color: new THREE.Color(configuredHoverColor),
+        emissive: new THREE.Color(configuredHoverColor),
         emissiveIntensity: 0.9,
         roughness: 0.05,
         metalness: 0.1,
@@ -219,8 +224,8 @@ export const GraphView3D: React.FC<GraphView3DProps> = ({
       });
     } else {
       hoverMatRef.current = new THREE.MeshStandardMaterial({
-        color: COLOR_HOVER,
-        emissive: COLOR_HOVER,
+        color: configuredHoverColor,
+        emissive: configuredHoverColor,
         emissiveIntensity: 0.7,
         roughness: 0.3,
         metalness: 0.15,
@@ -296,9 +301,9 @@ export const GraphView3D: React.FC<GraphView3DProps> = ({
     bg.position.set((minX + maxX) / 2, minY - span * 0.2, (minZ + maxZ) / 2);
   };
 
-  const nodeColor = (node: any) => {
-    if (activeTitleRef.current && node.title?.toLowerCase() === activeTitleRef.current) return COLOR_ACTIVE;
-    return node.exists ? COLOR_EXISTS : COLOR_MISSING;
+  const colorForNode = (node: any) => {
+    if (activeTitleRef.current && node.title?.toLowerCase() === activeTitleRef.current) return configuredNodeColor;
+    return node.exists ? configuredExistsColor : COLOR_MISSING;
   };
 
   // ── Canvas-texture label sprite ──────────────────────────────────────
@@ -374,7 +379,7 @@ export const GraphView3D: React.FC<GraphView3DProps> = ({
   };
 
   const nodeThreeObject = useCallback((node: any) => {
-    const col = nodeColor(node);
+    const col = colorForNode(node);
     const isActive = activeTitleRef.current && node.title?.toLowerCase() === activeTitleRef.current;
     const mesh = new THREE.Mesh(sphereGeoRef.current!, materialFor(col, !!isActive));
     const r = nodeRadius(node.linksCount ?? 0);
@@ -393,7 +398,7 @@ export const GraphView3D: React.FC<GraphView3DProps> = ({
   const applyNodeColor = (mesh: THREE.Mesh) => {
     const title = mesh.userData.title as string | undefined;
     const isActive = activeTitleRef.current && title && title.toLowerCase() === activeTitleRef.current;
-    const col = isActive ? COLOR_ACTIVE : mesh.userData.exists ? COLOR_EXISTS : COLOR_MISSING;
+    const col = isActive ? configuredNodeColor : mesh.userData.exists ? configuredExistsColor : COLOR_MISSING;
     mesh.material = materialFor(col, !!isActive);
   };
 
@@ -440,7 +445,7 @@ export const GraphView3D: React.FC<GraphView3DProps> = ({
       : (isDarkMode ? LINK_COLOR_DARK : 'rgba(30, 41, 59, 0.15)'),
     [isGlassTheme, isDarkMode]
   );
-  const particleColor = useCallback(() => hexToRgba(COLOR_ACTIVE, 0.8), []);
+  const particleColor = useCallback(() => hexToRgba(configuredNodeColor, 0.8), [configuredNodeColor]);
 
   const handleNodeClick = useCallback((node: any) => onSelectNoteByTitleRef.current(node.title ?? node.id), []);
   const handleEngineStop = useCallback(() => {
@@ -488,7 +493,7 @@ export const GraphView3D: React.FC<GraphView3DProps> = ({
     pendingFrameRef.current = true;
   }, [graphData.nodes.length]);
 
-  useEffect(() => { for (const [, mesh] of nodeMeshesRef.current) applyNodeColor(mesh); }, [activeTitle]);
+  useEffect(() => { for (const [, mesh] of nodeMeshesRef.current) applyNodeColor(mesh); }, [activeTitle, configuredNodeColor, configuredExistsColor]);
 
   useEffect(() => {
     const g = graphRef.current, controls = g?.controls?.();
@@ -516,7 +521,7 @@ export const GraphView3D: React.FC<GraphView3DProps> = ({
       lightsRef.current = [];
       if (bgObjectRef.current) { scene.remove(bgObjectRef.current); disposeBackground(bgObjectRef.current); bgObjectRef.current = null; }
     };
-  }, [backgroundPattern, isGlassTheme, isDarkMode]);
+  }, [backgroundPattern, configuredNodeColor, isGlassTheme, isDarkMode]);
 
   useEffect(() => {
     const titles = new Set<string>();
@@ -583,7 +588,13 @@ export const GraphView3D: React.FC<GraphView3DProps> = ({
         <ForceGraph3D
           ref={graphRef} graphData={stableData} width={size.width} height={size.height}
           controlType="orbit"
-          backgroundColor={isGlassTheme ? (isDarkMode ? '#060608' : '#E2E5EB') : (isDarkMode ? '#0D0E12' : '#EDEDF0')}
+          backgroundColor={
+            themeStyle === 'gloss'
+              ? (isDarkMode ? '#111318' : '#eef0f3')
+              : isGlassTheme
+                ? (isDarkMode ? '#060608' : '#E2E5EB')
+                : (isDarkMode ? '#0D0E12' : '#EDEDF0')
+          }
           nodeThreeObject={nodeThreeObject} linkColor={linkColor}
           linkWidth={0.8} linkDirectionalParticles={2} linkDirectionalParticleSpeed={0.005}
           linkDirectionalParticleWidth={1.5} linkDirectionalParticleColor={particleColor}

@@ -288,7 +288,7 @@ const AccentPicker: React.FC<{ value: string; onChange: (hex: string) => void }>
         <>
           {/* Click-away backdrop */}
           <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
-          <div className="absolute left-0 bottom-full mb-2 z-50 w-72 p-3 bg-panel border border-slate-800 rounded-xl shadow-2xl space-y-3">
+          <div className="gloss-dropdown-surface absolute left-0 bottom-full mb-2 z-50 w-72 p-3 space-y-3">
             {/* Format tabs */}
             <div className="flex items-center justify-between">
               <span className="text-[10px] uppercase text-slate-500 font-semibold">Format</span>
@@ -501,10 +501,10 @@ const Toggle: React.FC<{
   checked: boolean;
   onChange: (v: boolean) => void;
   disabled?: boolean;
-  /** Theme style: 'industrial' = square, 'glass' = pill/circle */
-  themeStyle?: 'industrial' | 'glass';
+  /** Theme style: 'industrial' = square, 'glass'/'gloss' = pill/circle */
+  themeStyle?: 'industrial' | 'glass' | 'gloss';
 }> = ({ checked, onChange, disabled, themeStyle = 'industrial' }) => {
-  const isRounded = themeStyle === 'glass';
+  const isRounded = themeStyle === 'glass' || themeStyle === 'gloss';
   return (
   <button
     type="button"
@@ -512,14 +512,14 @@ const Toggle: React.FC<{
     aria-checked={checked}
     disabled={disabled}
     onClick={() => onChange(!checked)}
-    className={`relative inline-flex h-6 w-11 shrink-0 items-center border transition-colors ${
+    className={`switch-track relative inline-flex h-6 w-11 shrink-0 items-center border transition-colors ${
       isRounded ? 'rounded-full' : ''
     } ${
       checked ? 'bg-brand-500 border-brand-500' : 'bg-zinc-900 border-zinc-700'
     } ${disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
   >
     <span
-      className={`inline-block h-4 w-4 transform bg-white transition-transform ${
+      className={`switch-thumb inline-block h-4 w-4 transform bg-white transition-transform ${
         isRounded ? 'rounded-full shadow-sm' : ''
       } ${
         checked ? 'translate-x-6' : 'translate-x-1'
@@ -629,10 +629,10 @@ const Segmented: React.FC<{
   options: { value: string; label: string }[];
   value: string;
   onChange: (v: string) => void;
-  /** Theme style: 'industrial' = square blocks, 'glass' = pill capsules */
-  themeStyle?: 'industrial' | 'glass';
+  /** Theme style: 'industrial' = square blocks, 'glass'/'gloss' = pill capsules */
+  themeStyle?: 'industrial' | 'glass' | 'gloss';
 }> = ({ options, value, onChange, themeStyle = 'industrial' }) => {
-  const isRounded = themeStyle === 'glass';
+  const isRounded = themeStyle === 'glass' || themeStyle === 'gloss';
   return (
   <div className={`flex items-center bg-slate-950 border border-slate-800 p-0.5 ${isRounded ? 'rounded-full' : ''}`}>
     {options.map((o) => (
@@ -869,7 +869,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                     />
                     <button
                       onClick={handleSelectFolder}
-                      className="bg-slate-800 hover:bg-slate-700 text-slate-200 text-sm font-medium px-4 py-2 rounded-lg flex items-center gap-1.5 transition-colors border border-slate-700"
+                      className="gloss-text-button bg-slate-800 hover:bg-slate-700 text-slate-200 text-sm font-medium px-4 py-2 rounded-lg flex items-center gap-1.5 transition-colors border border-slate-700"
                     >
                       <FolderOpen className="w-4 h-4" /> Browse
                     </button>
@@ -884,7 +884,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                     <button
                       onClick={runInstaller}
                       disabled={isInstallingEngine}
-                      className="text-xs bg-brand-600 hover:bg-brand-500 disabled:opacity-50 text-white font-semibold px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-colors border border-brand-400/20"
+                      className="gloss-text-button text-xs bg-brand-600 hover:bg-brand-500 disabled:opacity-50 text-white font-semibold px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-colors border border-brand-400/20"
                     >
                       {isInstallingEngine ? (
                         <Loader2 className="w-3.5 h-3.5 animate-spin text-brand-200" />
@@ -1123,6 +1123,11 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                             value: 'glass' as const,
                             label: 'Rounded',
                             sub: 'Soft pill-shaped edges, frosted glass panels, backdrop blur',
+                          },
+                          {
+                            value: 'gloss' as const,
+                            label: 'Liquid Gloss',
+                            sub: 'Deep multi-layer blur, vibrant azure accents, frosted fluid glass',
                           },
                         ]).map((opt) => {
                           const active = draft.appearance.themeStyle === opt.value;
@@ -1621,20 +1626,20 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
           <div className="flex gap-2 items-center">
             <button
               onClick={requestClose}
-              className="px-4 py-2 text-sm font-medium text-slate-400 hover:text-slate-200 hover:bg-slate-800 rounded-lg transition-colors"
+              className="gloss-text-button px-4 py-2 text-sm font-medium text-slate-400 hover:text-slate-200 hover:bg-slate-800 rounded-lg transition-colors"
             >
               Cancel
             </button>
             <button
               onClick={handleApplyAndClose}
-              className="px-3 py-2 text-xs font-medium text-slate-300 hover:text-[var(--color-text-hi)] hover:bg-slate-800 border border-slate-800 rounded-lg transition-colors"
+              className="gloss-text-button px-3 py-2 text-xs font-medium text-slate-300 hover:text-[var(--color-text-hi)] hover:bg-slate-800 border border-slate-800 rounded-lg transition-colors"
               title="Apply changes and close settings"
             >
               Apply & Close
             </button>
             <button
               onClick={handleSave}
-              className={`px-4 py-2 bg-gradient-to-r from-brand-500 to-brand-600 hover:from-brand-400 hover:to-brand-500 text-white text-sm font-medium rounded-lg flex items-center gap-1.5 shadow-md shadow-brand-500/10 hover:shadow-brand-500/20 transition-all border border-brand-400/20 ${
+              className={`gloss-text-button px-4 py-2 bg-gradient-to-r from-brand-500 to-brand-600 hover:from-brand-400 hover:to-brand-500 text-white text-sm font-medium rounded-lg flex items-center gap-1.5 shadow-md shadow-brand-500/10 hover:shadow-brand-500/20 transition-all border border-brand-400/20 ${
                 justSaved ? 'from-emerald-500 to-emerald-600 hover:from-emerald-400 hover:to-emerald-500' : ''
               }`}
             >

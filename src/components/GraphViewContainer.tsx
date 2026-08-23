@@ -5,7 +5,7 @@ import { GraphNode, GraphLink, NoteFile } from '../types';
 
 const GRAPH_MODE_KEY = 'prism_graph_mode';
 
-type ThemeStyle = 'industrial' | 'glass';
+type ThemeStyle = 'industrial' | 'glass' | 'gloss';
 type ThemeMode = 'dark' | 'light';
 
 interface GraphViewContainerProps {
@@ -109,6 +109,7 @@ export const GraphViewContainer: React.FC<GraphViewContainerProps> = ({
       autoRotateOnLoad={autoRotateOnLoad}
       autoRotateSpeed={autoRotateSpeed}
       labelQuality={labelQuality}
+      nodeColor={nodeColor}
       themeStyle={themeStyle}
       themeMode={themeMode}
     />

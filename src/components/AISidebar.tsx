@@ -130,7 +130,7 @@ export const AISidebar: React.FC<AISidebarProps> = ({
         </div>
         <button
           onClick={() => setMessages([])}
-          className="text-[10px] font-semibold text-slate-500 hover:text-slate-300 transition-colors"
+          className="gloss-text-button ai-reset-button text-[10px] font-semibold text-slate-500 hover:text-slate-300 transition-colors"
           title="Clear Chat History"
         >
           Reset

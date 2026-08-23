@@ -161,7 +161,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
   );
 
   return (
-    <div ref={barRef} data-tauri-drag-region className="relative flex items-center h-9 bg-base shrink-0 select-none z-40 rounded-none">
+    <div ref={barRef} data-tauri-drag-region className="liquid-gloss-header relative flex items-center h-9 bg-base shrink-0 select-none z-40 rounded-none">
       {/* ── Icon + app name ── */}
       <div
         data-tauri-drag-region
@@ -188,7 +188,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
               Prism
             </button>
             {openMenu === 'prism' && (
-              <div className="absolute top-full left-0 min-w-[220px] bg-panel border border-border rounded-md shadow-xl py-1 z-50">
+              <div className="titlebar-menu-popover gloss-dropdown-surface absolute top-full left-0 min-w-[220px] py-1 z-50">
                 {menus.prism.items.map((item, i) =>
                   item.divider ? (
                     <div key={i} className="my-1 border-t border-border" />
@@ -225,7 +225,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
                 {label}
               </button>
               {openMenu === key && (
-                <div className="absolute top-full left-0 min-w-[220px] bg-panel border border-border rounded-md shadow-xl py-1 z-50">
+                <div className="titlebar-menu-popover gloss-dropdown-surface absolute top-full left-0 min-w-[220px] py-1 z-50">
                   {items.map((item, i) =>
                     item.divider ? (
                       <div key={i} className="my-1 border-t border-border" />
@@ -267,7 +267,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
       <button
         onClick={onToggleAI}
         title="AI Co-Pilot"
-        className={`mr-1 p-1.5 rounded transition-colors ${
+        className={`titlebar-action mr-1 p-1.5 rounded transition-colors ${
           showAI ? 'text-brand-400 bg-brand-600/10' : 'text-text-muted hover:text-offwhite hover:bg-surface-hover'
         }`}
       >
@@ -275,14 +275,14 @@ export const TitleBar: React.FC<TitleBarProps> = ({
       </button>
 
       {/* ── Window controls ── */}
-      <div className="flex items-center h-full shrink-0">
-        <button onClick={() => appWindow.minimize()} title="Minimize" className="w-11 h-full flex items-center justify-center text-text-muted hover:text-offwhite hover:bg-surface-hover transition-colors">
+      <div className="titlebar-window-controls flex items-center h-full shrink-0">
+        <button onClick={() => appWindow.minimize()} title="Minimize" className="titlebar-window-control w-11 h-full flex items-center justify-center text-text-muted hover:text-offwhite hover:bg-surface-hover transition-colors">
           <Minus className="w-3.5 h-3.5" />
         </button>
-        <button onClick={() => appWindow.toggleMaximize()} title={maximized ? 'Restore' : 'Maximize'} className="w-11 h-full flex items-center justify-center text-text-muted hover:text-offwhite hover:bg-surface-hover transition-colors">
+        <button onClick={() => appWindow.toggleMaximize()} title={maximized ? 'Restore' : 'Maximize'} className="titlebar-window-control w-11 h-full flex items-center justify-center text-text-muted hover:text-offwhite hover:bg-surface-hover transition-colors">
           {maximized ? <Copy className="w-3 h-3" /> : <Square className="w-3 h-3" />}
         </button>
-        <button onClick={() => appWindow.close()} title="Close" className="w-11 h-full flex items-center justify-center text-text-muted hover:text-white hover:bg-[#E81123] transition-colors">
+        <button onClick={() => appWindow.close()} title="Close" className="titlebar-window-control titlebar-close-control w-11 h-full flex items-center justify-center text-text-muted hover:text-white hover:bg-[#E81123] transition-colors">
           <X className="w-4 h-4" />
         </button>
       </div>

@@ -2369,12 +2369,12 @@ const sidecarPath = (notePath: string): string => {
             <button
               onClick={() => setToolsOpen(!toolsOpen)}
               title="Editing tools: Split, Format, and Block operations"
-              className="flex items-center gap-1 px-3 py-1 text-xs font-medium rounded-lg border border-slate-800 text-slate-400 hover:text-brand-400 hover:border-brand-500/40 transition-all"
+              className="gloss-text-button flex items-center gap-1 px-3 py-1 text-xs font-medium rounded-lg border border-slate-800 text-slate-400 hover:text-brand-400 hover:border-brand-500/40 transition-all"
             >
               <Wand2 className="w-3.5 h-3.5" /> Tools
             </button>
             {toolsOpen && (
-              <div className="absolute right-0 top-full mt-1 z-50 min-w-[180px] bg-panel rounded-xl shadow-xl py-1">
+              <div className="gloss-dropdown-surface absolute right-0 top-full mt-1 z-50 min-w-[180px] py-1">
                 <button
                   onClick={() => { handleFormat(); setToolsOpen(false); }}
                   className="w-full px-3 py-1.5 flex items-center gap-2 text-xs text-slate-300 hover:bg-brand-500/10 hover:text-brand-400 transition-colors border-none"

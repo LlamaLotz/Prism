@@ -334,7 +334,7 @@ export const LinkHub: React.FC<LinkHubProps> = ({
             onClick={handleRefresh}
             disabled={isLoading}
             title="Refresh all link types"
-            className="text-[10px] text-slate-500 hover:text-brand-400 transition-colors flex items-center gap-1 disabled:opacity-50"
+            className="inline-flex items-center gap-1.5 px-4 py-1 text-[10px] text-slate-500 hover:text-brand-400 transition-colors disabled:opacity-50"
           >
             <RefreshCw className={`w-3 h-3 ${isLoading ? 'animate-spin' : ''}`} /> Refresh
           </button>

@@ -161,6 +161,7 @@ export function applyAccentColor(hex: string, opts?: { hoverGlow?: string }): vo
   const glow = opts?.hoverGlow ? normalizeAccent(opts.hoverGlow) : accent;
 
   root.setProperty('--color-brand-500', accent);
+  root.setProperty('--accent-color', accent);
   root.setProperty('--color-brand-400', `color-mix(in srgb, ${accent} 85%, white)`);
   root.setProperty('--color-brand-300', `color-mix(in srgb, ${accent} 70%, white)`);
   root.setProperty('--color-brand-200', `color-mix(in srgb, ${accent} 55%, white)`);

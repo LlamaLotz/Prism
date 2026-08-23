@@ -154,7 +154,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
     <div
       ref={menuRef}
       style={{ left: pos.left, top: pos.top }}
-      className="fixed z-[100] w-44 py-1 rounded-lg border border-neutral-800 bg-neutral-950/95 backdrop-blur-sm shadow-2xl shadow-black/60"
+      className="gloss-dropdown-surface fixed z-[100] w-44 py-1"
       onContextMenu={(e) => {
         e.preventDefault();
         e.stopPropagation();

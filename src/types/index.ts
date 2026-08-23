@@ -89,8 +89,8 @@ export interface AppSettings {
     injectUserProfile: boolean;
   };
   appearance: {
-    /** Design language: 'industrial' (opaque, technical, high-contrast) or 'glass' (refractive crystal slabs). */
-    themeStyle: 'industrial' | 'glass';
+    /** Design language: 'industrial' (razor-sharp technical), 'glass' (soft pill-shaped frosted panels), or 'gloss' (deep blur + vibrant blue accent). */
+    themeStyle: 'industrial' | 'glass' | 'gloss';
     /** Color scheme: 'dark' or 'light'. */
     themeMode: 'dark' | 'light';
     startupView: 'graph' | 'editor' | 'split' | 'topics';

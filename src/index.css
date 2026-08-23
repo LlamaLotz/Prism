@@ -113,12 +113,33 @@
 }
 
 /* Base Body Styles */
+html,
+body,
+#root {
+  min-height: 100%;
+}
 body {
   background-color: var(--color-base);
   color: var(--color-text-body);
   font-family: var(--font-sans);
   color-scheme: dark;
   -webkit-font-smoothing: antialiased;
+}
+
+/* The Tauri window is transparent so only Gloss exposes the desktop wallpaper.
+   Industrial and Rounded retain their opaque application canvas. */
+html.theme-gloss,
+html.theme-gloss body,
+html.theme-gloss #root {
+  background: transparent !important;
+}
+.theme-gloss .liquid-gloss-app {
+  background: rgba(18, 18, 20, 0.85) !important;
+  backdrop-filter: blur(28px) saturate(160%);
+  -webkit-backdrop-filter: blur(28px) saturate(160%);
+}
+.theme-gloss.mode-light .liquid-gloss-app {
+  background: rgba(240, 240, 242, 0.85) !important;
 }
 
 /* ========================================================================== */
@@ -211,6 +232,45 @@ pre {
     border-color: transparent !important;
   }
 }
+
+/* Menu dropdowns: shared frosted-glass popover surface. Menu items remain
+   borderless and rectangular; only the outer panel carries the curvature. */
+.titlebar-menu-popover {
+  background: rgba(255, 255, 255, 0.65);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 14px;
+  overflow: hidden;
+  backdrop-filter: blur(20px) saturate(160%);
+  -webkit-backdrop-filter: blur(20px) saturate(160%);
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.16), inset 0 1px 0 rgba(255, 255, 255, 0.45);
+}
+.titlebar-menu-popover .titlebar-menu-dropdown,
+.titlebar-menu-popover .titlebar-menu-dropdown:hover,
+.titlebar-menu-popover .titlebar-menu-dropdown:active {
+  border: none !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+}
+.theme-industrial .titlebar-menu-popover,
+.theme-glass.mode-dark .titlebar-menu-popover,
+.theme-gloss.mode-dark .titlebar-menu-popover {
+  background: rgba(15, 23, 42, 0.75);
+  border-color: rgba(255, 255, 255, 0.2);
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.12);
+}
+.theme-glass .titlebar-menu-popover,
+.theme-gloss .titlebar-menu-popover {
+  border-radius: 14px;
+  overflow: hidden;
+  backdrop-filter: blur(20px) saturate(160%);
+  -webkit-backdrop-filter: blur(20px) saturate(160%);
+}
+.theme-gloss .titlebar-menu-popover {
+  background: var(--color-panel);
+  border-color: rgba(255, 255, 255, 0.12);
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.16), inset 0 1px 0 rgba(255, 255, 255, 0.2);
+}
+
 
 /* Hue slider in custom accent picker */
 input[type='range'].hue-slider::-webkit-slider-thumb {
@@ -570,12 +630,119 @@ input[type='range'].hue-slider::-moz-range-thumb {
   color-scheme: light;
 }
 
+/* === 5. LIQUID GLOSS DARK (Pure Neutral Glass) ============================= */
+.theme-gloss.mode-dark {
+  --color-base: #121212;
+  --color-panel: rgba(15, 15, 15, 0.35);
+  --color-surface: rgba(255, 255, 255, 0.03);
+  --color-surface-hover: rgba(255, 255, 255, 0.08);
+  --color-border: rgba(255, 255, 255, 0.12);
+  --color-text-hi: #ffffff;
+  --color-text-body: #cbd5e1;
+  --color-text-muted: #94a3b8;
+
+  --color-slate-50: #fafafa;
+  --color-slate-100: #f5f5f5;
+  --color-slate-200: #e5e5e5;
+  --color-slate-300: #d4d4d4;
+  --color-slate-400: #a3a3a3;
+  --color-slate-500: #737373;
+  --color-slate-600: #525252;
+  --color-slate-700: #404040;
+  --color-slate-800: #262626;
+  --color-slate-900: rgba(24, 24, 24, 0.35);
+  --color-slate-950: rgba(12, 12, 12, 0.5);
+
+  --color-neutral-50: #fafafa;
+  --color-neutral-100: #f5f5f5;
+  --color-neutral-200: #e5e5e5;
+  --color-neutral-300: #d4d4d4;
+  --color-neutral-400: #a3a3a3;
+  --color-neutral-500: #737373;
+  --color-neutral-600: #525252;
+  --color-neutral-700: #404040;
+  --color-neutral-800: #262626;
+  --color-neutral-900: rgba(24, 24, 24, 0.35);
+  --color-neutral-950: rgba(12, 12, 12, 0.5);
+
+  --glass-specular-edge: inset 0 1px 0 0 rgba(255, 255, 255, 0.2),
+                         inset 0 0 0 1px rgba(255, 255, 255, 0.04);
+  --glass-shadow: 0 16px 40px rgba(0, 0, 0, 0.24);
+  --backdrop-blur: blur(24px) saturate(140%);
+  --glass-border: 1px solid rgba(255, 255, 255, 0.12);
+
+  color-scheme: dark;
+}
+
+/* === 6. LIQUID GLOSS LIGHT (Pure Neutral Glass) ============================ */
+.theme-gloss.mode-light {
+  --color-base: #eeeeee;
+  --color-panel: rgba(255, 255, 255, 0.08);
+  --color-surface: rgba(255, 255, 255, 0.04);
+  --color-surface-hover: rgba(255, 255, 255, 0.08);
+  --color-border: rgba(255, 255, 255, 0.12);
+  --color-text-hi: #0f172a;
+  --color-text-body: #1e293b;
+  --color-text-muted: #64748b;
+
+  --color-slate-50: #171717;
+  --color-slate-100: #262626;
+  --color-slate-200: #404040;
+  --color-slate-300: #525252;
+  --color-slate-400: #737373;
+  --color-slate-500: #a3a3a3;
+  --color-slate-600: #d4d4d4;
+  --color-slate-700: #e5e5e5;
+  --color-slate-800: #f5f5f5;
+  --color-slate-900: #fafafa;
+  --color-slate-950: #ffffff;
+
+  --color-neutral-50: #171717;
+  --color-neutral-100: #262626;
+  --color-neutral-200: #404040;
+  --color-neutral-300: #525252;
+  --color-neutral-400: #737373;
+  --color-neutral-500: #a3a3a3;
+  --color-neutral-600: #d4d4d4;
+  --color-neutral-700: #e5e5e5;
+  --color-neutral-800: #f5f5f5;
+  --color-neutral-900: #fafafa;
+  --color-neutral-950: #ffffff;
+
+  --glass-specular-edge: inset 0 1px 0 0 rgba(255, 255, 255, 0.7),
+                         inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+  --glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.08);
+  --backdrop-blur: blur(24px) saturate(140%);
+  --glass-border: 1px solid rgba(255, 255, 255, 0.12);
+
+  color-scheme: light;
+}
+
+/* Ingestion modal: keep the complete outer curve visible in rounded themes.
+   The footer is clipped by the modal surface instead of forming square lower
+   corners over the dialog boundary. */
+.theme-glass .ingest-modal,
+.theme-gloss .ingest-modal {
+  border-radius: 24px !important;
+  overflow: hidden !important;
+}
+.theme-glass .ingest-modal-footer,
+.theme-gloss .ingest-modal-footer {
+  border-bottom-left-radius: inherit !important;
+  border-bottom-right-radius: inherit !important;
+  overflow: hidden !important;
+}
+
 /* -------------------------------------------------------------------------- */
 /* Glass surfaces: backdrop-blur + specular bevel on key panels */
 .theme-glass .sidebar,
+.theme-gloss .sidebar,
 .theme-glass [data-region="graph"],
+.theme-gloss [data-region="graph"],
 .theme-glass .ai-panel,
-.theme-glass .dialog-modal {
+.theme-gloss .ai-panel,
+.theme-glass .dialog-modal,
+.theme-gloss .dialog-modal {
   backdrop-filter: var(--backdrop-blur) !important;
   -webkit-backdrop-filter: var(--backdrop-blur) !important;
   box-shadow: var(--glass-specular-edge);
@@ -790,4 +957,478 @@ button.titlebar-menu-dropdown:hover {
 .theme-glass.mode-light h4 {
   letter-spacing: -0.01em;
   font-weight: 700;
-}
+}
+
+/* ==========================================================================
+   LIQUID GLOSS: neutral translucent glass with dynamic accent states.
+   ========================================================================== */
+
+/* Gloss inherits all glass rounded/pill rules */
+.theme-gloss {
+  /* One geometry for every primary floating panel. */
+  --gloss-panel-radius: 24px;
+  --radius-button: 9999px;
+  --radius-module: 24px;
+  --accent-color: var(--color-brand-500);
+  --accent-fill: color-mix(in srgb, var(--accent-color) 14%, transparent);
+  --accent-border: color-mix(in srgb, var(--accent-color) 42%, transparent);
+  --accent-glow: color-mix(in srgb, var(--accent-color) 24%, transparent);
+  --radius-none: 0px;
+  --radius-sm: 8px;
+  --radius: 9999px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 20px;
+  --radius-2xl: 24px;
+  --radius-3xl: 28px;
+  --radius-4xl: 32px;
+  --thumb-radius: 9999px;
+}
+.theme-gloss div,
+.theme-gloss input,
+.theme-gloss textarea,
+.theme-gloss select,
+.theme-gloss dialog,
+.theme-gloss header,
+.theme-gloss aside,
+.theme-gloss section,
+.theme-gloss article {
+  border-radius: unset !important;
+}
+.theme-gloss [class*="rounded-2xl"] { border-radius: var(--radius-2xl) !important; }
+.theme-gloss [class*="rounded-xl"]  { border-radius: var(--radius-xl) !important; }
+.theme-gloss [class*="rounded-lg"]  { border-radius: var(--radius-lg) !important; }
+.theme-gloss [class*="rounded-md"]  { border-radius: var(--radius-md) !important; }
+.theme-gloss [class*="rounded-sm"]  { border-radius: var(--radius-sm) !important; }
+.theme-gloss [class*="rounded-full"] { border-radius: 9999px !important; }
+.theme-gloss .rounded-none { border-radius: 0 !important; }
+.theme-gloss .rounded:not(.rounded-none):not(.rounded-sm):not(.rounded-md):not(.rounded-lg):not(.rounded-xl):not(.rounded-2xl):not(.rounded-3xl):not(.rounded-4xl):not(.rounded-full) {
+  border-radius: 9999px !important;
+}
+
+/* Gloss primary panels share one four-corner boundary. The workspace and
+   its children are clipped independently so headers/canvases cannot square
+   off the outer edges. */
+.theme-gloss .liquid-gloss-surface,
+.theme-gloss .liquid-gloss-sidebar,
+.theme-gloss .ai-panel,
+.theme-gloss [data-region="workspace"],
+.theme-gloss [data-region="editor"],
+.theme-gloss [data-region="graph"] {
+  border-radius: var(--radius-module) !important;
+  overflow: hidden !important;
+}
+
+/* Keep the center panes separated from one another and from the workspace
+   edge. In editor-only and graph-only views this also exposes all four corners. */
+.theme-gloss .workspace-panels {
+  gap: 8px;
+  padding: 8px;
+  min-height: 0;
+}
+.theme-gloss .workspace-panels > [data-region="editor"],
+.theme-gloss .workspace-panels > [data-region="graph"],
+.theme-gloss .workspace-panels > [data-region="topics"] {
+  min-width: 0;
+  min-height: 0;
+  flex: 1 1 0%;
+}
+
+/* Gloss controls: icon actions stay compact; text actions get a stable
+   capsule with enough horizontal breathing room for their labels. */
+.theme-gloss button:not(.titlebar-menu):not(.titlebar-menu-dropdown):not(.titlebar-window-control):not(.titlebar-action) {
+  border-radius: var(--radius-button, 9999px) !important;
+}
+.theme-gloss button:not(.titlebar-menu):not(.titlebar-menu-dropdown):not(.titlebar-window-control):not(.titlebar-action):has(span:not(.sr-only)) {
+  min-height: 32px;
+  padding-inline: 16px;
+  padding-block: 6px;
+}
+.theme-gloss .gloss-text-button {
+  min-height: 32px;
+  padding: 6px 16px !important;
+  border-radius: var(--radius-button, 9999px) !important;
+}
+.theme-gloss button.titlebar-menu,
+.theme-gloss [class*="titlebar"] button {
+  border-radius: unset !important;
+}
+.theme-gloss button.titlebar-menu-dropdown {
+  border-radius: 0 !important;
+  border: none !important;
+}
+.theme-gloss .titlebar-window-control,
+.theme-gloss .titlebar-action {
+  border: none !important;
+  border-radius: inherit !important;
+  overflow: hidden !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  outline: none !important;
+}
+.theme-gloss .titlebar-window-control {
+  border-radius: inherit !important;
+}
+.theme-gloss .titlebar-window-control:hover,
+.theme-gloss .titlebar-action:hover,
+.theme-gloss .titlebar-window-control:focus-visible,
+.theme-gloss .titlebar-action:focus-visible {
+  border: none !important;
+  background: rgba(255, 255, 255, 0.08) !important;
+  box-shadow: none !important;
+  outline: none !important;
+}
+.theme-gloss .titlebar-close-control:hover {
+  background: rgba(255, 255, 255, 0.08) !important;
+  color: var(--color-text-hi) !important;
+}
+.theme-gloss button.titlebar-menu-dropdown:hover {
+  border-color: transparent !important;
+  box-shadow: none !important;
+}
+.theme-gloss .titlebar-menu-popover {
+  border-radius: 14px !important;
+  overflow: hidden !important;
+}
+
+/* Gloss toggle containment: leave a 2px inset around the circular thumb so
+   checked and unchecked states never bleed beyond the capsule track. */
+.theme-gloss .switch-track {
+  overflow: hidden !important;
+  padding: 2px !important;
+  border-radius: 9999px !important;
+}
+.theme-gloss .switch-thumb {
+  width: 14px !important;
+  height: 14px !important;
+  flex: 0 0 14px;
+  border-radius: 9999px !important;
+  transform: translateX(0.5px);
+}
+.theme-gloss .switch-track[aria-checked="true"] .switch-thumb {
+  transform: translateX(20.5px);
+}
+
+/* Light-mode toggles: visible neutral tracks and high-contrast thumbs. */
+.mode-light .switch-track {
+  box-sizing: border-box;
+  border: 1px solid rgba(0, 0, 0, 0.08) !important;
+  background: #e2e8f0 !important;
+}
+.mode-light .switch-track[aria-checked="true"] {
+  background: var(--color-brand-500, var(--accent-color, #feb05d)) !important;
+  border-color: var(--color-brand-500, var(--accent-color, #feb05d)) !important;
+}
+.mode-light .switch-thumb {
+  box-sizing: border-box;
+  width: 14px !important;
+  height: 14px !important;
+  flex: 0 0 14px;
+  background: #ffffff !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2), 0 1px 2px rgba(0, 0, 0, 0.12) !important;
+}
+
+/* Rounded light-mode toggles keep the inset circular geometry. */
+.theme-glass.mode-light .switch-track,
+.theme-gloss.mode-light .switch-track {
+  overflow: hidden !important;
+  padding: 2px !important;
+  border-radius: 9999px !important;
+}
+.theme-glass.mode-light .switch-thumb,
+.theme-gloss.mode-light .switch-thumb {
+  border-radius: 9999px !important;
+  transform: translateX(0.5px);
+}
+.theme-glass.mode-light .switch-track[aria-checked="true"] .switch-thumb,
+.theme-gloss.mode-light .switch-track[aria-checked="true"] .switch-thumb {
+  transform: translateX(20.5px);
+}
+
+/* Gloss: titlebar is a floating frosted header */
+.theme-gloss .liquid-gloss-header {
+  position: relative;
+  z-index: 2;
+  margin: 8px 8px 0;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 9999px !important;
+  background: var(--color-panel);
+  backdrop-filter: blur(24px) saturate(140%);
+  -webkit-backdrop-filter: blur(24px) saturate(140%);
+  box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.22), 0 10px 24px rgba(0, 0, 0, 0.08);
+}
+.theme-gloss .liquid-gloss-header button.titlebar-menu,
+.theme-gloss .liquid-gloss-header [class*="titlebar"] button {
+  border-radius: unset !important;
+}
+
+/* Gloss: generic panel backdrop. Scrollable editor content is excluded
+   below so the neutral glass effect does not introduce scroll jank. */
+.theme-gloss [class*="bg-slate-900"],
+.theme-gloss [class*="bg-slate-950"],
+.theme-gloss [class*="bg-neutral-900"],
+.theme-gloss [class*="bg-neutral-950"],
+.theme-gloss [class*="bg-panel"] {
+  backdrop-filter: var(--backdrop-blur) !important;
+  -webkit-backdrop-filter: var(--backdrop-blur) !important;
+}
+.theme-gloss .liquid-gloss-layout,
+.theme-gloss .workspace-panels {
+  background: transparent !important;
+}
+.theme-gloss [data-region="editor"],
+.theme-gloss [data-region="graph"] > *,
+.theme-gloss [data-region="topics"] {
+  background-color: transparent;
+}
+
+/* Gloss: strip backdrop from editor (same scroll jank fix as glass) */
+.theme-gloss .editor-container,
+.theme-gloss .editor-container * {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+/* Gloss: hover / active / focus states */
+.theme-gloss button:not(:disabled):hover {
+  box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.8), 0 2px 12px var(--accent-glow);
+  border-color: var(--accent-border);
+}
+.theme-gloss button:not(:disabled):active {
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.06);
+}
+.theme-gloss *:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--accent-glow);
+}
+
+/* Gloss: hairline separators */
+.theme-gloss .border-slate-900\/60,
+.theme-gloss .border-slate-800\/60,
+.theme-gloss .border-slate-800\/80,
+.theme-gloss .border-slate-800,
+.theme-gloss .border-slate-900,
+.theme-gloss .border-neutral-800,
+.theme-gloss .border-neutral-900 {
+  border-color: rgba(255, 255, 255, 0.06);
+}
+
+/* Gloss: pill inputs */
+.theme-gloss input[type="text"],
+.theme-gloss input[type="search"],
+.theme-gloss input:not([type="range"]):not([type="checkbox"]):not([type="radio"]):not([type="color"]):not([type="file"]),
+.theme-gloss textarea,
+.theme-gloss select {
+  border-radius: 9999px !important;
+}
+
+/* Gloss: note tags use the configured accent */
+.theme-gloss .topic-tag,
+.theme-gloss .keyword-tag {
+  border-radius: 9999px !important;
+  padding: 0 10px;
+}
+.theme-gloss .topic-tag {
+  color: var(--accent-color);
+  background: var(--accent-fill);
+  border: 1px solid var(--accent-border);
+}
+
+/* Gloss: scrollbar */
+.theme-gloss ::-webkit-scrollbar-track {
+  background: transparent;
+}
+.theme-gloss ::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.18);
+  border-radius: 0;
+}
+.theme-gloss.mode-dark ::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.16);
+}
+
+/* Gloss uses a clear neutral canvas. Color comes from the active mode token;
+   no saturated wallpaper sits behind the glass surfaces. */
+body.theme-gloss,
+body.theme-gloss.mode-light,
+body.theme-gloss.mode-dark {
+  padding: 8px;
+  background: transparent;
+}
+html.theme-gloss {
+  background: transparent;
+}
+
+/* Liquid Gloss SVG filter pipeline and ambient wallpaper */
+.liquid-gloss-defs {
+  position: fixed;
+  width: 0;
+  height: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+.liquid-gloss-ambient {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background: transparent;
+  opacity: 0;
+}
+
+/* Gloss surfaces use the reusable SVG displacement/specular pipeline. The
+   editor scroll tree is excluded below so note scrolling stays compositor-fast. */
+.theme-gloss .liquid-gloss-surface {
+  position: relative;
+  isolation: isolate;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: var(--color-panel);
+  backdrop-filter: blur(24px) saturate(140%);
+  -webkit-backdrop-filter: blur(24px) saturate(140%);
+  box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.22), 0 16px 36px rgba(0, 0, 0, 0.08);
+  border-radius: var(--gloss-panel-radius, 24px);
+  overflow: hidden;
+}
+.theme-gloss.mode-dark .liquid-gloss-surface {
+  border-color: rgba(255, 255, 255, 0.12);
+  background: rgba(15, 15, 15, 0.35);
+  box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.2), 0 16px 36px rgba(0, 0, 0, 0.24);
+}
+.theme-gloss .liquid-gloss-surface::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  border-radius: inherit;
+  filter: url('#liquid-gloss-refraction');
+  opacity: 0.22;
+  mix-blend-mode: screen;
+}
+.theme-gloss .liquid-gloss-surface::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  border-radius: inherit;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7);
+  filter: url('#liquid-gloss-specular');
+  opacity: 0.55;
+}
+.theme-gloss .liquid-gloss-surface > * {
+  position: relative;
+  z-index: 1;
+}
+.theme-gloss .liquid-gloss-sidebar,
+.theme-gloss [data-region="workspace"],
+.theme-gloss .ai-panel {
+  border-radius: var(--radius-module) !important;
+  overflow: hidden !important;
+}
+.theme-gloss .editor-container,
+.theme-gloss .editor-container * {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+/* Gloss capsules: neutral frosted tracks and dynamic accent states */
+.theme-gloss .liquid-gloss-surface button:not(.titlebar-menu):not(.titlebar-menu-dropdown),
+.theme-gloss button.rounded-full {
+  background: rgba(255, 255, 255, 0.04);
+  border-color: rgba(255, 255, 255, 0.12);
+  box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.22);
+}
+.theme-gloss .bg-brand-500,
+.theme-gloss .bg-brand-500\/90,
+.theme-gloss .bg-brand-600 {
+  background-color: var(--color-brand-500) !important;
+}
+.theme-gloss .bg-brand-600\/10 {
+  background-color: var(--accent-fill) !important;
+}
+.theme-gloss .text-brand-300,
+.theme-gloss .text-brand-400,
+.theme-gloss .text-brand-500 {
+  color: var(--accent-color) !important;
+}
+.theme-gloss .border-brand-500,
+.theme-gloss .border-brand-500\/40,
+.theme-gloss .border-brand-500\/50 {
+  border-color: var(--accent-border) !important;
+}
+.theme-gloss .topic-tag,
+.theme-gloss .keyword-tag,
+.theme-gloss .wiki-link {
+  color: var(--accent-color);
+  background: var(--accent-fill);
+  border-color: var(--accent-border);
+}
+.theme-gloss .topic-tag,
+.theme-gloss .keyword-tag {
+  border-radius: 9999px !important;
+}
+
+/* Gloss: sliders and switch thumbs are circular glass controls */
+.theme-gloss input[type='range']::-webkit-slider-thumb,
+.theme-gloss input[type='range']::-moz-range-thumb {
+  border-radius: 9999px;
+  background: #ffffff;
+  border-color: var(--accent-border);
+  box-shadow: 0 2px 6px var(--accent-glow);
+}
+
+/* Gloss: typography */
+.theme-gloss.mode-dark h1,
+.theme-gloss.mode-dark h2,
+.theme-gloss.mode-dark h3,
+.theme-gloss.mode-dark h4 {
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+  font-weight: 600;
+}.theme-gloss.mode-light h1,
+.theme-gloss.mode-light h2,
+.theme-gloss.mode-light h3,
+.theme-gloss.mode-light h4 {
+  letter-spacing: -0.01em;
+  font-weight: 700;
+}
+
+/* Shared dropdown/context surface. Gloss uses a higher-opacity fill so the
+   underlying editor or graph cannot reduce menu text contrast. */
+.gloss-dropdown-surface {
+  background: var(--color-panel);
+  border: 1px solid var(--color-border);
+  border-radius: 14px;
+  overflow: hidden;
+  backdrop-filter: blur(20px) saturate(160%);
+  -webkit-backdrop-filter: blur(20px) saturate(160%);
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.24), inset 0 1px 0 rgba(255, 255, 255, 0.16);
+}
+.gloss-dropdown-surface > button,
+.gloss-dropdown-surface .titlebar-menu-dropdown {
+  border: none !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+}
+.theme-gloss .gloss-dropdown-surface {
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 14px !important;
+  overflow: hidden !important;
+  backdrop-filter: blur(24px) saturate(180%);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.32), inset 0 1px 0 rgba(255, 255, 255, 0.16);
+}
+.theme-gloss.mode-dark .gloss-dropdown-surface {
+  background: rgba(24, 24, 27, 0.85);
+}
+.theme-gloss.mode-light .gloss-dropdown-surface {
+  background: rgba(255, 255, 255, 0.85);
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.16), inset 0 1px 0 rgba(255, 255, 255, 0.55);
+}
+.theme-gloss .ai-reset-button {
+  min-width: 52px;
+  min-height: 28px;
+  padding: 4px 14px !important;
+  border-radius: 9999px !important;
+  border: none !important;
+}
+

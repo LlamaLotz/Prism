@@ -21,6 +21,8 @@ import { ResizeHandle } from './components/ResizeHandle';
 import { ContextMenu } from './components/ContextMenu';
 import { useDialog } from './components/DialogProvider';
 import { TitleBar } from './components/TitleBar';
+import { LiquidGlossDefs } from './components/LiquidGlossDefs';
+import { LiquidGlass } from './components/LiquidGlass';
 
 import { SplashScreen } from './components/SplashScreen';
 import { FileText, Network, PanelLeftClose, PanelLeftOpen, SplitSquareVertical, Sparkles, Tags } from 'lucide-react';
@@ -211,14 +213,14 @@ export default function App() {
   useEffect(() => {
     const root = document.documentElement;
     // Clear all theme/mode classes first.
-    root.classList.remove('theme-industrial', 'theme-glass', 'mode-dark', 'mode-light');
+    root.classList.remove('theme-industrial', 'theme-glass', 'theme-gloss', 'mode-dark', 'mode-light');
     // Mount the active combination.
     const style = settings.appearance.themeStyle;
     const mode = settings.appearance.themeMode;
     root.classList.add(`theme-${style}`, `mode-${mode}`);
   }, [settings.appearance.themeStyle, settings.appearance.themeMode]);
 
-  const isRounded = settings.appearance.themeStyle === 'glass';
+  const isRounded = settings.appearance.themeStyle === 'glass' || settings.appearance.themeStyle === 'gloss';
 
   // Panel rounding class (Rounded theme only)
   const panelRounded = isRounded ? 'rounded-2xl overflow-hidden' : '';
@@ -1410,7 +1412,8 @@ export default function App() {
   };
 
   return (
-    <div className="flex flex-col h-screen w-screen bg-base text-slate-100 font-sans overflow-hidden select-none">
+    <div className="liquid-gloss-app flex flex-col h-screen w-screen bg-base text-slate-100 font-sans overflow-hidden select-none">
+      <LiquidGlossDefs />
       {/* Everything except the splash is gated until the splash is fully gone
           (splashVisible false): the heavy UI (graph force simulation, editor,
           sidebar) only mounts after the loader animation has finished and the
@@ -1437,7 +1440,7 @@ export default function App() {
             sidebarVisible={!sidebarCollapsed}
           />
 
-      <div className={`flex flex-1 overflow-hidden ${isRounded ? 'p-2 gap-2' : ''}`}>
+      <div className={`liquid-gloss-layout flex flex-1 overflow-hidden ${isRounded ? 'p-2 gap-2' : ''}`}>
       {/* Sidebar navigation (collapsible) */}
       {sidebarCollapsed ? (
         <div
@@ -1454,6 +1457,7 @@ export default function App() {
         </div>
       ) : (
         <div className="relative shrink-0 h-full" style={{ width: sidebarWidth }}>
+          <LiquidGlass className="liquid-gloss-sidebar h-full">
           <Sidebar
             notes={notes}
             folders={folders}
@@ -1478,6 +1482,7 @@ export default function App() {
             statusText={settings.appearance.sidebarStatusText}
             appIcon={settings.appearance.appIcon}
           />
+          </LiquidGlass>
           <ResizeHandle
             direction="horizontal"
             onResize={(d) => saveSidebarWidth(Math.min(480, Math.max(180, sidebarWidth + d)))}
@@ -1487,11 +1492,12 @@ export default function App() {
       )}
 
       {/* Primary Workspace Panel */}
-      <div className="flex-1 min-w-0 flex flex-col h-full overflow-hidden" data-region="workspace">
+      <LiquidGlass className="flex-1 min-w-0 flex flex-col h-full overflow-hidden" as="div">
+      <div data-region="workspace" className="flex-1 min-w-0 flex flex-col h-full overflow-hidden">
 
 
         {/* Workspace Main Panels */}
-        <div className="flex-1 flex min-w-0 overflow-hidden">
+        <div className="workspace-panels flex-1 flex min-w-0 min-h-0 overflow-hidden">
           
           {/* Note Editor Pane */}
           {(layout === 'editor' || layout === 'split') && (
@@ -1516,7 +1522,7 @@ export default function App() {
           {/* Connected Force Graph Network Pane (2D/3D toggle inside) */}
           {(layout === 'graph' || layout === 'split') && (
             <GraphViewContainer
-              key={settings.appearance.graphNodeColor}
+              key={`${settings.appearance.graphNodeColor}|${settings.appearance.themeStyle}|${settings.appearance.themeMode}`}
               graphData={graphData}
               activeNote={graphActiveNote}
               onSelectNoteByTitle={handleWikiLinkClick}
@@ -1537,10 +1543,12 @@ export default function App() {
 
         </div>
       </div>
+      </LiquidGlass>
 
       {/* AI Co-Pilot chat bar right sidebar (separate floating card) */}
       {showAICoPilot && (
-        <div className="relative shrink-0 h-full ai-panel overflow-hidden" style={{ width: aiWidth }}>
+        <LiquidGlass className="relative shrink-0 h-full ai-panel overflow-hidden" style={{ width: aiWidth }}>
+
           <ResizeHandle
             direction="horizontal"
             onResize={(d) => saveAiWidth(Math.min(560, Math.max(240, aiWidth - d)))}
@@ -1553,7 +1561,7 @@ export default function App() {
             onOpenSettings={() => openSettings('ai')}
             onInsertText={handleInsertText}
           />
-        </div>
+        </LiquidGlass>
       )}
 
       </div>
