@@ -35,22 +35,22 @@
 }
 
 @theme {
-  /* Neutral Charcoal Grey ramp — remaps Tailwind's blue-tinted slate-*
-     scale to warm charcoal greys so every slate class in the app renders
-     as a crisp neutral grey (no blue tint). */
+  /* Tailwind slate/neutral remaps — defined once; the 4 theme combos
+     below override --color-base / --color-panel / etc. directly so
+     Tailwind classes render from the active combo's token values. */
+
   --color-slate-50: #fafafa;
   --color-slate-100: #f4f4f5;
   --color-slate-200: #e4e4e7;
   --color-slate-300: #d4d4d8;
-  --color-slate-400: #a1a1aa;     /* text-secondary — subdued labels */
+  --color-slate-400: #a1a1aa;
   --color-slate-500: #71717a;
   --color-slate-600: #52525b;
   --color-slate-700: #3f3f46;
   --color-slate-800: #27272a;
-  --color-slate-900: #1c1c1e;     /* bg-secondary — panels & editor */
-  --color-slate-950: #121214;     /* bg-primary — workspace */
+  --color-slate-900: #1c1c1e;
+  --color-slate-950: #121214;
 
-  /* Neutral ramp — same warm charcoal greys, used by modals/overlays. */
   --color-neutral-50: #fafafa;
   --color-neutral-100: #f4f4f5;
   --color-neutral-200: #e4e4e7;
@@ -63,22 +63,22 @@
   --color-neutral-900: #1c1c1e;
   --color-neutral-950: #121214;
 
-  /* Surfaces & Backgrounds (Neutral Charcoal) */
-  --color-base: #121214;          /* bg-primary — App root, 2D/3D canvas, titlebar */
-  --color-panel: #1c1c1e;         /* bg-secondary — Sidebar, docked drawers, settings nav */
-  --color-surface: #2B2A2A;       /* bg-tertiary — Raised cards, active rows, dialog panels */
-  --color-surface-hover: #3A3939; /* Hovered rows, segmented control track */
-  --color-border: #383737;        /* Crisp neutral borders, dividers, hairline outlines */
+  /* Surface tokens (overridden per theme combo) */
+  --color-base: #121214;
+  --color-panel: #1c1c1e;
+  --color-surface: #2B2A2A;
+  --color-surface-hover: #3A3939;
+  --color-border: #383737;
   --color-border-active: rgba(254, 176, 93, 0.4);
 
-  /* Brand Accent: Warm Amber Gold (full ramp so every shade resolves) */
+  /* Brand Accent: Warm Amber Gold */
   --color-brand-50: #fff9f0;
   --color-brand-100: #ffefd9;
   --color-brand-200: #ffdfb3;
   --color-brand-300: #ffcb85;
   --color-brand-400: #ffc069;
-  --color-brand-500: #FEB05D;     /* accent-primary — buttons, active tabs, nodes */
-  --color-brand-600: #f59e0b;     /* accent-hover — hover gold */
+  --color-brand-500: #FEB05D;
+  --color-brand-600: #f59e0b;
   --color-brand-700: #c97f0a;
   --color-brand-800: #9a610c;
   --color-brand-900: #6d4408;
@@ -87,34 +87,29 @@
   --color-hover-glow: rgba(254, 176, 93, 0.35);
   --color-hover-glow-active: rgba(245, 158, 11, 0.45);
 
-  /* Muted Blue — tags & badges */
   --color-accent-secondary: #5A7ACD;
 
-  /* Text & Foreground */
-  --color-offwhite: #F5F2F2;      /* text-primary — Off-White / Light Grey */
-  --color-text-hi: #F5F2F2;       /* Primary headings, titles */
-  --color-text-body: #C2C0C0;     /* Markdown reading text, note body */
-  --color-text-muted: #a1a1aa;    /* text-secondary — timestamps, keyboard shortcuts */
+  --color-offwhite: #F5F2F2;
+  --color-text-hi: #F5F2F2;
+  --color-text-body: #C2C0C0;
+  --color-text-muted: #a1a1aa;
 
-  /* Typography */
   --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
   --font-display: 'Inter', system-ui, sans-serif;
   --font-serif: 'Instrument Serif', Georgia, serif;
   --font-mono: 'Fira Code', ui-monospace, SFMono-Regular, monospace;
 
-  /* Enforce zero border radius globally for structural geometric sharpness.
-     `--radius-full` stays large so genuinely-circular elements (status dots,
-     avatars, legend swatches) keep their circle. */
-  --radius-none: 0px;
-  --radius-sm: 0px;
-  --radius: 0px;
-  --radius-md: 0px;
-  --radius-lg: 0px;
-  --radius-xl: 0px;
-  --radius-2xl: 0px;
-  --radius-3xl: 0px;
-  --radius-4xl: 0px;
-  --radius-full: 9999px;
+  /* Zero-radius across ALL themes — strict crystalline geometry */
+  --radius-none: 0px !important;
+  --radius-sm: 0px !important;
+  --radius: 0px !important;
+  --radius-md: 0px !important;
+  --radius-lg: 0px !important;
+  --radius-xl: 0px !important;
+  --radius-2xl: 0px !important;
+  --radius-3xl: 0px !important;
+  --radius-4xl: 0px !important;
+  --radius-full: 9999px !important;
 }
 
 /* Base Body Styles */
@@ -126,56 +121,43 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+/* ========================================================================== */
+/* ZERO-RADIUS: Industrial theme — every element is razor-sharp.               */
+/* Glass theme gets soft rounded corners below.                               */
+/* ========================================================================== */
+
+.theme-industrial *,
+.theme-industrial *::before,
+.theme-industrial *::after {
+  border-radius: 0px !important;
+}
+
+/* Re-assert rounded-full in industrial (universal * reset has higher specificity) */
+.theme-industrial .rounded-full,
+.theme-industrial .status-indicator-dot,
+.rounded-full,
+.status-indicator-dot {
+  border-radius: 9999px !important;
+}
+
 code,
 pre {
   font-family: var(--font-mono);
 }
 
-/* Force strict 0px radius on standard UI components. Cards, buttons, inputs,
-   modals, tabs and window chrome must be razor-sharp. */
-div,
-button,
-input,
-textarea,
-select,
-dialog,
-header,
-aside,
-section,
-article {
-  border-radius: 0 !important;
-}
-
-/* Circular elements specifically intended to be complete circles (avatars,
-   status dots, graph legend swatches) keep their circle despite the reset. */
 .rounded-full {
   border-radius: 9999px !important;
 }
 
-/* Neutral Charcoal theme extras (kept in `@layer base` so Tailwind utility
-   classes like `border-transparent`, `hover:border-slate-800`, `border-0`
-   still win — these are only defaults for unstyled controls). */
 @layer base {
-  /* Display & section headers use the display face (Inter) by default.
-     Kept inside @layer base so utility classes (e.g. `font-serif`, `font-sans`)
-     can override it on individual headings. */
-  h1,
-  h2,
-  h3,
-  h4 {
+  h1, h2, h3, h4 {
     font-family: var(--font-display);
   }
 
-  /* Crisp 1px neutral borders on interactive controls */
-  button,
-  input,
-  textarea,
-  select {
+  button, input, textarea, select {
     border: 1px solid var(--color-border);
   }
 
-  /* Square slider thumbs — sharp block geometry, warm amber, matching the
-     square toggle switches in Settings. */
   input[type='range'] {
     -webkit-appearance: none;
     appearance: none;
@@ -188,10 +170,8 @@ article {
     appearance: none;
     width: 14px;
     height: 14px;
-    /* WebKit sizes the thumb content-box, so its outer height is 14 + 2px
-       border = 16px; -(16 - 4 track) / 2 centers it exactly on the track. */
     margin-top: -6px;
-    border-radius: 2px;
+    border-radius: var(--thumb-radius, 2px);
     background: var(--color-brand-500);
     border: 1px solid var(--color-brand-600);
     cursor: pointer;
@@ -199,7 +179,7 @@ article {
   input[type='range']::-moz-range-thumb {
     width: 14px;
     height: 14px;
-    border-radius: 2px;
+    border-radius: var(--thumb-radius, 2px);
     background: var(--color-brand-500);
     border: 1px solid var(--color-brand-600);
     cursor: pointer;
@@ -209,10 +189,6 @@ article {
     background: var(--color-slate-800);
   }
 
-  /* Button hover glows — border highlight + soft underglow across the app.
-     Colors come from --color-hover-glow (overridden at runtime by the
-     Appearance "hover glow" setting). Layered so per-button hover utilities
-     still take precedence. */
   button:not(:disabled):hover {
     border-color: var(--color-brand-500);
     box-shadow: 0 0 10px var(--color-hover-glow);
@@ -229,7 +205,6 @@ article {
     border-color: var(--color-brand-600);
     box-shadow: 0 0 6px var(--color-hover-glow-active);
   }
-  /* Title bar menu buttons: no glow, no border — text color only. */
   button.titlebar-menu:hover,
   button.titlebar-menu:active {
     box-shadow: none !important;
@@ -237,14 +212,12 @@ article {
   }
 }
 
-/* Hue slider in the custom accent picker: a crisp white-ring thumb so the
-   current hue is obvious against the rainbow track. */
+/* Hue slider in custom accent picker */
 input[type='range'].hue-slider::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
   width: 16px;
   height: 16px;
-  /* Outer height 16 + 4px border = 20px; -(20 - 4 track) / 2 = -8px. */
   margin-top: -8px;
   border-radius: 9999px;
   background: #fff;
@@ -262,8 +235,6 @@ input[type='range'].hue-slider::-moz-range-thumb {
   cursor: pointer;
 }
 
-/* Hide scrollbars on horizontal scrubber tracks (ruler, tick strips) while
-   keeping them scrollable. */
 .no-scrollbar {
   scrollbar-width: none;
   -ms-overflow-style: none;
@@ -288,17 +259,17 @@ input[type='range'].hue-slider::-moz-range-thumb {
   background: var(--color-brand-500);
 }
 
-/* Wiki Links */
+/* Wiki Links — dynamic accent tint via color-mix */
 .wiki-link {
   color: var(--color-brand-500);
-  background: rgba(254, 176, 93, 0.08);
-  border-bottom: 1px solid rgba(254, 176, 93, 0.35);
+  background: color-mix(in srgb, var(--color-brand-500) 10%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--color-brand-500) 35%, transparent);
   padding: 1px 4px;
   border-radius: 0;
   transition: all 0.15s ease;
 }
 .wiki-link:hover {
-  background: rgba(254, 176, 93, 0.18);
+  background: color-mix(in srgb, var(--color-brand-500) 20%, transparent);
   border-bottom-color: var(--color-brand-500);
 }
 .wiki-link-uncreated {
@@ -306,7 +277,6 @@ input[type='range'].hue-slider::-moz-range-thumb {
   border-bottom: 1px dashed #858383;
 }
 
-/* Standard markdown links to external URLs (preview mode): styled, not navigable */
 .wiki-link-external {
   color: #C2C0C0;
   background-color: rgba(194, 192, 192, 0.08);
@@ -319,7 +289,6 @@ input[type='range'].hue-slider::-moz-range-thumb {
   gap: 3px;
 }
 
-/* Performance: layout containment so off-screen lines don't trigger browser layout recalculations */
 .editor-container,
 .markdown-body {
   contain: content;
@@ -327,90 +296,58 @@ input[type='range'].hue-slider::-moz-range-thumb {
   contain-intrinsic-size: 1px 500px;
 }
 
-/* The virtualized band swaps spacers for real content on every scroll/jump;
-   Chromium's scroll anchoring would fight the manual snap corrections and
-   cause a visible "scrolled down then back up" double-move. */
 .markdown-body {
   overflow-anchor: none;
 }
 
-/* Performance: promote frequently animated panels to their own GPU layers */
 .sidebar,
 .workspace-toolbar,
 .editor-body {
   will-change: transform;
 }
 
-/* Ingestion log drawer slide-up entrance */
+/* Ingestion log drawer */
 @keyframes ingestion-drawer-in {
-  from {
-    opacity: 0;
-    transform: translateY(16px) scale(0.98);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-  }
+  from { opacity: 0; transform: translateY(16px) scale(0.98); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
 }
-
 .ingestion-drawer {
   animation: ingestion-drawer-in 0.18s ease-out;
 }
 
-/* Block-level jump flash highlight (CodeMirror line decorations) */
+/* Block-level jump flash */
 @keyframes blockFlash {
-  from {
-    background-color: rgba(254, 176, 93, 0.4);
-  }
-  to {
-    background-color: transparent;
-  }
+  from { background-color: rgba(254, 176, 93, 0.4); }
+  to   { background-color: transparent; }
 }
-
-/* Identical animation under a different name: switching the animation-name
-   on consecutive jumps restarts the flash even on the same line. */
 @keyframes blockFlashAlt {
-  from {
-    background-color: rgba(254, 176, 93, 0.4);
-  }
-  to {
-    background-color: transparent;
-  }
+  from { background-color: rgba(254, 176, 93, 0.4); }
+  to   { background-color: transparent; }
 }
-
-/* Shared block-jump flash highlight: applied to CodeMirror lines (edit mode)
-   and to preview-mode markdown elements (see Editor's block-jump logic). */
 .block-highlight {
   animation-duration: 1.5s;
   animation-timing-function: ease-out;
   animation-fill-mode: forwards;
   border-radius: 0;
 }
-
 .cm-line.block-highlight.flash-a,
-.flash-a {
-  animation-name: blockFlash;
-}
-
+.flash-a { animation-name: blockFlash; }
 .cm-line.block-highlight.flash-b,
-.flash-b {
-  animation-name: blockFlashAlt;
-}
+.flash-b { animation-name: blockFlashAlt; }
 
-/* Find-in-note match highlights (CodeMirror decorations + preview spans) */
 .search-match {
   background: rgba(254, 176, 93, 0.3);
   border-radius: 0;
-  color: #fff;
+  color: var(--color-text-hi);
 }
-
 .search-match-active {
   background: #FEB05D;
-  color: #121214;
+  color: var(--color-base);
   border-radius: 0;
 }
 
-/* Semantic Tag Overrides (sharp badges) — muted blue accent for tags */
+/* Note tags — razor-sharp in industrial, rounded pills in glass (overridden
+   per theme below). Base styles are square; the glass theme rounds them. */
 .topic-tag {
   color: #5A7ACD;
   background: rgba(90, 122, 205, 0.1);
@@ -424,9 +361,6 @@ input[type='range'].hue-slider::-moz-range-thumb {
   line-height: 1.4;
 }
 
-/* Hidden local keywords (`---kw---`): rendered as yellow pills in the editor,
-   matching the LinkHub keyword color so the same concept reads the same
-   everywhere. They stay hidden in preview mode (stripped by the formatter). */
 .keyword-tag {
   color: #fbbf24;
   background: rgba(251, 191, 36, 0.1);
@@ -441,34 +375,419 @@ input[type='range'].hue-slider::-moz-range-thumb {
   line-height: 1.4;
 }
 
-/* Splash screen entrance */
-@keyframes splash-in {
-  from {
-    opacity: 0;
-    transform: scale(0.97);
-  }
-  to {
-    opacity: 1;
-    transform: scale(1);
-  }
+/* Glass theme: note tags become rounded pills */
+.theme-glass .topic-tag,
+.theme-glass .keyword-tag {
+  border-radius: 9999px !important;
+  padding: 0 10px;
 }
 
-.splash-in {
-  animation: splash-in 0.5s ease-out both;
+/* Splash screen */
+@keyframes splash-in {
+  from { opacity: 0; transform: scale(0.97); }
+  to   { opacity: 1; transform: scale(1); }
 }
+.splash-in { animation: splash-in 0.5s ease-out both; }
 
 @keyframes logo-float {
-  0%,
-  100% {
-    transform: translateY(0);
-  }
-  50% {
-    transform: translateY(-5px);
-  }
+  0%, 100% { transform: translateY(0); }
+  50%      { transform: translateY(-5px); }
+}
+.splash-logo { animation: logo-float 3.2s ease-in-out infinite; }
+
+
+/* ========================================================================== */
+/* THEME MATRIX: 2 styles × 2 modes = 4 combinations                          */
+/* Each block overrides --color-slate-* and --color-neutral-* so Tailwind     */
+/* utility classes (bg-slate-900, text-slate-200, etc.) switch transparently. */
+/* ========================================================================== */
+
+/* === 1. INDUSTRIAL DARK (Default) ========================================= */
+.theme-industrial.mode-dark {
+  --color-base: #121214;
+  --color-panel: #1c1c1e;
+  --color-surface: #2B2A2A;
+  --color-surface-hover: #3A3939;
+  --color-border: #383737;
+  --color-text-hi: #F5F2F2;
+  --color-text-body: #C2C0C0;
+  --color-text-muted: #a1a1aa;
+  --color-offwhite: #F5F2F2;
+
+  --color-slate-50: #fafafa;
+  --color-slate-100: #f4f4f5;
+  --color-slate-200: #e4e4e7;
+  --color-slate-300: #d4d4d8;
+  --color-slate-400: #a1a1aa;
+  --color-slate-500: #71717a;
+  --color-slate-600: #52525b;
+  --color-slate-700: #3f3f46;
+  --color-slate-800: #27272a;
+  --color-slate-900: #1c1c1e;
+  --color-slate-950: #121214;
+
+  --color-neutral-50: #fafafa;
+  --color-neutral-100: #f4f4f5;
+  --color-neutral-200: #e4e4e7;
+  --color-neutral-300: #d4d4d8;
+  --color-neutral-400: #a1a1aa;
+  --color-neutral-500: #71717a;
+  --color-neutral-600: #52525b;
+  --color-neutral-700: #3f3f46;
+  --color-neutral-800: #27272a;
+  --color-neutral-900: #1c1c1e;
+  --color-neutral-950: #121214;
+
+  color-scheme: dark;
 }
 
-.splash-logo {
-  animation: logo-float 3.2s ease-in-out infinite;
+/* === 2. INDUSTRIAL LIGHT (Crisp Drafting) ================================== */
+.theme-industrial.mode-light {
+  --color-base: #EAEBED;
+  --color-panel: #F4F5F7;
+  --color-surface: #FFFFFF;
+  --color-surface-hover: #E2E4E9;
+  --color-border: #D1D5DB;
+  --color-text-hi: #0F172A;
+  --color-text-body: #334155;
+  --color-text-muted: #64748B;
+  --color-offwhite: #0F172A;
+
+  /* Inverted ramp: low numbers = dark text, high numbers = light bg */
+  --color-slate-50: #0f172a;
+  --color-slate-100: #1e293b;
+  --color-slate-200: #334155;
+  --color-slate-300: #475569;
+  --color-slate-400: #64748b;
+  --color-slate-500: #94a3b8;
+  --color-slate-600: #cbd5e1;
+  --color-slate-700: #e2e8f0;
+  --color-slate-800: #f1f5f9;
+  --color-slate-900: #F4F5F7;
+  --color-slate-950: #FFFFFF;
+
+  --color-neutral-50: #171717;
+  --color-neutral-100: #262626;
+  --color-neutral-200: #404040;
+  --color-neutral-300: #525252;
+  --color-neutral-400: #737373;
+  --color-neutral-500: #a3a3a3;
+  --color-neutral-600: #d4d4d4;
+  --color-neutral-700: #e5e5e5;
+  --color-neutral-800: #f5f5f5;
+  --color-neutral-900: #F4F5F7;
+  --color-neutral-950: #FFFFFF;
+
+  color-scheme: light;
 }
 
+/* === 3. LIQUID GLASS DARK (Smoked Obsidian) ================================ */
+.theme-glass.mode-dark {
+  --color-base: #08090a;
+  --color-panel: rgba(18, 20, 24, 0.72);
+  --color-surface: rgba(30, 34, 42, 0.6);
+  --color-surface-hover: rgba(45, 52, 64, 0.8);
+  --color-border: rgba(255, 255, 255, 0.12);
+  --color-text-hi: #ffffff;
+  --color-text-body: #d1d5db;
+  --color-text-muted: #9ca3af;
+  --color-offwhite: #ffffff;
 
+  --color-slate-50: #fafafa;
+  --color-slate-100: #f4f4f5;
+  --color-slate-200: #e4e4e7;
+  --color-slate-300: #d4d4d8;
+  --color-slate-400: #a1a1aa;
+  --color-slate-500: #71717a;
+  --color-slate-600: #52525b;
+  --color-slate-700: #3f3f46;
+  --color-slate-800: #27272a;
+  --color-slate-900: #181a1e;
+  --color-slate-950: #0d0e12;
+
+  --color-neutral-50: #fafafa;
+  --color-neutral-100: #f4f4f5;
+  --color-neutral-200: #e4e4e7;
+  --color-neutral-300: #d4d4d8;
+  --color-neutral-400: #a1a1aa;
+  --color-neutral-500: #71717a;
+  --color-neutral-600: #52525b;
+  --color-neutral-700: #3f3f46;
+  --color-neutral-800: #27272a;
+  --color-neutral-900: #181a1e;
+  --color-neutral-950: #0d0e12;
+
+  --glass-specular-edge: inset 0 1px 0 0 rgba(255, 255, 255, 0.25),
+                         inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+  --glass-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.55);
+  --backdrop-blur: blur(20px) saturate(190%);
+  --glass-border: 1px solid rgba(255, 255, 255, 0.1);
+  color-scheme: dark;
+}
+
+/* === 4. LIQUID GLASS LIGHT (Crystalline Quartz) ============================ */
+.theme-glass.mode-light {
+  --color-base: #e2e5ea;
+  --color-panel: rgba(255, 255, 255, 0.68);
+  --color-surface: rgba(255, 255, 255, 0.82);
+  --color-surface-hover: rgba(255, 255, 255, 0.95);
+  --color-border: rgba(255, 255, 255, 0.9);
+  --color-text-hi: #000000;
+  --color-text-body: #1f2937;
+  --color-text-muted: #4b5563;
+  --color-offwhite: #000000;
+
+  /* Inverted ramp: low numbers = dark text, high numbers = light bg */
+  --color-slate-50: #0f172a;
+  --color-slate-100: #1e293b;
+  --color-slate-200: #334155;
+  --color-slate-300: #475569;
+  --color-slate-400: #64748b;
+  --color-slate-500: #94a3b8;
+  --color-slate-600: #cbd5e1;
+  --color-slate-700: #e2e8f0;
+  --color-slate-800: #f1f5f9;
+  --color-slate-900: #f8fafc;
+  --color-slate-950: #ffffff;
+
+  --color-neutral-50: #171717;
+  --color-neutral-100: #262626;
+  --color-neutral-200: #404040;
+  --color-neutral-300: #525252;
+  --color-neutral-400: #737373;
+  --color-neutral-500: #a3a3a3;
+  --color-neutral-600: #d4d4d4;
+  --color-neutral-700: #e5e5e5;
+  --color-neutral-800: #f5f5f5;
+  --color-neutral-900: #f8fafc;
+  --color-neutral-950: #ffffff;
+
+  --glass-specular-edge: inset 0 1px 0 0 rgba(255, 255, 255, 0.95),
+                         inset 0 0 0 1px rgba(0, 0, 0, 0.04);
+  --glass-shadow: 0 4px 20px rgba(0, 0, 0, 0.06);
+  --backdrop-blur: blur(20px) saturate(190%);
+  --glass-border: 1px solid rgba(0, 0, 0, 0.08);
+  color-scheme: light;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Glass surfaces: backdrop-blur + specular bevel on key panels */
+.theme-glass .sidebar,
+.theme-glass [data-region="graph"],
+.theme-glass .ai-panel,
+.theme-glass .dialog-modal {
+  backdrop-filter: var(--backdrop-blur) !important;
+  -webkit-backdrop-filter: var(--backdrop-blur) !important;
+  box-shadow: var(--glass-specular-edge);
+}
+
+/* Glass theme: radius tokens — pill-shaped rounded edges */
+.theme-glass {
+  --radius-none: 0px;
+  --radius-sm: 6px;
+  --radius: 9999px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 20px;
+  --radius-2xl: 24px;
+  --radius-3xl: 28px;
+  --radius-4xl: 32px;
+  --thumb-radius: 9999px;
+}
+
+/* Glass theme: override the industrial zero-radius on structural UI */
+.theme-glass div,
+.theme-glass input,
+.theme-glass textarea,
+.theme-glass select,
+.theme-glass dialog,
+.theme-glass header,
+.theme-glass aside,
+.theme-glass section,
+.theme-glass article {
+  border-radius: unset !important;
+}
+
+/* Glass theme: cards, panels, modals get pill-soft radii */
+.theme-glass [class*="rounded-2xl"] { border-radius: var(--radius-2xl) !important; }
+.theme-glass [class*="rounded-xl"] { border-radius: var(--radius-xl) !important; }
+.theme-glass [class*="rounded-lg"] { border-radius: var(--radius-lg) !important; }
+.theme-glass [class*="rounded-md"] { border-radius: var(--radius-md) !important; }
+.theme-glass [class*="rounded-sm"] { border-radius: var(--radius-sm) !important; }
+.theme-glass [class*="rounded-full"] { border-radius: 9999px !important; }
+.theme-glass .rounded-none { border-radius: 0 !important; }
+
+/* Glass theme: bare `rounded` class — pill (9999px) */
+.theme-glass .rounded:not(.rounded-none):not(.rounded-sm):not(.rounded-md):not(.rounded-lg):not(.rounded-xl):not(.rounded-2xl):not(.rounded-3xl):not(.rounded-4xl):not(.rounded-full) {
+  border-radius: 9999px !important;
+}
+
+/* Glass theme: workspace panels — consistent rounded corners + overflow containment */
+.theme-glass [data-region="sidebar"],
+.theme-glass .sidebar {
+  border-radius: var(--radius-2xl) !important;
+  overflow: hidden;
+}
+
+/* Glass theme: main workspace area — rounded corners only.
+   Must NOT have overflow:hidden — that would break the flex height chain
+   (inner row can't compute flex-1 from a parent that clips its own size). */
+.theme-glass [data-region="workspace"] {
+  border-radius: var(--radius-2xl) !important;
+}
+
+/* Glass theme: AI Co-Pilot panel */
+.theme-glass .ai-panel {
+  border-radius: var(--radius-2xl) !important;
+  overflow: hidden;
+  flex-shrink: 0 !important;
+}
+
+/* Glass theme: outer window margin so rounded corners don't flatten against edges */
+body.theme-glass {
+  padding: 8px;
+}
+html.theme-glass {
+  background: var(--color-base);
+}
+
+/* Split view: editor and graph share space side-by-side evenly */
+[data-region="workspace"] [data-region="editor"],
+[data-region="workspace"] [data-region="graph"] {
+  flex: 1 1 0%;
+  min-width: 0;
+}
+
+/* Editor container: independent overflow, own scroll context */
+[data-region="editor"] {
+  overflow: hidden;
+}
+
+/* Time Machine modal: fully opaque, no translucency */
+.version-history-modal {
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-border);
+}
+.theme-glass .version-history-modal {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  background-color: var(--color-base) !important;
+}
+
+/* Timeline tick markers: no rounded wrapping from glass pill rule */
+.version-history-modal button.rounded-none {
+  border-radius: 0 !important;
+}
+
+/* Glass theme: every button without an explicit radius class becomes a pill */
+.theme-glass button:not([class*="rounded"]):not([class*="titlebar"]) {
+  border-radius: 9999px !important;
+}
+
+/* Title bar menu dropdown items: no pill shapes, no borders, no glow */
+button.titlebar-menu-dropdown {
+  border: none !important;
+}
+button.titlebar-menu-dropdown:hover {
+  border-color: transparent !important;
+  box-shadow: none !important;
+}
+
+/* Glass theme: menu bar dropdown items stay unpilled */
+.theme-glass button.titlebar-menu-dropdown {
+  border-radius: 0 !important;
+  border: none !important;
+}
+
+/* Glass theme: text-like inputs are pills */
+.theme-glass input[type="text"],
+.theme-glass input[type="search"],
+.theme-glass input:not([type="range"]):not([type="checkbox"]):not([type="radio"]):not([type="color"]):not([type="file"]),
+.theme-glass textarea,
+.theme-glass select {
+  border-radius: 9999px !important;
+}
+
+/* Glass theme: menu bar dropdown items keep their natural radius */
+.theme-glass button.titlebar-menu,
+.theme-glass [class*="titlebar"] button {
+  border-radius: unset !important;
+}
+
+/* Glass theme: panels get glass backdrop + specular edge */
+.theme-glass [class*="bg-slate-900"],
+.theme-glass [class*="bg-slate-950"],
+.theme-glass [class*="bg-neutral-900"],
+.theme-glass [class*="bg-neutral-950"],
+.theme-glass [class*="bg-panel"] {
+  backdrop-filter: var(--backdrop-blur) !important;
+  -webkit-backdrop-filter: var(--backdrop-blur) !important;
+}
+
+/* Strip backdrop-filter from editor content to prevent scroll jank.
+   'editor-container *' covers every child/element that scrolls. */
+.theme-glass .editor-container,
+.theme-glass .editor-container * {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+/* Glass theme: button hover is a static specular highlight, not amber glow */
+.theme-glass button:not(:disabled):hover {
+  box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.6), 0 2px 8px rgba(0, 0, 0, 0.04);
+  border-color: var(--color-border);
+}
+.theme-glass button:not(:disabled):active {
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.08);
+}
+
+/* Glass theme: focus ring — static 1.5px accent border + faint glow */
+.theme-glass *:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--color-hover-glow);
+}
+
+/* Glass theme: hairline translucent separators */
+.theme-glass .border-slate-900\/60,
+.theme-glass .border-slate-800\/60,
+.theme-glass .border-slate-800\/80,
+.theme-glass .border-slate-800,
+.theme-glass .border-slate-900,
+.theme-glass .border-neutral-800,
+.theme-glass .border-neutral-900 {
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+/* Glass theme: scrollbar */
+.theme-glass ::-webkit-scrollbar-track {
+  background: transparent;
+}
+.theme-glass ::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 0;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Typography adaptation per theme                                            */
+/* -------------------------------------------------------------------------- */
+
+/* Industrial: standard crisp rendering */
+.theme-industrial { -webkit-font-smoothing: antialiased; }
+
+/* Glass Dark: headings get text shadow for legibility over translucent backdrops */
+.theme-glass.mode-dark h1,
+.theme-glass.mode-dark h2,
+.theme-glass.mode-dark h3,
+.theme-glass.mode-dark h4 {
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
+  font-weight: 600;
+}
+
+/* Glass Light: tight tracking, bold headings for high contrast */
+.theme-glass.mode-light h1,
+.theme-glass.mode-light h2,
+.theme-glass.mode-light h3,
+.theme-glass.mode-light h4 {
+  letter-spacing: -0.01em;
+  font-weight: 700;
+}

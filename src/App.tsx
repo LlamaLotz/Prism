@@ -113,6 +113,8 @@ const DEFAULT_SETTINGS: AppSettings = {
     userProfile: '',
   },
   appearance: {
+    themeStyle: 'industrial',
+    themeMode: 'dark',
     startupView: 'graph',
     defaultGraphMode: '3d',
     backgroundPattern: 'grid',
@@ -203,6 +205,23 @@ export default function App() {
       hoverGlow: settings.appearance.hoverGlowColor,
     });
   }, [settings.appearance.accentColor, settings.appearance.hoverGlowColor]);
+
+  // Apply theme classes to the root element: .theme-industrial or .theme-glass
+  // combined with .mode-dark or .mode-light. CSS tokens swap instantly.
+  useEffect(() => {
+    const root = document.documentElement;
+    // Clear all theme/mode classes first.
+    root.classList.remove('theme-industrial', 'theme-glass', 'mode-dark', 'mode-light');
+    // Mount the active combination.
+    const style = settings.appearance.themeStyle;
+    const mode = settings.appearance.themeMode;
+    root.classList.add(`theme-${style}`, `mode-${mode}`);
+  }, [settings.appearance.themeStyle, settings.appearance.themeMode]);
+
+  const isRounded = settings.appearance.themeStyle === 'glass';
+
+  // Panel rounding class (Rounded theme only)
+  const panelRounded = isRounded ? 'rounded-2xl overflow-hidden' : '';
 
   // Apply the chosen logo as the OS window (taskbar) icon.
   useEffect(() => {
@@ -1418,7 +1437,7 @@ export default function App() {
             sidebarVisible={!sidebarCollapsed}
           />
 
-      <div className="flex flex-1 overflow-hidden">
+      <div className={`flex flex-1 overflow-hidden ${isRounded ? 'p-2 gap-2' : ''}`}>
       {/* Sidebar navigation (collapsible) */}
       {sidebarCollapsed ? (
         <div
@@ -1468,12 +1487,11 @@ export default function App() {
       )}
 
       {/* Primary Workspace Panel */}
-      <div className="flex-1 flex flex-col h-full overflow-hidden">
-        
+      <div className="flex-1 min-w-0 flex flex-col h-full overflow-hidden" data-region="workspace">
 
 
         {/* Workspace Main Panels */}
-        <div className="flex-1 flex overflow-hidden">
+        <div className="flex-1 flex min-w-0 overflow-hidden">
           
           {/* Note Editor Pane */}
           {(layout === 'editor' || layout === 'split') && (
@@ -1509,32 +1527,35 @@ export default function App() {
               autoRotateSpeed={settings.appearance.autoRotateSpeed}
               labelQuality={settings.appearance.labelQuality}
               nodeColor={settings.appearance.graphNodeColor}
+              themeStyle={settings.appearance.themeStyle}
+              themeMode={settings.appearance.themeMode}
             />
           )}
 
           {/* Vault-wide @topic groups Pane */}
           {layout === 'topics' && <TopicsView onWikiLinkClick={handleWikiLinkClick} />}
 
-          {/* OmniRoute AI chat bar right sidebar */}
-          {showAICoPilot && (
-            <div className="relative shrink-0 h-full" style={{ width: aiWidth }}>
-              <ResizeHandle
-                direction="horizontal"
-                onResize={(d) => saveAiWidth(Math.min(560, Math.max(240, aiWidth - d)))}
-                className="absolute left-0 top-0 bottom-0"
-              />
-              <AISidebar
-                note={activeNote}
-                allNotes={notes}
-                config={settings.omniRoute}
-                onOpenSettings={() => openSettings('ai')}
-                onInsertText={handleInsertText}
-              />
-            </div>
-          )}
-
         </div>
       </div>
+
+      {/* AI Co-Pilot chat bar right sidebar (separate floating card) */}
+      {showAICoPilot && (
+        <div className="relative shrink-0 h-full ai-panel overflow-hidden" style={{ width: aiWidth }}>
+          <ResizeHandle
+            direction="horizontal"
+            onResize={(d) => saveAiWidth(Math.min(560, Math.max(240, aiWidth - d)))}
+            className="absolute left-0 top-0 bottom-0"
+          />
+          <AISidebar
+            note={activeNote}
+            allNotes={notes}
+            config={settings.omniRoute}
+            onOpenSettings={() => openSettings('ai')}
+            onInsertText={handleInsertText}
+          />
+        </div>
+      )}
+
       </div>
 
       {/* Full-screen Settings page */}

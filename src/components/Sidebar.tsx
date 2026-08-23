@@ -544,13 +544,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
             <button
               onClick={onRunIngest}
               disabled={isIngesting}
-              className="flex-1 bg-brand-600 hover:bg-brand-500 disabled:bg-brand-800/40 text-white border border-brand-500/30 rounded p-1.5 flex items-center justify-center transition-colors shadow-sm shadow-brand-600/10"
+              className="flex-1 bg-surface hover:bg-surface-hover text-text-body disabled:bg-surface disabled:text-text-muted border border-border rounded p-1.5 flex items-center justify-center transition-colors"
               title={isIngesting ? "Ingesting..." : "Run custom ingestion script"}
             >
               {isIngesting ? (
-                <RefreshCw className="w-4 h-4 animate-spin text-brand-300" />
+                <RefreshCw className="w-4 h-4 animate-spin text-text-body" />
               ) : (
-                <Play className="w-4 h-4 fill-current text-white" />
+                <Play className="w-4 h-4 fill-current text-text-body" />
               )}
             </button>
           </div>

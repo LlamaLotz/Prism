@@ -311,7 +311,7 @@ export const VersionHistoryRuler: React.FC<VersionHistoryRulerProps> = ({
   return (
     <div ref={overlayRef} className="absolute inset-0 z-30 flex items-center justify-center px-6 pointer-events-none">
       <div
-        className="pointer-events-auto w-full max-w-3xl bg-surface border border-border backdrop-blur-xl rounded-2xl p-4 shadow-2xl select-none"
+        className="pointer-events-auto w-full max-w-3xl version-history-modal rounded-2xl p-4 shadow-2xl select-none"
         style={{ width: cardWidth }}
       >
         {/* Header */}
@@ -384,7 +384,7 @@ export const VersionHistoryRuler: React.FC<VersionHistoryRulerProps> = ({
                   paddingLeft: `calc(50% - ${TICK_SLOT_WIDTH / 2}px)`,
                   paddingRight: `calc(50% - ${TICK_SLOT_WIDTH / 2}px)`,
                 }}
-                className="no-scrollbar overflow-x-auto cursor-grab active:cursor-grabbing touch-pan-y outline-none h-14 flex items-end bg-surface-hover border border-border rounded-xl select-none"
+                className="no-scrollbar overflow-x-auto cursor-grab active:cursor-grabbing touch-pan-y outline-none h-14 flex items-end bg-surface-hover rounded-xl select-none"
               >
                 {versions.map((v, i) => {
                   const selected = i === boundedSelIdx;
@@ -394,7 +394,7 @@ export const VersionHistoryRuler: React.FC<VersionHistoryRulerProps> = ({
                       key={v.version_id ?? 'base'}
                       onClick={() => centerOn(i)}
                       title={fmtTime(v.created_at)}
-                      className="shrink-0 flex items-end justify-center h-full outline-none"
+                      className="shrink-0 flex items-end justify-center h-full outline-none rounded-none border-none"
                       style={{
                         width: TICK_SLOT_WIDTH,
                         scrollSnapAlign: 'center',
@@ -443,7 +443,7 @@ export const VersionHistoryRuler: React.FC<VersionHistoryRulerProps> = ({
                     <span className="text-emerald-400">+{diff.added}</span> / <span className="text-red-400">-{diff.removed}</span>
                   </span>
                 )}
-                <div className="text-lg font-bold text-white font-mono truncate">
+                <div className="text-lg font-bold text-[var(--color-text-hi)] font-mono truncate">
                   {sel ? fmtTime(sel.created_at) : '—'}
                 </div>
               </div>

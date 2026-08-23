@@ -400,6 +400,21 @@ export const Editor: React.FC<EditorProps> = ({
   // Time Machine: version timeline for the active note (base snapshot + every
   // delta, each reconstructed server-side).
   const [showHistory, setShowHistory] = useState(false);
+  const [toolsOpen, setToolsOpen] = useState(false);
+  const toolsRef = useRef<HTMLDivElement | null>(null);
+
+  // Click outside to close the Tools dropdown
+  useEffect(() => {
+    if (!toolsOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (toolsRef.current && !toolsRef.current.contains(e.target as Node)) {
+        setToolsOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [toolsOpen]);
+
   const [historyVersions, setHistoryVersions] = useState<ReconstructedVersion[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyError, setHistoryError] = useState<string | null>(null);
@@ -2218,7 +2233,7 @@ const sidecarPath = (notePath: string): string => {
   return (
     <div
       data-region="editor"
-      className="editor-container relative flex-1 bg-slate-900/10 flex flex-col h-full overflow-hidden"
+      className="editor-container relative flex-1 bg-slate-900/10 flex flex-col h-full"
     >
       
       {/* Find-in-note overlay */}
@@ -2349,51 +2364,54 @@ const sidecarPath = (notePath: string): string => {
               <Redo2 className="w-3.5 h-3.5" />
             </button>
           </div>
-          <div className="flex bg-slate-950 border border-slate-800 rounded-lg p-1">
+          {/* Tools dropdown */}
+          <div className="relative" ref={toolsRef}>
             <button
-              onClick={handleSplit}
-              disabled={h2Count < 2 || isSplitting}
-              title={
-                h2Count < 2
-                  ? 'Split note into sections — needs at least 2 ## headings'
-                  : 'Split this note into separate notes (one per ## section)'
-              }
-              className="flex items-center gap-1 px-3 py-1 text-xs font-medium rounded-md text-slate-400 hover:text-brand-400 transition-all disabled:opacity-40 disabled:hover:text-slate-400"
+              onClick={() => setToolsOpen(!toolsOpen)}
+              title="Editing tools: Split, Format, and Block operations"
+              className="flex items-center gap-1 px-3 py-1 text-xs font-medium rounded-lg border border-slate-800 text-slate-400 hover:text-brand-400 hover:border-brand-500/40 transition-all"
             >
-              <Scissors className="w-3.5 h-3.5" /> {isSplitting ? 'Splitting…' : 'Split'}
+              <Wand2 className="w-3.5 h-3.5" /> Tools
             </button>
-            <button
-              onClick={handleUndoSplit}
-              disabled={splitSnapshot === null || isSplitting}
-              title="Undo the last split: delete the created section notes and restore the original note"
-              className="flex items-center gap-1 px-3 py-1 text-xs font-medium rounded-md text-slate-400 hover:text-brand-400 transition-all disabled:opacity-40 disabled:hover:text-slate-400"
-            >
-              <RotateCcw className="w-3.5 h-3.5" /> Undo
-            </button>
-          </div>
-          <button
-            onClick={insertBlockAnchor}
-            title="Insert a block anchor (^id) on this paragraph and copy a [[Note#^id]] link"
-            className="flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded-lg border border-slate-800 text-slate-400 hover:text-brand-400 hover:border-brand-500/40 transition-all"
-          >
-            <Anchor className="w-3.5 h-3.5" /> Block
-          </button>
-          <div className="flex bg-slate-950 border border-slate-800 rounded-lg p-1">
-            <button
-              onClick={handleFormat}
-              title="Format this note (normalize headings & spacing, sync H1 to filename)"
-              className="flex items-center gap-1 px-3 py-1 text-xs font-medium rounded-md text-slate-400 hover:text-brand-400 transition-all"
-            >
-              <Wand2 className="w-3.5 h-3.5" /> Format
-            </button>
-            <button
-              onClick={handleUndoFormat}
-              disabled={formatSnapshot === null}
-              title="Undo the last formatting action"
-              className="flex items-center gap-1 px-3 py-1 text-xs font-medium rounded-md text-slate-400 hover:text-brand-400 transition-all disabled:opacity-40 disabled:hover:text-slate-400"
-            >
-              <RotateCcw className="w-3.5 h-3.5" /> Undo
-            </button>
+            {toolsOpen && (
+              <div className="absolute right-0 top-full mt-1 z-50 min-w-[180px] bg-panel rounded-xl shadow-xl py-1">
+                <button
+                  onClick={() => { handleFormat(); setToolsOpen(false); }}
+                  className="w-full px-3 py-1.5 flex items-center gap-2 text-xs text-slate-300 hover:bg-brand-500/10 hover:text-brand-400 transition-colors border-none"
+                >
+                  <Wand2 className="w-3.5 h-3.5" /> Format
+                </button>
+                <button
+                  onClick={() => { handleUndoFormat(); setToolsOpen(false); }}
+                  disabled={formatSnapshot === null}
+                  className="w-full px-3 py-1.5 flex items-center gap-2 text-xs text-slate-300 hover:bg-brand-500/10 hover:text-brand-400 transition-colors disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-slate-500 border-none"
+                >
+                  <RotateCcw className="w-3.5 h-3.5" /> Undo format
+                </button>
+                <div className="my-1 border-t border-border" />
+                <button
+                  onClick={() => { handleSplit(); setToolsOpen(false); }}
+                  disabled={h2Count < 2 || isSplitting}
+                  className="w-full px-3 py-1.5 flex items-center gap-2 text-xs text-slate-300 hover:bg-brand-500/10 hover:text-brand-400 transition-colors disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-slate-500 border-none"
+                >
+                  <Scissors className="w-3.5 h-3.5" /> {isSplitting ? 'Splitting…' : 'Split note'}
+                </button>
+                <button
+                  onClick={() => { handleUndoSplit(); setToolsOpen(false); }}
+                  disabled={splitSnapshot === null || isSplitting}
+                  className="w-full px-3 py-1.5 flex items-center gap-2 text-xs text-slate-300 hover:bg-brand-500/10 hover:text-brand-400 transition-colors disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-slate-500 border-none"
+                >
+                  <RotateCcw className="w-3.5 h-3.5" /> Undo split
+                </button>
+                <div className="my-1 border-t border-border" />
+                <button
+                  onClick={() => { insertBlockAnchor(); setToolsOpen(false); }}
+                  className="w-full px-3 py-1.5 flex items-center gap-2 text-xs text-slate-300 hover:bg-brand-500/10 hover:text-brand-400 transition-colors border-none"
+                >
+                  <Anchor className="w-3.5 h-3.5" /> Insert block
+                </button>
+              </div>
+            )}
           </div>
           <button
             onClick={() => {

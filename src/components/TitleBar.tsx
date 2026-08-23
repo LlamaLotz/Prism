@@ -161,7 +161,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
   );
 
   return (
-    <div ref={barRef} className="relative flex items-center h-9 bg-base shrink-0 select-none z-40 rounded-none">
+    <div ref={barRef} data-tauri-drag-region className="relative flex items-center h-9 bg-base shrink-0 select-none z-40 rounded-none">
       {/* ── Icon + app name ── */}
       <div
         data-tauri-drag-region
@@ -196,22 +196,21 @@ export const TitleBar: React.FC<TitleBarProps> = ({
                     <button
                       key={i}
                       onClick={item.action}
-                      disabled={item.disabled}
-                      className={`w-full px-3 py-1 flex items-center justify-between gap-6 text-left text-[12px] transition-colors ${
-                        item.disabled ? 'text-text-muted/50 cursor-default' : 'text-slate-300 hover:bg-brand-500/20 hover:text-offwhite'
-                      }`}
-                    >
-                      <span>{item.label}</span>
-                      {item.shortcut && <span className="text-[11px] text-text-muted ml-4 whitespace-nowrap">{item.shortcut}</span>}
-                    </button>
-                  )
-                )}
-              </div>
-            )}
-          </div>
+                      disabled={item.disabled}                        className={`w-full px-3 py-1 flex items-center justify-between gap-6 text-left text-[12px] transition-colors titlebar-menu-dropdown ${
+                          item.disabled ? 'text-text-muted/50 cursor-default' : 'text-slate-300 hover:bg-brand-500/20 hover:text-offwhite'
+                        }`}
+                      >
+                        <span>{item.label}</span>
+                        {item.shortcut && <span className="text-[11px] text-text-muted ml-4 whitespace-nowrap">{item.shortcut}</span>}
+                      </button>
+                    )
+                  )}
+                </div>
+              )}
+            </div>
 
-          {/* File / Edit / View dropdowns */}
-          {Object.entries(menus).filter(([k]) => k !== 'prism').map(([key, { label, items }]) => (
+            {/* File / Edit / View dropdowns */}
+            {Object.entries(menus).filter(([k]) => k !== 'prism').map(([key, { label, items }]) => (
 
             <div key={key} className="relative">
               <button
@@ -235,7 +234,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
                         key={i}
                         onClick={item.action}
                         disabled={item.disabled}
-                        className={`w-full px-3 py-1 flex items-center justify-between gap-6 text-left text-[12px] transition-colors ${
+                        className={`w-full px-3 py-1 flex items-center justify-between gap-6 text-left text-[12px] transition-colors titlebar-menu-dropdown ${
                           item.disabled ? 'text-text-muted/50 cursor-default' : 'text-slate-300 hover:bg-brand-500/20 hover:text-offwhite'
                         }`}
                       >
@@ -267,7 +266,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
       {/* ── AI toggle (star icon) ── */}
       <button
         onClick={onToggleAI}
-        title="OmniRoute AI Co-Pilot"
+        title="AI Co-Pilot"
         className={`mr-1 p-1.5 rounded transition-colors ${
           showAI ? 'text-brand-400 bg-brand-600/10' : 'text-text-muted hover:text-offwhite hover:bg-surface-hover'
         }`}

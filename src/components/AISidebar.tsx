@@ -46,8 +46,7 @@ export const AISidebar: React.FC<AISidebarProps> = ({
     const trimmed = text.trim();
     if (!trimmed || isLoading) return;
 
-    if (!isConfigured) {
-      setError('AI is not configured. Please enter your OmniRoute API Key and Base URL in Settings.');
+    if (!isConfigured) {          setError('AI is not configured. Please enter your API Key and Base URL in Settings.');
       return;
     }
 
@@ -84,8 +83,7 @@ export const AISidebar: React.FC<AISidebarProps> = ({
 
   const runQuickAction = async (action: 'summarize' | 'connect' | 'metadata') => {
     if (!note) return;
-    if (!isConfigured) {
-      setError('AI is not configured. Please enter your OmniRoute API Key and Base URL in Settings.');
+    if (!isConfigured) {          setError('AI is not configured. Please enter your API Key and Base URL in Settings.');
       return;
     }
 
@@ -123,12 +121,12 @@ export const AISidebar: React.FC<AISidebarProps> = ({
   };
 
   return (
-    <div className="w-80 border-l border-slate-900 bg-panel flex flex-col h-full select-none">
+    <div className="w-80 border-l border-[var(--color-border)] bg-panel flex flex-col h-full select-none rounded-l-2xl">
       {/* Header */}
-      <div className="p-4 border-b border-slate-900 flex items-center justify-between bg-panel">
+      <div className="p-4 border-b border-[var(--color-border)] flex items-center justify-between bg-panel">
         <div className="flex items-center gap-2">
           <Sparkles className="w-4.5 h-4.5 text-brand-400 animate-pulse" />
-          <h2 className="text-sm font-bold text-slate-100">OmniRoute AI Co-Pilot</h2>
+          <h2 className="text-sm font-bold text-slate-100">AI Co-Pilot</h2>
         </div>
         <button
           onClick={() => setMessages([])}
@@ -162,13 +160,13 @@ export const AISidebar: React.FC<AISidebarProps> = ({
       <div className="flex-1 overflow-y-auto p-4 space-y-4 select-text">
         {messages.length === 0 ? (
           <div className="h-full flex flex-col justify-center text-center space-y-4 py-8 select-none">
-            <div className="w-10 h-10 rounded-full bg-slate-900 flex items-center justify-center mx-auto text-brand-400/80">
+            <div className="w-12 h-12 rounded-full bg-[var(--color-surface)] border border-[var(--color-border)] flex items-center justify-center mx-auto text-brand-400/80">
               <Sparkles className="w-5 h-5" />
             </div>
             <div className="space-y-1 max-w-xs mx-auto">
               <h3 className="text-xs font-semibold text-slate-300">Ask Prism Co-Pilot</h3>
               <p className="text-[10px] text-slate-500 leading-relaxed">
-                Connect ideas, find links, generate summaries, or chat recursively with your note's context using OmniRoute routing.
+                Connect ideas, find links, generate summaries, or chat recursively with your note's context using AI routing.
               </p>
             </div>
             

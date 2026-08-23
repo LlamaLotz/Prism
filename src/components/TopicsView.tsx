@@ -125,7 +125,7 @@ export const TopicsView: React.FC<TopicsViewProps> = ({ onWikiLinkClick }) => {
               return (
                 <div
                   key={g.tag}
-                  className="rounded-lg bg-neutral-950/60 border border-neutral-900 overflow-hidden"
+                  className="rounded-2xl bg-neutral-950/60 border border-neutral-900 overflow-hidden"
                 >
                   <button
                     onClick={() => toggleTag(g.tag)}
@@ -136,7 +136,7 @@ export const TopicsView: React.FC<TopicsViewProps> = ({ onWikiLinkClick }) => {
                     ) : (
                       <ChevronRight className="w-3.5 h-3.5 text-neutral-500 shrink-0" />
                     )}
-                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md border border-teal-500/30 bg-teal-500/10 text-teal-400 text-[11px] font-bold">
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full border border-teal-500/30 bg-teal-500/10 text-teal-400 text-[11px] font-bold">
                       @{g.tag}
                     </span>
                     <span className="text-[10px] text-neutral-500 ml-auto">{g.notes.length}</span>

@@ -52,6 +52,8 @@ interface GraphViewProps {
   backgroundPattern?: 'grid' | 'mesh' | 'solid';
   /** Linking setting: whether dragged node positions are persisted. */
   persistNodePositions?: boolean;
+  /** Light / dark mode so text labels and shadows adapt. */
+  themeMode?: 'dark' | 'light';
 }
 
 export const GraphView: React.FC<GraphViewProps> = ({
@@ -61,6 +63,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
   toolbarExtra,
   backgroundPattern = 'grid',
   persistNodePositions = true,
+  themeMode = 'dark',
 }) => {
   const svgRef = useRef<SVGSVGElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -129,6 +132,15 @@ export const GraphView: React.FC<GraphViewProps> = ({
 
     const { nodes, links } = graphData;
     if (!nodes || nodes.length === 0) return;
+
+    // Light mode: flip text colors, edge opacity, and soften the drop shadow
+    // so labels and links remain readable on a bright background.
+    const isLight = themeMode === 'light';
+    const textColor = isLight ? '#1e293b' : '#cbd5e1';
+    const textActive = isLight ? '#0f172a' : '#ffffff';
+    const shadowOpacity = isLight ? '0.30' : '0.85';
+    const textShadowColor = isLight ? 'rgba(255,255,255,0.7)' : 'rgba(0,0,0,0.9)';
+    const linkStroke = isLight ? 'rgba(71, 85, 105, 0.3)' : 'rgba(150, 147, 143, 0.35)';
 
     // Deep copy data for D3 mutation. Link endpoints are normalized to a
     // canonical key (case-insensitive, POSIX path, no .md) so they always
@@ -224,10 +236,10 @@ export const GraphView: React.FC<GraphViewProps> = ({
 
     shadowFilter.append('feDropShadow')
       .attr('dx', '0')
-      .attr('dy', '4')
-      .attr('stdDeviation', '4')
+      .attr('dy', isLight ? '2' : '4')
+      .attr('stdDeviation', isLight ? '3' : '4')
       .attr('flood-color', '#000000')
-      .attr('flood-opacity', '0.85');
+      .attr('flood-opacity', shadowOpacity);
 
     const gridPattern = defs
       .append('pattern')
@@ -311,7 +323,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
       .data(d3Links)
       .enter()
       .append('line')
-      .attr('stroke', LINK_COLOR)
+      .attr('stroke', linkStroke)
       .attr('stroke-width', 1.5)
       .attr('stroke-dasharray', (d: any) => (d.targetExists === false ? '4,4' : 'none'));
 
@@ -379,10 +391,10 @@ export const GraphView: React.FC<GraphViewProps> = ({
       .attr('font-weight', '500')
       .attr('fill', (d: any) => {
         const isCurrent = activeNote && d.title && activeNote.title.toLowerCase() === d.title.toLowerCase();
-        return isCurrent ? '#ffffff' : '#cbd5e1';
+        return isCurrent ? textActive : textColor;
       })
       .attr('pointer-events', 'none')
-      .style('text-shadow', '0 1px 4px rgba(0,0,0,0.9)');
+      .style('text-shadow', `0 1px 4px ${textShadowColor}`);
 
     // Node Interactivity
     nodeElements.on('click', (_event: any, d: any) => {
@@ -417,7 +429,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
         .transition()
         .duration(150)
         .attr('font-size', '11px')
-        .attr('fill', isCurrent ? '#ffffff' : '#cbd5e1');
+        .attr('fill', isCurrent ? textActive : textColor);
     });
 
     // 6. Safe Link Coordinate Resolution

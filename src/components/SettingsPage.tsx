@@ -501,26 +501,33 @@ const Toggle: React.FC<{
   checked: boolean;
   onChange: (v: boolean) => void;
   disabled?: boolean;
-}> = ({ checked, onChange, disabled }) => (
+  /** Theme style: 'industrial' = square, 'glass' = pill/circle */
+  themeStyle?: 'industrial' | 'glass';
+}> = ({ checked, onChange, disabled, themeStyle = 'industrial' }) => {
+  const isRounded = themeStyle === 'glass';
+  return (
   <button
     type="button"
     role="switch"
     aria-checked={checked}
     disabled={disabled}
     onClick={() => onChange(!checked)}
-    className={`w-10 h-5 p-0.5 border transition-colors shrink-0 ${
+    className={`relative inline-flex h-6 w-11 shrink-0 items-center border transition-colors ${
+      isRounded ? 'rounded-full' : ''
+    } ${
       checked ? 'bg-brand-500 border-brand-500' : 'bg-zinc-900 border-zinc-700'
     } ${disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
   >
-    {/* Knob stays the same size AND color in both states so the toggle
-        reads identically whether on or off — only its position moves. */}
     <span
-      className={`block w-3.5 h-3.5 bg-neutral-100 transition-transform ${
-        checked ? 'translate-x-[22px]' : 'translate-x-0'
+      className={`inline-block h-4 w-4 transform bg-white transition-transform ${
+        isRounded ? 'rounded-full shadow-sm' : ''
+      } ${
+        checked ? 'translate-x-6' : 'translate-x-1'
       }`}
     />
   </button>
-);
+  );
+};
 
 const NumberField: React.FC<{
   value: number;
@@ -622,14 +629,20 @@ const Segmented: React.FC<{
   options: { value: string; label: string }[];
   value: string;
   onChange: (v: string) => void;
-}> = ({ options, value, onChange }) => (
-  <div className="flex items-center bg-slate-950 border border-slate-800 rounded-lg p-0.5">
+  /** Theme style: 'industrial' = square blocks, 'glass' = pill capsules */
+  themeStyle?: 'industrial' | 'glass';
+}> = ({ options, value, onChange, themeStyle = 'industrial' }) => {
+  const isRounded = themeStyle === 'glass';
+  return (
+  <div className={`flex items-center bg-slate-950 border border-slate-800 p-0.5 ${isRounded ? 'rounded-full' : ''}`}>
     {options.map((o) => (
       <button
         key={o.value}
         type="button"
         onClick={() => onChange(o.value)}
-        className={`px-3 py-1.5 text-xs rounded-md transition-colors ${
+        className={`px-3 py-1.5 text-xs transition-colors ${
+          isRounded ? 'rounded-full' : ''
+        } ${
           value === o.value
             ? 'bg-brand-500/90 text-neutral-950 font-medium'
             : 'text-slate-400 hover:text-slate-200'
@@ -639,7 +652,8 @@ const Segmented: React.FC<{
       </button>
     ))}
   </div>
-);
+  );
+};
 
 const TextField: React.FC<{
   value: string;
@@ -912,7 +926,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
             {/* --------------------------- AI ---------------------------- */}
             {section === 'ai' && (
               <div>
-                <SectionTitle hint="Local + remote AI used by the Co-Pilot panel.">
+                <SectionTitle hint="Configure AI provider and model for the Co-Pilot sidebar panel.">
                   AI Co-Pilot
                 </SectionTitle>
                 <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-5 space-y-4">
@@ -1054,6 +1068,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                       hint="Prepend your profile below to every AI request so the model knows who it's helping."
                     >
                       <Toggle
+                        themeStyle={draft.appearance.themeStyle}
                         checked={draft.omniRoute.injectUserProfile}
                         onChange={(v) =>
                           patchNested('omniRoute', { ...draft.omniRoute, injectUserProfile: v })
@@ -1088,8 +1103,87 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                   Appearance
                 </SectionTitle>
                 <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-5">
+                  {/* ---- Style Archetype Selector ---- */}
+                  <div className="py-3.5 border-b border-slate-800/60">
+                    <div className="flex items-start justify-between gap-6">
+                      <div className="min-w-0">
+                        <div className="text-[13px] font-medium text-slate-300">Style Archetype</div>
+                        <div className="text-[11px] text-slate-500 mt-0.5 leading-relaxed">
+                          Choose the visual design language for every surface in the app.
+                        </div>
+                      </div>
+                      <div className="shrink-0 flex flex-col gap-2">
+                        {([
+                          {
+                            value: 'industrial' as const,
+                            label: 'Industrial Precision',
+                            sub: 'Opaque architectural layout, razor-sharp technical feel',
+                          },
+                          {
+                            value: 'glass' as const,
+                            label: 'Rounded',
+                            sub: 'Soft pill-shaped edges, frosted glass panels, backdrop blur',
+                          },
+                        ]).map((opt) => {
+                          const active = draft.appearance.themeStyle === opt.value;
+                          return (
+                            <button
+                              key={opt.value}
+                              type="button"
+                              onClick={() =>
+                                patchNested('appearance', {
+                                  ...draft.appearance,
+                                  themeStyle: opt.value,
+                                })
+                              }
+                              className={`flex items-center gap-3 px-4 py-2.5 border-2 transition-all text-left ${
+                                active
+                                  ? 'border-brand-500 bg-brand-500/10'
+                                  : 'border-slate-800 hover:border-slate-600 bg-transparent'
+                              }`}
+                            >
+                              <div>
+                                <div className="text-[13px] font-medium text-slate-200">
+                                  {opt.label}
+                                </div>
+                                <div className="text-[10px] text-slate-500">{opt.sub}</div>
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* ---- Color Scheme Selector ---- */}
+                  <div className="py-3.5 border-b border-slate-800/60">
+                    <div className="flex items-center justify-between gap-6">
+                      <div className="min-w-0">
+                        <div className="text-[13px] font-medium text-slate-300">Color Scheme</div>
+                        <div className="text-[11px] text-slate-500 mt-0.5 leading-relaxed">
+                          Dark or light mode applied on top of the chosen style archetype.
+                        </div>
+                      </div>
+                      <Segmented
+                        themeStyle={draft.appearance.themeStyle}
+                        options={[
+                          { value: 'dark', label: 'Dark' },
+                          { value: 'light', label: 'Light' },
+                        ]}
+                        value={draft.appearance.themeMode}
+                        onChange={(v) =>
+                          patchNested('appearance', {
+                            ...draft.appearance,
+                            themeMode: v as 'dark' | 'light',
+                          })
+                        }
+                      />
+                    </div>
+                  </div>
+
                   <Field label="Startup view" hint="Which workspace layout to land on when the app opens.">
                     <Segmented
+                      themeStyle={draft.appearance.themeStyle}
                       options={[
                         { value: 'graph', label: 'Graph' },
                         { value: 'editor', label: 'Editor' },
@@ -1107,6 +1201,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                   </Field>
                   <Field label="Default graph mode" hint="The 3D view is the default; 2D is lighter on CPU.">
                     <Segmented
+                      themeStyle={draft.appearance.themeStyle}
                       options={[
                         { value: '2d', label: '2D' },
                         { value: '3d', label: '3D' },
@@ -1122,6 +1217,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                   </Field>
                   <Field label="Graph background pattern" hint="The grid/mesh backdrop behind the knowledge graph.">
                     <Segmented
+                      themeStyle={draft.appearance.themeStyle}
                       options={[
                         { value: 'grid', label: 'Grid' },
                         { value: 'mesh', label: 'Mesh' },
@@ -1138,6 +1234,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                   </Field>
                   <Field label="Label quality" hint="'High' renders crisp 3D labels at higher DPI (slightly more GPU).">
                     <Segmented
+                      themeStyle={draft.appearance.themeStyle}
                       options={[
                         { value: 'standard', label: 'Standard' },
                         { value: 'high', label: 'High' },
@@ -1153,6 +1250,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                   </Field>
                   <Field label="Open AI Co-Pilot on start">
                     <Toggle
+                      themeStyle={draft.appearance.themeStyle}
                       checked={draft.appearance.aiPanelOpenOnStart}
                       onChange={(v) =>
                         patchNested('appearance', { ...draft.appearance, aiPanelOpenOnStart: v })
@@ -1161,6 +1259,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                   </Field>
                   <Field label="Start with sidebar collapsed">
                     <Toggle
+                      themeStyle={draft.appearance.themeStyle}
                       checked={draft.appearance.sidebarCollapsedOnStart}
                       onChange={(v) =>
                         patchNested('appearance', {
@@ -1172,6 +1271,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                   </Field>
                   <Field label="Show LinkHub by default" hint="The link suggestion panel docked at the bottom of the editor.">
                     <Toggle
+                      themeStyle={draft.appearance.themeStyle}
                       checked={draft.appearance.linkHubVisibleByDefault}
                       onChange={(v) =>
                         patchNested('appearance', {
@@ -1197,6 +1297,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                   </Field>
                   <Field label="Auto-rotate 3D graph on load" hint="Slowly orbits the camera around the graph when it opens.">
                     <Toggle
+                      themeStyle={draft.appearance.themeStyle}
                       checked={draft.appearance.autoRotateOnLoad}
                       onChange={(v) =>
                         patchNested('appearance', { ...draft.appearance, autoRotateOnLoad: v })
@@ -1382,6 +1483,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                 <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-5">
                   <Field label="Auto-link on save" hint="Re-scan the note for link suggestions whenever it is saved.">
                     <Toggle
+                      themeStyle={draft.appearance.themeStyle}
                       checked={draft.linking.autoLinkOnSave}
                       onChange={(v) => patchNested('linking', { ...draft.linking, autoLinkOnSave: v })}
                     />
@@ -1414,6 +1516,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                   </Field>
                   <Field label="Backfill embeddings on vault open" hint="Embed every note without an embedding when a vault is first opened.">
                     <Toggle
+                      themeStyle={draft.appearance.themeStyle}
                       checked={draft.linking.backfillOnVaultOpen}
                       onChange={(v) =>
                         patchNested('linking', { ...draft.linking, backfillOnVaultOpen: v })
@@ -1447,6 +1550,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                   </Field>
                   <Field label="Persist node positions" hint="Remember where you dragged nodes in the 2D graph between sessions.">
                     <Toggle
+                      themeStyle={draft.appearance.themeStyle}
                       checked={draft.linking.persistNodePositions}
                       onChange={(v) =>
                         patchNested('linking', { ...draft.linking, persistNodePositions: v })
@@ -1466,12 +1570,14 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                 <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-5">
                   <Field label="Watch the vault" hint="React to external file changes so the sidebar and graph stay in sync.">
                     <Toggle
+                      themeStyle={draft.appearance.themeStyle}
                       checked={draft.system.watchVault}
                       onChange={(v) => patchNested('system', { ...draft.system, watchVault: v })}
                     />
                   </Field>
                   <Field label="Sync H1 headings on startup" hint="Rewrite each note's H1 to match its filename if they've drifted.">
                     <Toggle
+                      themeStyle={draft.appearance.themeStyle}
                       checked={draft.system.syncH1OnStartup}
                       onChange={(v) => patchNested('system', { ...draft.system, syncH1OnStartup: v })}
                     />
@@ -1521,7 +1627,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
             </button>
             <button
               onClick={handleApplyAndClose}
-              className="px-3 py-2 text-xs font-medium text-slate-300 hover:text-white hover:bg-slate-800 border border-slate-800 rounded-lg transition-colors"
+              className="px-3 py-2 text-xs font-medium text-slate-300 hover:text-[var(--color-text-hi)] hover:bg-slate-800 border border-slate-800 rounded-lg transition-colors"
               title="Apply changes and close settings"
             >
               Apply & Close
@@ -1553,7 +1659,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
           onClick={() => setShowIconPreview(false)}
         >
           <div
-            className="relative bg-panel border border-slate-800 shadow-2xl flex items-center justify-center p-6"
+            className="relative bg-panel border border-slate-800 rounded-2xl shadow-2xl flex items-center justify-center p-6"
             style={{ height: 'min(94vh, 94vw)', width: 'min(94vh, 94vw)' }}
             onClick={(e) => e.stopPropagation()}
           >
@@ -1591,7 +1697,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
               </button>
               <button
                 onClick={onClose}
-                className="w-full text-xs text-slate-300 hover:text-white hover:bg-slate-800 border border-slate-800 px-3 py-2 rounded-lg transition-colors cursor-pointer"
+                className="w-full text-xs text-slate-300 hover:text-[var(--color-text-hi)] hover:bg-slate-800 border border-slate-800 px-3 py-2 rounded-lg transition-colors cursor-pointer"
               >
                 Discard changes
               </button>

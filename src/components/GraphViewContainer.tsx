@@ -5,24 +5,22 @@ import { GraphNode, GraphLink, NoteFile } from '../types';
 
 const GRAPH_MODE_KEY = 'prism_graph_mode';
 
+type ThemeStyle = 'industrial' | 'glass';
+type ThemeMode = 'dark' | 'light';
+
 interface GraphViewContainerProps {
   graphData: { nodes: GraphNode[]; links: GraphLink[] };
   activeNote: NoteFile | null;
   onSelectNoteByTitle: (title: string) => void;
-  /** Appearance setting: which backdrop pattern the graph pane draws. */
   backgroundPattern: 'grid' | 'mesh' | 'solid';
-  /** Appearance setting: the 2D/3D mode to open in (unless the user has
-   *  explicitly picked one before — that choice is persisted and wins). */
   defaultGraphMode: '2d' | '3d';
-  /** Linking setting: whether the 2D graph persists dragged node positions. */
   persistNodePositions: boolean;
-  /** Appearance settings: auto-rotate the 3D camera on load + its speed. */
   autoRotateOnLoad: boolean;
   autoRotateSpeed: number;
-  /** Appearance setting: 3D label billboard DPI ('high' = up to 3x, crisp). */
   labelQuality: 'standard' | 'high';
-  /** Appearance setting: base color for graph nodes (hex). */
   nodeColor: string;
+  themeStyle: ThemeStyle;
+  themeMode: ThemeMode;
 }
 
 /**
@@ -43,6 +41,8 @@ export const GraphViewContainer: React.FC<GraphViewContainerProps> = ({
   autoRotateSpeed = 0.67,
   labelQuality = 'high',
   nodeColor = '#FEB05D',
+  themeStyle = 'industrial',
+  themeMode = 'dark',
 }) => {
   // Re-theme both graph palettes whenever the node color setting changes.
   useEffect(() => {
@@ -97,6 +97,7 @@ export const GraphViewContainer: React.FC<GraphViewContainerProps> = ({
       toolbarExtra={toggle}
       backgroundPattern={backgroundPattern}
       persistNodePositions={persistNodePositions}
+      themeMode={themeMode}
     />
   ) : (
     <GraphView3D
@@ -108,6 +109,8 @@ export const GraphViewContainer: React.FC<GraphViewContainerProps> = ({
       autoRotateOnLoad={autoRotateOnLoad}
       autoRotateSpeed={autoRotateSpeed}
       labelQuality={labelQuality}
+      themeStyle={themeStyle}
+      themeMode={themeMode}
     />
   );
 };
