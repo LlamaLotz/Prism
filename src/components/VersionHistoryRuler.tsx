@@ -309,9 +309,9 @@ export const VersionHistoryRuler: React.FC<VersionHistoryRulerProps> = ({
   }, [sel, boundedSelIdx, versions]);
 
   return (
-    <div ref={overlayRef} className="absolute inset-0 z-30 flex items-center justify-center px-6 pointer-events-none">
+    <div ref={overlayRef} className="absolute inset-0 z-30 flex items-center justify-center px-6 pointer-events-none version-history-scrim">
       <div
-        className="pointer-events-auto w-full max-w-3xl version-history-modal rounded-2xl p-4 shadow-2xl select-none"
+        className="pointer-events-auto w-full max-w-3xl version-history-modal rounded-2xl p-4 shadow-2xl select-none version-history-card"
         style={{ width: cardWidth }}
       >
         {/* Header */}
@@ -357,8 +357,8 @@ export const VersionHistoryRuler: React.FC<VersionHistoryRulerProps> = ({
                   className="block drop-shadow-[0_0_6px_rgba(90,122,205,0.8)]"
                   shapeRendering="crispEdges"
                 >
-                  <polygon points="0,0 11,0 5.5,6" fill="#FEB05D" />
-                  <line x1="5.5" y1="6" x2="5.5" y2="16" stroke="#FEB05D" strokeWidth="1" />
+                  <polygon points="0,0 11,0 5.5,6" fill="#FB923C" />
+                  <line x1="5.5" y1="6" x2="5.5" y2="16" stroke="#FB923C" strokeWidth="1" />
                 </svg>
               </div>
               <div
@@ -450,7 +450,7 @@ export const VersionHistoryRuler: React.FC<VersionHistoryRulerProps> = ({
             </div>
 
             {/* Live scrubbed-content preview */}
-            <div className="mt-3 max-h-44 overflow-y-auto rounded-lg bg-surface/70 border border-border/60 px-3 py-2">
+            <div className="mt-3 max-h-44 overflow-y-auto rounded-lg version-history-preview px-3 py-2">
               <VersionPreview content={sel ? sel.content : ''} />
             </div>
           </>

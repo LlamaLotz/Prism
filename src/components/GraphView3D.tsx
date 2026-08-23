@@ -29,14 +29,14 @@ interface TooltipState {
 
 // Prism palette (matches the 2D graph's legend): active note primary amber,
 // existing notes lighter amber, uncreated wiki-link targets slate-grey.
-let COLOR_ACTIVE = '#FEB05D'; // brand-500
+let COLOR_ACTIVE = '#FB923C'; // brand-500
 let COLOR_EXISTS = '#ffc069'; // brand-400
 const COLOR_MISSING = '#3c3b39'; // slate-grey
 let COLOR_HOVER = '#ffcb85'; // brand-300
 const LINK_COLOR_DARK = 'rgba(245, 242, 242, 0.08)';
 
 export function setGraphPalette(nodeColor: string): void {
-  const base = /^#[0-9a-f]{6}$/i.test(nodeColor) ? nodeColor.toLowerCase() : '#FEB05D';
+  const base = /^#[0-9a-f]{6}$/i.test(nodeColor) ? nodeColor.toLowerCase() : '#FB923C';
   COLOR_ACTIVE = base;
   COLOR_EXISTS = mixHex(base, '#ffffff', 0.22);
   COLOR_HOVER = mixHex(base, '#ffffff', 0.35);
@@ -61,7 +61,7 @@ export const GraphView3D: React.FC<GraphView3DProps> = ({
   autoRotateOnLoad = false,
   autoRotateSpeed = 0.67,
   labelQuality = 'high',
-  nodeColor = '#FEB05D',
+  nodeColor = '#FB923C',
   themeStyle = 'industrial',
   themeMode = 'dark',
 }) => {

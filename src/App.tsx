@@ -21,7 +21,6 @@ import { ResizeHandle } from './components/ResizeHandle';
 import { ContextMenu } from './components/ContextMenu';
 import { useDialog } from './components/DialogProvider';
 import { TitleBar } from './components/TitleBar';
-import { LiquidGlossDefs } from './components/LiquidGlossDefs';
 import { LiquidGlass } from './components/LiquidGlass';
 
 import { SplashScreen } from './components/SplashScreen';
@@ -127,9 +126,9 @@ const DEFAULT_SETTINGS: AppSettings = {
     labelQuality: 'high',
     autoRotateOnLoad: false,
     autoRotateSpeed: 0.67,
-    accentColor: '#FEB05D',
-    hoverGlowColor: '#FEB05D',
-    graphNodeColor: '#FEB05D',
+    accentColor: '#FB923C',
+    hoverGlowColor: '#FB923C',
+    graphNodeColor: '#FB923C',
     appIcon: '',
     sidebarStatusText: '',
   },
@@ -639,6 +638,33 @@ export default function App() {
         merged = deepMergeSettings(DEFAULT_SETTINGS, {});
       }
       if (cancelled) return;
+
+      // Migrate the former built-in amber defaults without overwriting any
+      // custom color the user has explicitly chosen.
+      const legacyDefault = '#feb05d';
+      const migratedAppearance = {
+        ...merged.appearance,
+        accentColor: merged.appearance.accentColor?.toLowerCase() === legacyDefault
+          ? '#FB923C'
+          : merged.appearance.accentColor,
+        hoverGlowColor: merged.appearance.hoverGlowColor?.toLowerCase() === legacyDefault
+          ? '#FB923C'
+          : merged.appearance.hoverGlowColor,
+        graphNodeColor: merged.appearance.graphNodeColor?.toLowerCase() === legacyDefault
+          ? '#FB923C'
+          : merged.appearance.graphNodeColor,
+      };
+      const hadLegacyDefault =
+        merged.appearance.accentColor?.toLowerCase() === legacyDefault ||
+        merged.appearance.hoverGlowColor?.toLowerCase() === legacyDefault ||
+        merged.appearance.graphNodeColor?.toLowerCase() === legacyDefault;
+      merged = { ...merged, appearance: migratedAppearance };
+      if (hadLegacyDefault) {
+        tauriAPI.saveRuntimeConfig(merged).catch((e) => {
+          console.error('Failed to persist accent migration:', e);
+          appLogger.error('Failed to persist accent migration', e);
+        });
+      }
       setSettings(merged);
 
       // Settings own the vault path; once loaded the splash can proceed if
@@ -1413,7 +1439,6 @@ export default function App() {
 
   return (
     <div className="liquid-gloss-app flex flex-col h-screen w-screen bg-base text-slate-100 font-sans overflow-hidden select-none">
-      <LiquidGlossDefs />
       {/* Everything except the splash is gated until the splash is fully gone
           (splashVisible false): the heavy UI (graph force simulation, editor,
           sidebar) only mounts after the loader animation has finished and the
@@ -1445,7 +1470,7 @@ export default function App() {
       {sidebarCollapsed ? (
         <div
           data-region="sidebar"
-          className="shrink-0 h-full w-11 border-r border-slate-900 bg-panel flex flex-col items-center py-3 gap-2 select-none"
+          className="sidebar-collapsed-rail shrink-0 h-full w-11 border-r border-slate-900 bg-panel flex flex-col items-center py-3 gap-2 select-none"
         >
           <button
             onClick={toggleSidebar}

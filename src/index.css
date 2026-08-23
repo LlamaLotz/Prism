@@ -69,7 +69,7 @@
   --color-surface: #2B2A2A;
   --color-surface-hover: #3A3939;
   --color-border: #383737;
-  --color-border-active: rgba(254, 176, 93, 0.4);
+  --color-border-active: rgba(251, 146, 60, 0.4);
 
   /* Brand Accent: Warm Amber Gold */
   --color-brand-50: #fff9f0;
@@ -77,15 +77,15 @@
   --color-brand-200: #ffdfb3;
   --color-brand-300: #ffcb85;
   --color-brand-400: #ffc069;
-  --color-brand-500: #FEB05D;
+  --color-brand-500: #FB923C;
   --color-brand-600: #f59e0b;
   --color-brand-700: #c97f0a;
   --color-brand-800: #9a610c;
   --color-brand-900: #6d4408;
   --color-brand-950: #3a2304;
-  --color-brand-glow: rgba(254, 176, 93, 0.15);
-  --color-hover-glow: rgba(254, 176, 93, 0.35);
-  --color-hover-glow-active: rgba(245, 158, 11, 0.45);
+  --color-brand-glow: rgba(251, 146, 60, 0.15);
+  --color-hover-glow: rgba(251, 146, 60, 0.35);
+  --color-hover-glow-active: rgba(234, 124, 28, 0.45);
 
   --color-accent-secondary: #5A7ACD;
 
@@ -134,12 +134,16 @@ html.theme-gloss #root {
   background: transparent !important;
 }
 .theme-gloss .liquid-gloss-app {
-  background: rgba(18, 18, 20, 0.85) !important;
-  backdrop-filter: blur(28px) saturate(160%);
-  -webkit-backdrop-filter: blur(28px) saturate(160%);
+  background: rgba(18, 18, 20, 0.93) !important;
+  /* WebView2 renders backdrop-filter as a large continuously recomposited
+     surface. Keep Gloss translucent, but use static fills for stable GPU use. */
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
 }
 .theme-gloss.mode-light .liquid-gloss-app {
-  background: rgba(240, 240, 242, 0.85) !important;
+  background: rgba(240, 240, 242, 0.93) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
 }
 
 /* ========================================================================== */
@@ -401,7 +405,7 @@ input[type='range'].hue-slider::-moz-range-thumb {
   color: var(--color-text-hi);
 }
 .search-match-active {
-  background: #FEB05D;
+  background: #FB923C;
   color: var(--color-base);
   border-radius: 0;
 }
@@ -743,9 +747,24 @@ input[type='range'].hue-slider::-moz-range-thumb {
 .theme-gloss .ai-panel,
 .theme-glass .dialog-modal,
 .theme-gloss .dialog-modal {
-  backdrop-filter: var(--backdrop-blur) !important;
-  -webkit-backdrop-filter: var(--backdrop-blur) !important;
   box-shadow: var(--glass-specular-edge);
+}
+
+/* Gloss performance guard: use static translucent surfaces instead of
+   per-panel backdrop filters. The shell blur above supplies the frosted
+   depth without continuously re-blurring every panel and descendant. */
+.theme-gloss .sidebar,
+.theme-gloss [data-region="graph"],
+.theme-gloss .ai-panel,
+.theme-gloss .dialog-modal,
+.theme-gloss .liquid-gloss-surface,
+.theme-gloss [class*="bg-slate-900"],
+.theme-gloss [class*="bg-slate-950"],
+.theme-gloss [class*="bg-neutral-900"],
+.theme-gloss [class*="bg-neutral-950"],
+.theme-gloss [class*="bg-panel"] {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
 }
 
 /* Glass theme: radius tokens — pill-shaped rounded edges */
@@ -1116,8 +1135,8 @@ button.titlebar-menu-dropdown:hover {
   background: #e2e8f0 !important;
 }
 .mode-light .switch-track[aria-checked="true"] {
-  background: var(--color-brand-500, var(--accent-color, #feb05d)) !important;
-  border-color: var(--color-brand-500, var(--accent-color, #feb05d)) !important;
+  background: var(--color-brand-500, var(--accent-color, #fb923c)) !important;
+  border-color: var(--color-brand-500, var(--accent-color, #fb923c)) !important;
 }
 .mode-light .switch-thumb {
   box-sizing: border-box;
@@ -1142,7 +1161,127 @@ button.titlebar-menu-dropdown:hover {
 }
 .theme-glass.mode-light .switch-track[aria-checked="true"] .switch-thumb,
 .theme-gloss.mode-light .switch-track[aria-checked="true"] .switch-thumb {
-  transform: translateX(20.5px);
+  transform: translateX(24px);
+}
+
+/* Light-mode sidebar controls: selected note content stays charcoal while the
+   configured orange remains reserved for the left indicator and active states. */
+.mode-light .sidebar-note-row-active {
+  background: rgba(249, 115, 22, 0.08) !important;
+  border-left-color: #f97316 !important;
+  color: #0f172a !important;
+}
+.mode-light .sidebar-note-row-active .sidebar-note-content,
+.mode-light .sidebar-note-row-active .sidebar-note-content > span,
+.mode-light .sidebar-note-row-active .sidebar-note-icon {
+  color: #0f172a !important;
+}
+.mode-light .sidebar-toolbar-button {
+  background: rgba(0, 0, 0, 0.03) !important;
+  border-color: #e2e8f0 !important;
+  color: #334155 !important;
+}
+.mode-light .sidebar-toolbar-button:hover {
+  background: rgba(0, 0, 0, 0.06) !important;
+  border-color: rgba(0, 0, 0, 0.22) !important;
+  color: #0f172a !important;
+}
+.mode-light .switch-thumb {
+  position: relative;
+  z-index: 2;
+}
+.theme-glass.mode-light .switch-track[aria-checked="true"] .switch-thumb,
+.theme-gloss.mode-light .switch-track[aria-checked="true"] .switch-thumb {
+  transform: translateX(24px);
+}
+
+/* Settings overlay: increase modal opacity, isolate the stacking context,
+   and use a heavy scrim so underlying editor text does not bleed through. */
+.settings-page-overlay {
+  isolation: isolate;
+  background: rgba(17, 19, 23, 0.96);
+}
+.mode-light .settings-page-overlay {
+  background: rgba(246, 247, 249, 0.97);
+}
+.settings-page-nav {
+  background: rgba(17, 19, 23, 0.92) !important;
+}
+.mode-light .settings-page-nav {
+  background: rgba(245, 246, 248, 0.92) !important;
+}
+
+/* Collapsed sidebar rail: match the floating panel language so it reads as a
+   distinct glass card instead of a flush edge strip. */
+.sidebar-collapsed-rail {
+  margin: 8px 0 8px 8px;
+  border: 1px solid var(--color-border);
+  background: var(--color-panel);
+  border-radius: 16px;
+  overflow: hidden;
+}
+
+/* Settings unsaved-changes dialog: use theme tokens instead of hardcoded
+   dark surfaces so the confirmation guard remains readable in both modes. */
+.settings-unsaved-backdrop {
+  background: color-mix(in srgb, var(--color-base) 72%, transparent) !important;
+}
+.settings-unsaved-dialog {
+  background: var(--color-panel) !important;
+  border-color: var(--color-border) !important;
+  color: var(--color-text-body);
+  border-radius: var(--radius-xl, 20px) !important;
+}
+.settings-unsaved-title {
+  color: var(--color-text-hi) !important;
+}
+.settings-unsaved-message {
+  color: var(--color-text-muted) !important;
+}
+.settings-unsaved-apply {
+  background: var(--color-brand-500) !important;
+  border-color: color-mix(in srgb, var(--color-brand-500) 40%, transparent) !important;
+  color: #ffffff !important;
+}
+.settings-unsaved-apply:hover {
+  background: var(--color-brand-400) !important;
+}
+.settings-unsaved-discard {
+  color: var(--color-text-body) !important;
+  border-color: var(--color-border) !important;
+  background: var(--color-surface) !important;
+}
+.settings-unsaved-discard:hover,
+.settings-unsaved-keep:hover {
+  color: var(--color-text-hi) !important;
+  background: var(--color-surface-hover) !important;
+}
+.settings-unsaved-keep {
+  color: var(--color-text-muted) !important;
+}
+
+/* Liquid Gloss switches: use a longer 52px track and 14px thumb. The travel
+   distance is 30px, leaving a 2px inset at either end of the capsule. */
+.theme-gloss .switch-track {
+  box-sizing: border-box;
+  width: 52px !important;
+  height: 24px !important;
+  overflow: hidden !important;
+  padding: 2px !important;
+  border-radius: 9999px !important;
+}
+.theme-gloss .switch-thumb {
+  width: 16px !important;
+  height: 16px !important;
+  flex: 0 0 16px;
+  z-index: 2 !important;
+  border-radius: 9999px !important;
+  transform: translateX(0) !important;
+  background: #ffffff !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2), 0 1px 2px rgba(0, 0, 0, 0.12) !important;
+}
+.theme-gloss .switch-track[aria-checked="true"] .switch-thumb {
+  transform: translateX(30px) !important;
 }
 
 /* Gloss: titlebar is a floating frosted header */
@@ -1153,9 +1292,7 @@ button.titlebar-menu-dropdown:hover {
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 9999px !important;
   background: var(--color-panel);
-  backdrop-filter: blur(24px) saturate(140%);
-  -webkit-backdrop-filter: blur(24px) saturate(140%);
-  box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.22), 0 10px 24px rgba(0, 0, 0, 0.08);
+  box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.22), 0 8px 18px rgba(0, 0, 0, 0.12);
 }
 .theme-gloss .liquid-gloss-header button.titlebar-menu,
 .theme-gloss .liquid-gloss-header [class*="titlebar"] button {
@@ -1169,8 +1306,7 @@ button.titlebar-menu-dropdown:hover {
 .theme-gloss [class*="bg-neutral-900"],
 .theme-gloss [class*="bg-neutral-950"],
 .theme-gloss [class*="bg-panel"] {
-  backdrop-filter: var(--backdrop-blur) !important;
-  -webkit-backdrop-filter: var(--backdrop-blur) !important;
+  background-image: none !important;
 }
 .theme-gloss .liquid-gloss-layout,
 .theme-gloss .workspace-panels {
@@ -1258,7 +1394,9 @@ html.theme-gloss {
   background: transparent;
 }
 
-/* Liquid Gloss SVG filter pipeline and ambient wallpaper */
+/* Liquid Gloss static surface resources. The former animated SVG displacement
+   pipeline was removed from the render tree because it caused continuous GPU
+   work in desktop WebView2. */
 .liquid-gloss-defs {
   position: fixed;
   width: 0;
@@ -1267,53 +1405,28 @@ html.theme-gloss {
   pointer-events: none;
 }
 .liquid-gloss-ambient {
-  position: fixed;
-  inset: 0;
-  z-index: -1;
-  pointer-events: none;
-  background: transparent;
-  opacity: 0;
+  display: none !important;
 }
 
 /* Gloss surfaces use the reusable SVG displacement/specular pipeline. The
    editor scroll tree is excluded below so note scrolling stays compositor-fast. */
 .theme-gloss .liquid-gloss-surface {
   position: relative;
-  isolation: isolate;
   border: 1px solid rgba(255, 255, 255, 0.12);
   background: var(--color-panel);
-  backdrop-filter: blur(24px) saturate(140%);
-  -webkit-backdrop-filter: blur(24px) saturate(140%);
-  box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.22), 0 16px 36px rgba(0, 0, 0, 0.08);
+  box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.22), 0 10px 24px rgba(0, 0, 0, 0.12);
   border-radius: var(--gloss-panel-radius, 24px);
   overflow: hidden;
 }
 .theme-gloss.mode-dark .liquid-gloss-surface {
   border-color: rgba(255, 255, 255, 0.12);
-  background: rgba(15, 15, 15, 0.35);
-  box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.2), 0 16px 36px rgba(0, 0, 0, 0.24);
+  background: rgba(15, 15, 15, 0.62);
+  box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.2), 0 10px 24px rgba(0, 0, 0, 0.2);
 }
-.theme-gloss .liquid-gloss-surface::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  z-index: -1;
-  pointer-events: none;
-  border-radius: inherit;
-  filter: url('#liquid-gloss-refraction');
-  opacity: 0.22;
-  mix-blend-mode: screen;
-}
+.theme-gloss .liquid-gloss-surface::before,
 .theme-gloss .liquid-gloss-surface::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  border-radius: inherit;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7);
-  filter: url('#liquid-gloss-specular');
-  opacity: 0.55;
+  content: none !important;
+  display: none !important;
 }
 .theme-gloss .liquid-gloss-surface > * {
   position: relative;
@@ -1368,6 +1481,110 @@ html.theme-gloss {
   border-radius: 9999px !important;
 }
 
+/* LinkHub light-mode fixes: solidify background, fix text contrast, input fields */
+.mode-light [data-region="editor"] .relative.h-full.flex.flex-col.overflow-hidden,
+.mode-light .linkhub-panel {
+  background: rgba(255, 255, 255, 0.97) !important;
+  border-top-color: rgba(0, 0, 0, 0.08) !important;
+}
+.mode-light .linkhub-panel .bg-slate-950,
+.mode-light .linkhub-panel .bg-slate-950\/70,
+.mode-light .linkhub-panel .bg-slate-950\/80,
+.mode-light [data-region="editor"] .bg-slate-950,
+.mode-light [data-region="editor"] .bg-slate-950\/70,
+.mode-light [data-region="editor"] .bg-slate-950\/80 {
+  background: rgba(255, 255, 255, 0.9) !important;
+  border-color: rgba(0, 0, 0, 0.12) !important;
+}
+.mode-light .linkhub-panel .bg-slate-900\/60,
+.mode-light [data-region="editor"] .bg-slate-900\/60 {
+  background: rgba(241, 245, 249, 0.9) !important;
+  border-color: rgba(0, 0, 0, 0.08) !important;
+}
+.mode-light .linkhub-panel .text-slate-600,
+.mode-light .linkhub-panel .text-slate-500,
+.mode-light [data-region="editor"] .text-slate-600,
+.mode-light [data-region="editor"] .text-slate-500 {
+  color: #64748b !important;
+}
+.mode-light .linkhub-panel .text-slate-400,
+.mode-light [data-region="editor"] .text-slate-400 {
+  color: #475569 !important;
+}
+.mode-light .linkhub-panel .text-slate-300,
+.mode-light [data-region="editor"] .text-slate-300 {
+  color: #1e293b !important;
+}
+.mode-light .linkhub-panel .text-slate-200,
+.mode-light [data-region="editor"] .text-slate-200 {
+  color: #0f172a !important;
+}
+.mode-light .linkhub-panel .placeholder\:text-slate-600,
+.mode-light [data-region="editor"] .placeholder\:text-slate-600 {
+  color: rgba(15, 23, 42, 0.45) !important;
+}
+.mode-light .linkhub-panel .border-slate-900\/40,
+.mode-light .linkhub-panel .border-slate-900\/60,
+.mode-light .linkhub-panel .border-slate-800,
+.mode-light .linkhub-panel .border-slate-800\/60,
+.mode-light [data-region="editor"] .border-slate-900\/40,
+.mode-light [data-region="editor"] .border-slate-900\/60,
+.mode-light [data-region="editor"] .border-slate-800,
+.mode-light [data-region="editor"] .border-slate-800\/60 {
+  border-color: rgba(0, 0, 0, 0.1) !important;
+}
+.mode-light .linkhub-panel .bg-slate-800,
+.mode-light .linkhub-panel .bg-slate-800\/50,
+.mode-light [data-region="editor"] .bg-slate-800,
+.mode-light [data-region="editor"] .bg-slate-800\/50 {
+  background: rgba(241, 245, 249, 0.95) !important;
+  border-color: rgba(0, 0, 0, 0.1) !important;
+  color: #334155 !important;
+}
+.mode-light .linkhub-panel .bg-slate-900,
+.mode-light [data-region="editor"] .bg-slate-900 {
+  background: rgba(241, 245, 249, 0.95) !important;
+  color: #334155 !important;
+}
+
+/* Final light-mode control geometry overrides. */
+.mode-light .sidebar-pill-button {
+  border: 1px solid #e2e8f0 !important;
+  background: rgba(0, 0, 0, 0.03) !important;
+  color: #334155 !important;
+}
+.mode-light .sidebar-pill-button:hover {
+  border-color: rgba(0, 0, 0, 0.22) !important;
+  background: rgba(0, 0, 0, 0.06) !important;
+  color: #0f172a !important;
+}
+.mode-light .sidebar-note-row-active {
+  border-left-width: 3px !important;
+  border-left-style: solid !important;
+  border-left-color: #f97316 !important;
+  color: #0f172a !important;
+}
+.mode-light .sidebar-note-row-active * {
+  color: #0f172a !important;
+}
+.theme-glass .switch-track,
+.theme-gloss .switch-track {
+  box-sizing: border-box;
+  overflow: hidden !important;
+}
+.theme-glass .switch-thumb,
+.theme-gloss .switch-thumb {
+  position: relative;
+  z-index: 2 !important;
+  background: #ffffff !important;
+}
+.theme-glass .switch-track[aria-checked="true"] .switch-thumb {
+  transform: translateX(22px) !important;
+}
+.theme-gloss .switch-track[aria-checked="true"] .switch-thumb {
+  transform: translateX(30px) !important;
+}
+
 /* Gloss: sliders and switch thumbs are circular glass controls */
 .theme-gloss input[type='range']::-webkit-slider-thumb,
 .theme-gloss input[type='range']::-moz-range-thumb {
@@ -1413,9 +1630,9 @@ html.theme-gloss {
   border: 1px solid rgba(255, 255, 255, 0.15);
   border-radius: 14px !important;
   overflow: hidden !important;
-  backdrop-filter: blur(24px) saturate(180%);
-  -webkit-backdrop-filter: blur(24px) saturate(180%);
-  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.32), inset 0 1px 0 rgba(255, 255, 255, 0.16);
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  box-shadow: 0 14px 28px rgba(0, 0, 0, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.16);
 }
 .theme-gloss.mode-dark .gloss-dropdown-surface {
   background: rgba(24, 24, 27, 0.85);
@@ -1424,6 +1641,32 @@ html.theme-gloss {
   background: rgba(255, 255, 255, 0.85);
   box-shadow: 0 20px 40px rgba(0, 0, 0, 0.16), inset 0 1px 0 rgba(255, 255, 255, 0.55);
 }
+
+/* Time Machine modal */
+.version-history-scrim {
+  background: rgba(0, 0, 0, 0.65);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+.version-history-card {
+  background: rgba(18, 20, 24, 0.96) !important;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 20px 40px -10px rgba(0, 0, 0, 0.7), 0 0 0 1px rgba(255, 255, 255, 0.05);
+}
+.mode-light .version-history-card {
+  background: rgba(255, 255, 255, 0.97) !important;
+  border-color: rgba(0, 0, 0, 0.1);
+  box-shadow: 0 20px 40px -10px rgba(0, 0, 0, 0.25), 0 0 0 1px rgba(0, 0, 0, 0.06);
+}
+.version-history-preview {
+  background: rgba(11, 13, 15, 0.4);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+.mode-light .version-history-preview {
+  background: rgba(241, 245, 249, 0.95);
+  border-color: rgba(0, 0, 0, 0.08);
+}
+
 .theme-gloss .ai-reset-button {
   min-width: 52px;
   min-height: 28px;

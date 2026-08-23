@@ -319,11 +319,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
       <div
         key={note.path}
         data-note-path={note.path}
-        className={`group flex items-center justify-between text-xs px-3 py-2.5 rounded-lg transition-all ${
+        className={`sidebar-note-row group flex items-center justify-between text-xs px-3 py-2.5 rounded-lg transition-all ${
           draggingPath === note.path ? 'cursor-grabbing' : 'cursor-default'
         } ${
           isActive 
-            ? 'bg-slate-900 border-l-2 border-brand-400 text-brand-100 font-medium' 
+            ? 'sidebar-note-row-active bg-slate-900 border-l-2 border-brand-400 text-brand-100 font-medium' 
             : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/50'
         }`}
         style={{ paddingLeft: depth * 16 + 12 }}
@@ -338,8 +338,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
         onPointerDown={(e) => startPointerDrag(e, { type: 'note', path: note.path })}
         title="Double-click to open in the full editor; drag to move"
       >
-        <div className="flex items-center gap-2 truncate flex-1 pr-2">
-          <FileText className={`w-4 h-4 shrink-0 ${isActive ? 'text-brand-400' : 'text-slate-500'}`} />
+        <div className="sidebar-note-content flex items-center gap-2 truncate flex-1 pr-2">
+          <FileText className={`sidebar-note-icon w-4 h-4 shrink-0 ${isActive ? 'text-brand-400' : 'text-slate-500'}`} />
           <span className="truncate">{note.title}</span>
         </div>
 
@@ -466,14 +466,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
         <div className="flex items-center gap-1 shrink-0">
           <button
             onClick={onCollapse}
-            className="text-slate-400 hover:text-slate-200 hover:bg-slate-900 p-1.5 rounded-lg transition-colors border border-transparent hover:border-slate-800"
+            className="sidebar-toolbar-button text-slate-400 hover:text-slate-200 hover:bg-slate-900 p-1.5 rounded-lg transition-colors border border-transparent hover:border-slate-800"
             title="Collapse sidebar"
           >
             <PanelLeftClose className="w-4 h-4" />
           </button>
           <button
             onClick={onOpenSettings}
-            className="text-slate-400 hover:text-slate-200 hover:bg-slate-900 p-1.5 rounded-lg transition-colors border border-transparent hover:border-slate-800"
+            className="sidebar-toolbar-button text-slate-400 hover:text-slate-200 hover:bg-slate-900 p-1.5 rounded-lg transition-colors border border-transparent hover:border-slate-800"
             title="Open Settings"
           >
             <Settings className="w-4 h-4" />
@@ -487,7 +487,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Vault Location</span>
           <button 
             onClick={onSelectVault}
-            className="gloss-text-button text-[10px] font-semibold text-brand-400 hover:text-brand-300 transition-colors flex items-center gap-1"
+            className="sidebar-pill-button gloss-text-button text-[10px] font-semibold text-brand-400 hover:text-brand-300 transition-colors flex items-center gap-1"
           >
             <FolderOpen className="w-3 h-3" /> Change
           </button>
@@ -505,7 +505,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         ) : (
           <button 
             onClick={onSelectVault}
-            className="gloss-text-button w-full text-left text-xs bg-brand-950/30 hover:bg-brand-950/50 border border-brand-900/50 text-brand-300 rounded px-3 py-2 flex items-center justify-center gap-1.5 transition-all font-medium"
+            className="sidebar-pill-button gloss-text-button w-full text-left text-xs bg-brand-950/30 hover:bg-brand-950/50 border border-brand-900/50 text-brand-300 rounded px-3 py-2 flex items-center justify-center gap-1.5 transition-all font-medium"
           >
             <FolderOpen className="w-4 h-4" /> Connect Note Folder
           </button>
@@ -516,14 +516,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
           <div className="flex gap-2 pt-1">
             <button
               onClick={onRefresh}
-              className="flex-1 bg-slate-950 hover:bg-slate-900 text-slate-300 hover:text-slate-100 border border-slate-800/80 rounded p-1.5 flex items-center justify-center transition-colors"
+              className="sidebar-toolbar-button flex-1 bg-slate-950 hover:bg-slate-900 text-slate-300 hover:text-slate-100 border border-slate-800/80 rounded p-1.5 flex items-center justify-center transition-colors"
               title="Sync / Refresh Notes"
             >
               <RefreshCw className="w-4 h-4" />
             </button>
             <button
               onClick={toggleLogs}
-              className="flex-1 bg-slate-950 hover:bg-slate-900 text-slate-300 hover:text-brand-400 border border-slate-800/80 rounded p-1.5 flex items-center justify-center transition-colors relative"
+              className="sidebar-toolbar-button flex-1 bg-slate-950 hover:bg-slate-900 text-slate-300 hover:text-brand-400 border border-slate-800/80 rounded p-1.5 flex items-center justify-center transition-colors relative"
               title="Open / close ingestion logs"
             >
               <TerminalSquare className="w-4 h-4" />
@@ -544,7 +544,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             <button
               onClick={onRunIngest}
               disabled={isIngesting}
-              className="flex-1 bg-surface hover:bg-surface-hover text-text-body disabled:bg-surface disabled:text-text-muted border border-border rounded p-1.5 flex items-center justify-center transition-colors"
+              className="sidebar-toolbar-button flex-1 bg-surface hover:bg-surface-hover text-text-body disabled:bg-surface disabled:text-text-muted border border-border rounded p-1.5 flex items-center justify-center transition-colors"
               title={isIngesting ? "Ingesting..." : "Run custom ingestion script"}
             >
               {isIngesting ? (

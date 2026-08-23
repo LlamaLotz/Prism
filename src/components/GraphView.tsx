@@ -21,7 +21,7 @@ const normalizeKey = (str: any): string => {
 // existing notes lighter amber, uncreated wiki-link targets slate-grey.
 // Mirrors GraphView3D. Mutable so the Appearance "Graph node color" setting
 // re-themes the nodes at runtime via setGraphPalette.
-let COLOR_ACTIVE = '#FEB05D'; // brand-500
+let COLOR_ACTIVE = '#FB923C'; // brand-500
 let COLOR_EXISTS = '#ffc069'; // brand-400
 const COLOR_MISSING = '#4a4947'; // slate-grey
 let COLOR_HOVER = '#f59e0b'; // brand-600 (hover/pressed)
@@ -33,7 +33,7 @@ const LINK_COLOR = 'rgba(150, 147, 143, 0.35)';
 
 /** Re-derives the node palette from a user-picked base color. */
 export function setGraphPalette(nodeColor: string): void {
-  const base = /^#[0-9a-f]{6}$/i.test(nodeColor) ? nodeColor.toLowerCase() : '#FEB05D';
+  const base = /^#[0-9a-f]{6}$/i.test(nodeColor) ? nodeColor.toLowerCase() : '#FB923C';
   COLOR_ACTIVE = base;
   COLOR_EXISTS = mixHex(base, '#ffffff', 0.22); // lighter "exists" shade
   COLOR_HOVER = mixHex(base, '#000000', 0.12); // darker hover shade
