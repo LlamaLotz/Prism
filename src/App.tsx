@@ -255,6 +255,21 @@ export default function App() {
     setTimeout(() => setIsBooting(false), 6960);
   };
 
+  // Hard safety timeout: if the splash hasn't dismissed after 15 seconds
+  // (regardless of backend state — e.g. model download hangs, Rust backend
+  // unresponsive), force it off so the app is never stuck on the splash
+  // screen forever. The heavy UI mounts immediately in this fallback path.
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (!splashVisible) return;
+      console.warn('[splash] Hard timeout — forcing splash dismissal');
+      setIsBooting(false);
+      setSplashVisible(false);
+    }, 15_000);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Layout views: 'editor' | 'graph' | 'split' | 'topics'. Startup lands on
   // the graph view (3D by default) with the AI panel minimized — the toolbar
   // toggles both.
