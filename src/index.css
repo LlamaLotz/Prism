@@ -126,6 +126,32 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+/* Startup surface: keep the first native/WebView frame and the React splash
+   uniformly pure black before theme tokens or media content are ready. */
+html.splash-mode,
+body.splash-mode,
+body.splash-mode #root,
+.splash-screen-container {
+  background-color: #000000 !important;
+  background-image: none !important;
+  margin: 0;
+  width: 100vw;
+  height: 100vh;
+}
+body.splash-mode {
+  color: #ffffff;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+.splash-screen-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
 /* The Tauri window is transparent so only Gloss exposes the desktop wallpaper.
    Industrial and Rounded retain their opaque application canvas. */
 html.theme-gloss,
@@ -181,37 +207,63 @@ pre {
 
   button, input, textarea, select {
     border: 1px solid var(--color-border);
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   }
-
-  input[type='range'] {
+  button:not(:disabled):not(.titlebar-menu):not(.titlebar-menu-dropdown):hover {
+    border-color: var(--color-brand-500) !important;
+    box-shadow: 0 0 10px color-mix(in srgb, var(--color-brand-500) 35%, transparent),
+                0 0 20px color-mix(in srgb, var(--color-brand-500) 15%, transparent),
+                inset 0 0 6px color-mix(in srgb, var(--color-brand-500) 12%, transparent);
+  }  input[type='range'] {
     -webkit-appearance: none;
     appearance: none;
     height: 4px;
+    border-radius: 9999px;
     background: var(--color-slate-800);
     cursor: pointer;
   }
+
   input[type='range']::-webkit-slider-thumb {
     -webkit-appearance: none;
     appearance: none;
-    width: 14px;
-    height: 14px;
+    width: 16px;
+    height: 16px;
     margin-top: -6px;
-    border-radius: var(--thumb-radius, 2px);
+    border-radius: 9999px;
     background: var(--color-brand-500);
-    border: 1px solid var(--color-brand-600);
+    border: 2px solid #ffffff;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25);
     cursor: pointer;
   }
   input[type='range']::-moz-range-thumb {
-    width: 14px;
-    height: 14px;
-    border-radius: var(--thumb-radius, 2px);
+    width: 16px;
+    height: 16px;
+    border-radius: 9999px;
     background: var(--color-brand-500);
-    border: 1px solid var(--color-brand-600);
+    border: 2px solid #ffffff;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25);
     cursor: pointer;
   }
   input[type='range']::-moz-range-track {
     height: 4px;
+    border-radius: 9999px;
     background: var(--color-slate-800);
+  }
+
+  /* Range track: define unfilled color per mode so inline gradient works */
+  :root {
+    --range-track-bg: var(--color-slate-800);
+  }
+  .mode-light {
+    --range-track-bg: #E2E8F0;
+  }
+  .mode-light input[type='range']::-webkit-slider-thumb {
+    border: 2px solid #ffffff;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25);
+  }
+  .mode-light input[type='range']::-moz-range-thumb {
+    border: 2px solid #ffffff;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25);
   }
 
   button:not(:disabled):hover {
@@ -1110,23 +1162,8 @@ button.titlebar-menu-dropdown:hover {
   overflow: hidden !important;
 }
 
-/* Gloss toggle containment: leave a 2px inset around the circular thumb so
-   checked and unchecked states never bleed beyond the capsule track. */
-.theme-gloss .switch-track {
-  overflow: hidden !important;
-  padding: 2px !important;
-  border-radius: 9999px !important;
-}
-.theme-gloss .switch-thumb {
-  width: 14px !important;
-  height: 14px !important;
-  flex: 0 0 14px;
-  border-radius: 9999px !important;
-  transform: translateX(0.5px);
-}
-.theme-gloss .switch-track[aria-checked="true"] .switch-thumb {
-  transform: translateX(20.5px);
-}
+/* Gloss toggle geometry is finalized in the authoritative switch block at
+   the end of this stylesheet. */
 
 /* Light-mode toggles: visible neutral tracks and high-contrast thumbs. */
 .mode-light .switch-track {
@@ -1147,22 +1184,8 @@ button.titlebar-menu-dropdown:hover {
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2), 0 1px 2px rgba(0, 0, 0, 0.12) !important;
 }
 
-/* Rounded light-mode toggles keep the inset circular geometry. */
-.theme-glass.mode-light .switch-track,
-.theme-gloss.mode-light .switch-track {
-  overflow: hidden !important;
-  padding: 2px !important;
-  border-radius: 9999px !important;
-}
-.theme-glass.mode-light .switch-thumb,
-.theme-gloss.mode-light .switch-thumb {
-  border-radius: 9999px !important;
-  transform: translateX(0.5px);
-}
-.theme-glass.mode-light .switch-track[aria-checked="true"] .switch-thumb,
-.theme-gloss.mode-light .switch-track[aria-checked="true"] .switch-thumb {
-  transform: translateX(24px);
-}
+/* Rounded light-mode toggle geometry is finalized in the authoritative
+   switch block at the end of this stylesheet. */
 
 /* Light-mode sidebar controls: selected note content stays charcoal while the
    configured orange remains reserved for the left indicator and active states. */
@@ -1192,7 +1215,7 @@ button.titlebar-menu-dropdown:hover {
 }
 .theme-glass.mode-light .switch-track[aria-checked="true"] .switch-thumb,
 .theme-gloss.mode-light .switch-track[aria-checked="true"] .switch-thumb {
-  transform: translateX(24px);
+  transform: translateX(22px);
 }
 
 /* Settings overlay: increase modal opacity, isolate the stacking context,
@@ -1239,50 +1262,35 @@ button.titlebar-menu-dropdown:hover {
   color: var(--color-text-muted) !important;
 }
 .settings-unsaved-apply {
-  background: var(--color-brand-500) !important;
-  border-color: color-mix(in srgb, var(--color-brand-500) 40%, transparent) !important;
+  background: var(--brand-500, #FB923C) !important;
+  border-color: color-mix(in srgb, var(--brand-500, #FB923C) 30%, transparent) !important;
   color: #ffffff !important;
+  border: 1px solid color-mix(in srgb, var(--brand-500, #FB923C) 30%, transparent) !important;
 }
 .settings-unsaved-apply:hover {
-  background: var(--color-brand-400) !important;
+  background: var(--brand-400, #FB923C) !important;
 }
 .settings-unsaved-discard {
   color: var(--color-text-body) !important;
-  border-color: var(--color-border) !important;
+  border: 1px solid var(--color-border) !important;
   background: var(--color-surface) !important;
 }
-.settings-unsaved-discard:hover,
-.settings-unsaved-keep:hover {
+.settings-unsaved-discard:hover {
   color: var(--color-text-hi) !important;
   background: var(--color-surface-hover) !important;
 }
 .settings-unsaved-keep {
   color: var(--color-text-muted) !important;
+  background: transparent !important;
+  border: none !important;
+}
+.settings-unsaved-keep:hover {
+  color: var(--color-text-hi) !important;
+  background: var(--color-surface-hover) !important;
 }
 
-/* Liquid Gloss switches: use a longer 52px track and 14px thumb. The travel
-   distance is 30px, leaving a 2px inset at either end of the capsule. */
-.theme-gloss .switch-track {
-  box-sizing: border-box;
-  width: 52px !important;
-  height: 24px !important;
-  overflow: hidden !important;
-  padding: 2px !important;
-  border-radius: 9999px !important;
-}
-.theme-gloss .switch-thumb {
-  width: 16px !important;
-  height: 16px !important;
-  flex: 0 0 16px;
-  z-index: 2 !important;
-  border-radius: 9999px !important;
-  transform: translateX(0) !important;
-  background: #ffffff !important;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2), 0 1px 2px rgba(0, 0, 0, 0.12) !important;
-}
-.theme-gloss .switch-track[aria-checked="true"] .switch-thumb {
-  transform: translateX(30px) !important;
-}
+/* Liquid Gloss switch sizing is finalized in the authoritative switch block
+   at the end of this stylesheet. */
 
 /* Gloss: titlebar is a floating frosted header */
 .theme-gloss .liquid-gloss-header {
@@ -1570,7 +1578,8 @@ html.theme-gloss {
 .theme-glass .switch-track,
 .theme-gloss .switch-track {
   box-sizing: border-box;
-  overflow: hidden !important;
+  overflow: visible !important;
+  padding: 2px !important;
 }
 .theme-glass .switch-thumb,
 .theme-gloss .switch-thumb {
@@ -1578,12 +1587,8 @@ html.theme-gloss {
   z-index: 2 !important;
   background: #ffffff !important;
 }
-.theme-glass .switch-track[aria-checked="true"] .switch-thumb {
-  transform: translateX(22px) !important;
-}
-.theme-gloss .switch-track[aria-checked="true"] .switch-thumb {
-  transform: translateX(30px) !important;
-}
+/* Glass and Gloss switch travel are finalized in the authoritative switch
+   block at the end of this stylesheet. */
 
 /* Gloss: sliders and switch thumbs are circular glass controls */
 .theme-gloss input[type='range']::-webkit-slider-thumb,
@@ -1642,6 +1647,60 @@ html.theme-gloss {
   box-shadow: 0 20px 40px rgba(0, 0, 0, 0.16), inset 0 1px 0 rgba(255, 255, 255, 0.55);
 }
 
+/* Time Machine ruler track & ticks */
+.timeline-track {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  overflow: hidden;
+}
+.mode-light .timeline-track {
+  background: rgba(0, 0, 0, 0.04);
+  border-color: rgba(0, 0, 0, 0.1);
+}
+.version-history-tick-minor {
+  background: rgba(255, 255, 255, 0.3);
+}
+.version-history-tick-major {
+  background: rgba(255, 255, 255, 0.45);
+}
+.version-history-tick-selected {
+  background: #f97316;
+  box-shadow: 0 0 8px rgba(249, 115, 22, 0.5);
+}
+.mode-light .version-history-tick-minor {
+  background: rgba(0, 0, 0, 0.2);
+}
+.mode-light .version-history-tick-major {
+  background: rgba(0, 0, 0, 0.4);
+}
+.mode-light .version-history-tick-selected {
+  background: #f97316;
+  box-shadow: 0 0 8px rgba(249, 115, 22, 0.4);
+}
+
+/* Ingestion Log panel */
+.ingestion-log-scrim {
+  background: transparent;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  pointer-events: none;
+}
+.ingestion-log-panel {
+  isolation: isolate;
+  pointer-events: auto;
+  background: rgba(18, 20, 24, 0.85);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.75);
+}
+.mode-light .ingestion-log-panel {
+  background: rgba(255, 255, 255, 0.97);
+  border-color: rgba(0, 0, 0, 0.1);
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.2);
+}
+
 /* Time Machine modal */
 .version-history-scrim {
   background: rgba(0, 0, 0, 0.65);
@@ -1673,5 +1732,107 @@ html.theme-gloss {
   padding: 4px 14px !important;
   border-radius: 9999px !important;
   border: none !important;
+}
+
+/* =====================================================================
+   Universal active-button text contrast
+   Ensures every orange/accent pill reads crisply in both dark and light
+   modes across settings, view modes, tab switchers, and toolbar toggles.
+   ===================================================================== */
+
+/* Any element explicitly marked active / pressed */
+tab-active,
+.tab-active,
+button[aria-pressed="true"],
+button[aria-selected="true"],
+button[role="tab"][data-state="active"],
+button[role="tab"][aria-selected="true"] {
+  color: #0F172A !important;
+  font-weight: 600 !important;
+}
+
+/* Inactive tab / segment text in dark panels */
+.tab-inactive,
+.btn-inactive {
+  color: #CBD5E1 !important;
+  font-weight: 500 !important;
+}
+
+/* Inactive tab / segment text in light panels */
+.mode-light .tab-inactive,
+.mode-light .btn-inactive {
+  color: #475569 !important;
+}
+
+/* =====================================================================
+   Switch / Toggle — universal thumb & track overrides
+   Ensures the thumb is always crisp white with a shadow, the checked
+   track is always orange, and the inactive track adapts to light/dark.
+   Placed at end of stylesheet to override any theme-specific rules.
+   ===================================================================== */
+
+/* Checked track: always orange */
+.switch-track[aria-checked="true"],
+.switch-track.bg-brand-500 {
+  background-color: #F97316 !important;
+  border-color: #F97316 !important;
+}
+
+/* Inactive track: light mode gets visible gray */
+.mode-light .switch-track:not([aria-checked="true"]):not(.bg-brand-500) {
+  background-color: #E2E8F0 !important;
+  border-color: #CBD5E1 !important;
+}
+
+/* Thumb: always white, always circular, always on top */
+.switch-thumb {
+  background-color: #ffffff !important;
+  border-radius: 9999px !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3), 0 0 0 1px rgba(0, 0, 0, 0.05) !important;
+  z-index: 10 !important;
+}
+
+/* Checked thumb position is finalized in the authoritative switch block
+   below, after all theme-specific declarations. */
+
+/* Light mode thumb: add subtle border for extra definition */
+.mode-light .switch-thumb {
+  box-sizing: border-box;
+  width: 16px !important;
+  height: 16px !important;
+  flex: 0 0 16px !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3), 0 0 0 1px rgba(0, 0, 0, 0.08) !important;
+}
+
+/* Authoritative enlarged switch geometry. The 48px border-box track has a
+   1px border and 2px inner padding. The 24px thumb travels 18px so its
+   outer edge remains 2px inside the track on both sides. */
+.switch-track {
+  box-sizing: border-box !important;
+  width: 48px !important;
+  height: 28px !important;
+  padding: 2px !important;
+  overflow: visible !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  border-radius: 9999px !important;
+}
+.switch-thumb {
+  box-sizing: border-box !important;
+  width: 24px !important;
+  height: 24px !important;
+  flex: 0 0 24px !important;
+  transform: translateX(0) !important;
+  transition: transform 200ms ease-in-out !important;
+  background: #ffffff !important;
+  border-radius: 9999px !important;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2) !important;
+  z-index: 10 !important;
+}
+.switch-track[aria-checked="true"] > .switch-thumb {
+  transform: translateX(18px) !important;
+}
+.mode-light .switch-thumb {
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2), 0 0 0 1px rgba(0, 0, 0, 0.08) !important;
 }
 

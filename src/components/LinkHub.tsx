@@ -469,13 +469,13 @@ export const LinkHub: React.FC<LinkHubProps> = ({
               {keywords.map((kw) => (
                 <span
                   key={kw.toLowerCase()}
-                  className="inline-flex items-center gap-1 pl-2.5 pr-1 py-0.5 rounded-none border bg-amber-500/10 border-amber-500/30 text-amber-300 text-[10px] font-semibold"
+                  className="keyword-pill inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border bg-amber-500/10 border-amber-500/30 text-amber-300 text-[10px] font-semibold overflow-hidden"
                 >
                   {kw}
                   <button
                     onClick={() => onDeleteKeyword(kw)}
                     title={`Delete keyword "${kw}" from the note`}
-                    className="p-0.5 rounded-none text-amber-400/60 hover:text-red-400 hover:bg-red-500/20 transition-colors"
+                    className="p-0.5 rounded-full text-amber-400/60 hover:text-red-400 hover:bg-red-500/20 transition-colors"
                   >
                     <X className="w-3 h-3" />
                   </button>

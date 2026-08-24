@@ -16,6 +16,7 @@ interface TitleBarProps {
   onNewNote: () => void;
   onNewFolder: () => void;
   onOpenPrism: () => void;
+  onIngestContent: () => void;
   onSettings: () => void;
   onReload: () => void;
   onToggleIngestionLogs: () => void;
@@ -45,6 +46,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
   onNewNote,
   onNewFolder,
   onOpenPrism,
+  onIngestContent,
   onSettings,
   onReload,
   onToggleIngestionLogs,
@@ -88,6 +90,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
       if (k === 'n' && !e.shiftKey) { e.preventDefault(); onNewNote(); }
       if (k === 'n' && e.shiftKey) { e.preventDefault(); onNewFolder(); }
       if (k === 'o' && !e.shiftKey) { e.preventDefault(); onOpenPrism(); }
+      if (k === 'i' && e.shiftKey) { e.preventDefault(); onIngestContent(); }
       if (k === '1') { e.preventDefault(); onLayoutChange('editor'); }
       if (k === '2') { e.preventDefault(); onLayoutChange('graph'); }
       if (k === '3') { e.preventDefault(); onLayoutChange('topics'); }
@@ -97,7 +100,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
     };
     window.addEventListener('keydown', h);
     return () => window.removeEventListener('keydown', h);
-  }, [onSettings, onNewNote, onNewFolder, onOpenPrism, onLayoutChange, onToggleAI, onToggleSidebar]);
+  }, [onSettings, onNewNote, onNewFolder, onOpenPrism, onIngestContent, onLayoutChange, onToggleAI, onToggleSidebar]);
 
   const menus: Record<string, { label: string; items: MenuItem[] }> = {
     prism: {
@@ -114,6 +117,8 @@ export const TitleBar: React.FC<TitleBarProps> = ({
         { label: 'New Folder', shortcut: 'Ctrl+Shift+N', action: () => { onNewFolder(); closeMenu(); } },
         { divider: true, label: '' },
         { label: 'Open a Prism…', shortcut: 'Ctrl+O', action: () => { onOpenPrism(); closeMenu(); } },
+        { divider: true, label: '' },
+        { label: 'Ingest Content…', shortcut: 'Ctrl+Shift+I', action: () => { onIngestContent(); closeMenu(); } },
       ],
     },
     edit: {

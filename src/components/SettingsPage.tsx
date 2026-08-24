@@ -291,7 +291,7 @@ const AccentPicker: React.FC<{ value: string; onChange: (hex: string) => void }>
             {/* Format tabs */}
             <div className="flex items-center justify-between">
               <span className="text-[10px] uppercase text-slate-500 font-semibold">Format</span>
-              <div className="flex bg-slate-950 border border-slate-800 rounded p-0.5">
+              <div className="flex bg-[var(--color-surface)] border border-[var(--color-border)] rounded p-0.5">
                 {(['hex', 'rgb', 'hsl'] as ColorFormat[]).map((f) => (
                   <button
                     key={f}
@@ -300,8 +300,8 @@ const AccentPicker: React.FC<{ value: string; onChange: (hex: string) => void }>
                     onClick={() => setMode(f)}
                     className={`px-2 py-0.5 text-[10px] uppercase rounded transition-colors ${
                       mode === f
-                        ? 'bg-brand-500/90 text-neutral-950 font-semibold'
-                        : 'text-slate-500 hover:text-slate-300'
+                        ? 'bg-brand-500 text-[#0F172A] font-semibold'
+                        : 'text-slate-400 hover:text-slate-200'
                     }`}
                   >
                     {f}
@@ -511,17 +511,15 @@ const Toggle: React.FC<{
     aria-checked={checked}
     disabled={disabled}
     onClick={() => onChange(!checked)}
-    className={`switch-track relative inline-flex h-6 w-11 shrink-0 items-center border transition-colors ${
+    className={`switch-track relative inline-flex h-7 w-12 shrink-0 items-center border p-0.5 transition-colors ${
       isRounded ? 'rounded-full' : ''
     } ${
       checked ? 'bg-brand-500 border-brand-500' : 'bg-zinc-900 border-zinc-700'
     } ${disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
   >
     <span
-      className={`switch-thumb inline-block h-4 w-4 transform bg-white transition-transform ${
+      className={`switch-thumb inline-block h-6 w-6 shrink-0 bg-white transition-transform ${
         isRounded ? 'rounded-full shadow-sm' : ''
-      } ${
-        checked ? 'translate-x-6' : 'translate-x-1'
       }`}
     />
   </button>
@@ -591,9 +589,12 @@ const RangeField: React.FC<{
         max={max}
         step={step}
         onChange={(e) => onChange(Number(e.target.value))}
-        className="w-40 accent-brand-500"
+        className="w-40 accent-brand-500 slider-range"
         aria-label={label}
         disabled={disabled}
+        style={{
+          background: `linear-gradient(to right, var(--color-brand-500) ${((value - min) / (max - min)) * 100}%, var(--range-track-bg) ${((value - min) / (max - min)) * 100}%)`,
+        }}
       />
       {editing ? (
         <input
@@ -608,14 +609,14 @@ const RangeField: React.FC<{
             if (e.key === 'Escape') setEditing(false);
           }}
           onFocus={(e) => e.target.select()}
-          className="w-14 bg-slate-950 border border-brand-500 rounded px-1.5 py-0.5 text-xs text-slate-200 focus:outline-none tabular-nums text-right"
+          className="w-14 bg-[var(--color-surface)] border border-[var(--brand-500,#FB923C)] rounded px-1.5 py-0.5 text-xs text-[var(--color-text-hi)] focus:outline-none tabular-nums text-right font-semibold"
         />
       ) : (
         <button
           type="button"
           onClick={startEdit}
           title="Click to type a value"
-          className="w-14 text-right text-xs text-slate-400 hover:text-brand-400 tabular-nums cursor-text transition-colors"
+          className="w-14 text-right text-xs text-[var(--color-text-body)] font-semibold hover:text-[var(--brand-500,#FB923C)] tabular-nums cursor-text transition-colors"
         >
           {display}
         </button>
@@ -633,7 +634,7 @@ const Segmented: React.FC<{
 }> = ({ options, value, onChange, themeStyle = 'industrial' }) => {
   const isRounded = themeStyle === 'glass' || themeStyle === 'gloss';
   return (
-  <div className={`flex items-center bg-slate-950 border border-slate-800 p-0.5 ${isRounded ? 'rounded-full' : ''}`}>
+  <div className={`flex items-center bg-[var(--color-surface)] border border-[var(--color-border)] p-0.5 ${isRounded ? 'rounded-full' : ''}`}>
     {options.map((o) => (
       <button
         key={o.value}
@@ -643,7 +644,7 @@ const Segmented: React.FC<{
           isRounded ? 'rounded-full' : ''
         } ${
           value === o.value
-            ? 'bg-brand-500/90 text-neutral-950 font-medium'
+            ? 'bg-brand-500 text-[#0F172A] font-semibold'
             : 'text-slate-400 hover:text-slate-200'
         }`}
       >
@@ -1682,28 +1683,28 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
 
       {/* Unsaved-changes guard: blurred backdrop + discard/apply choice */}
       {showUnsaved && (
-        <div className="settings-unsaved-backdrop fixed inset-0 z-[70] flex items-center justify-center bg-black/50 backdrop-blur-sm">
-          <div className="settings-unsaved-dialog w-80 bg-panel border border-slate-800 rounded-xl p-5 shadow-2xl">
-            <h3 className="settings-unsaved-title text-sm font-semibold text-slate-100 mb-1.5">Unsaved changes</h3>
-            <p className="settings-unsaved-message text-xs text-slate-400 leading-relaxed mb-4">
+        <div className="settings-unsaved-backdrop fixed inset-0 z-[70] flex items-center justify-center backdrop-blur-sm">
+          <div className="settings-unsaved-dialog w-80 border rounded-xl p-5 shadow-2xl">
+            <h3 className="settings-unsaved-title text-sm font-semibold mb-1.5">Unsaved changes</h3>
+            <p className="settings-unsaved-message text-xs leading-relaxed mb-4">
               You have unsaved changes in Settings. What would you like to do?
             </p>
             <div className="flex flex-col gap-2">
               <button
                 onClick={handleApplyAndClose}
-                className="settings-unsaved-apply w-full text-xs bg-brand-600 hover:bg-brand-500 text-white font-semibold px-3 py-2 rounded-lg transition-colors border border-brand-400/20 cursor-pointer"
+                className="settings-unsaved-apply w-full text-xs font-semibold px-3 py-2 rounded-lg transition-colors cursor-pointer"
               >
                 Apply changes & close
               </button>
               <button
                 onClick={onClose}
-                className="settings-unsaved-discard w-full text-xs text-slate-300 hover:text-[var(--color-text-hi)] hover:bg-slate-800 border border-slate-800 px-3 py-2 rounded-lg transition-colors cursor-pointer"
+                className="settings-unsaved-discard w-full text-xs px-3 py-2 rounded-lg transition-colors cursor-pointer"
               >
                 Discard changes
               </button>
               <button
                 onClick={() => setShowUnsaved(false)}
-                className="settings-unsaved-keep w-full text-xs text-slate-500 hover:text-slate-300 px-3 py-2 transition-colors cursor-pointer"
+                className="settings-unsaved-keep w-full text-xs px-3 py-2 transition-colors cursor-pointer"
               >
                 Keep editing
               </button>

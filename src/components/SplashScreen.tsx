@@ -30,6 +30,16 @@ export function SplashScreen({ isLoading, playVideo, onFinish, logo }: SplashScr
   const videoRef = useRef<HTMLVideoElement | null>(null);
 
   useEffect(() => {
+    document.documentElement.classList.add('splash-mode');
+    document.body.classList.add('splash-mode');
+
+    return () => {
+      document.documentElement.classList.remove('splash-mode');
+      document.body.classList.remove('splash-mode');
+    };
+  }, []);
+
+  useEffect(() => {
     if (!isLoading) {
       setFade(true);
       const timer = setTimeout(onFinish, 400);
@@ -106,7 +116,7 @@ export function SplashScreen({ isLoading, playVideo, onFinish, logo }: SplashScr
 
   return (
     <div
-      className={`fixed inset-0 z-[100] flex flex-col items-center justify-center bg-[var(--color-base)] rounded-none transition-opacity duration-[400ms] ease-out ${
+      className={`splash-screen-container fixed inset-0 z-[100] flex flex-col items-center justify-center bg-black rounded-none transition-opacity duration-[400ms] ease-out ${
         fade ? 'opacity-0 pointer-events-none' : 'opacity-100'
       }`}
     >

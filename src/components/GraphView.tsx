@@ -382,19 +382,58 @@ export const GraphView: React.FC<GraphViewProps> = ({
         return isCurrent ? 2.5 : 1;
       });
 
-    // Node Text Labels
+    // Node Text Labels — use one explicit center anchor for both the text and
+    // its pill. This avoids baseline/ascent differences leaving the glyphs
+    // cramped against one edge of the background.
     nodeElements.append('text')
       .text((d: any) => d.title || d.id || 'Untitled')
-      .attr('dx', 14)
-      .attr('dy', 4)
-      .attr('font-size', '11px')
-      .attr('font-weight', '500')
+      .attr('x', 0)
+      .attr('text-anchor', 'middle')
+      .attr('dominant-baseline', 'central')
+      .attr('alignment-baseline', 'central')
+      .attr('font-size', '10px')
+      .attr('font-weight', '600')
       .attr('fill', (d: any) => {
         const isCurrent = activeNote && d.title && activeNote.title.toLowerCase() === d.title.toLowerCase();
         return isCurrent ? textActive : textColor;
       })
       .attr('pointer-events', 'none')
-      .style('text-shadow', `0 1px 4px ${textShadowColor}`);
+      .style('text-shadow', `0 1px 3px ${textShadowColor}`);
+
+    // Measure the glyph bounds, then place the text and pill around a shared
+    // center. The pill starts nodeRadius + 4px below the circle and uses
+    // symmetric 8px horizontal / 5px vertical padding.
+    nodeElements.each(function (d: any) {
+      const textSelection = d3.select(this).select('text');
+      const textEl = textSelection.node() as SVGTextElement | null;
+      if (!textEl) return;
+      try {
+        const r = Math.max(7, Math.min(20, (d.linksCount || 1) * 1.8 + 6));
+        const metrics = textEl.getBBox();
+        const padX = 8;
+        const padY = 5;
+        const pillW = metrics.width + padX * 2;
+        const pillH = metrics.height + padY * 2;
+        const centerY = r + 4 + pillH / 2;
+        const pillX = -pillW / 2;
+        const pillY = centerY - pillH / 2;
+        const radius = pillH / 2;
+
+        textSelection.attr('y', centerY);
+        d3.select(this).insert('rect', 'text')
+          .attr('class', 'node-label-bg')
+          .attr('pointer-events', 'none')
+          .attr('x', pillX)
+          .attr('y', pillY)
+          .attr('width', pillW)
+          .attr('height', pillH)
+          .attr('rx', radius)
+          .attr('ry', radius)
+          .attr('fill', isLight ? 'rgba(241, 245, 249, 0.95)' : 'rgba(30, 30, 36, 0.92)')
+          .attr('stroke', isLight ? 'rgba(148, 163, 184, 0.6)' : 'rgba(185, 182, 179, 0.25)')
+          .attr('stroke-width', 1);
+      } catch {}
+    });
 
     // Node Interactivity
     nodeElements.on('click', (_event: any, d: any) => {
@@ -413,8 +452,15 @@ export const GraphView: React.FC<GraphViewProps> = ({
       d3.select(this).select('text')
         .transition()
         .duration(150)
-        .attr('font-size', '12px')
-        .attr('fill', '#ffffff');
+        .attr('font-size', '10px')
+        .attr('fill', isLight ? '#0f172a' : '#ffffff');
+
+      // Brighten pill background on hover
+      d3.select(this).select('rect.node-label-bg')
+        .transition()
+        .duration(150)
+        .attr('fill', isLight ? 'rgba(255, 255, 255, 0.96)' : 'rgba(45, 45, 55, 0.92)')
+        .attr('stroke', isLight ? 'rgba(148, 163, 184, 0.5)' : 'rgba(255, 255, 255, 0.25)');
     })
     .on('mouseout', function (this: SVGGElement, _event: any, d: any) {
       const isCurrent = activeNote && d.title && activeNote.title.toLowerCase() === d.title.toLowerCase();
@@ -428,8 +474,15 @@ export const GraphView: React.FC<GraphViewProps> = ({
       d3.select(this).select('text')
         .transition()
         .duration(150)
-        .attr('font-size', '11px')
+        .attr('font-size', '10px')
         .attr('fill', isCurrent ? textActive : textColor);
+
+      // Restore pill background
+      d3.select(this).select('rect.node-label-bg')
+        .transition()
+        .duration(150)
+        .attr('fill', isLight ? 'rgba(241, 245, 249, 0.92)' : 'rgba(30, 30, 36, 0.88)')
+        .attr('stroke', isLight ? 'rgba(148, 163, 184, 0.35)' : 'rgba(185, 182, 179, 0.2)');
     });
 
     // 6. Safe Link Coordinate Resolution

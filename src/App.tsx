@@ -1455,7 +1455,8 @@ export default function App() {
             onToggleAI={() => setShowAICoPilot(!showAICoPilot)}
             onNewNote={handleNewNote}
             onNewFolder={handleNewFolder}
-            onOpenPrism={() => setIsIngestModalOpen(true)}
+            onOpenPrism={handleSelectVault}
+            onIngestContent={() => setIsIngestModalOpen(true)}
             onSettings={() => openSettings()}
             onReload={() => tauriAPI.relaunchApp()}
             onToggleIngestionLogs={() => {

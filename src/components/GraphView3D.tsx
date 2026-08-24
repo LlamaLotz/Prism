@@ -352,6 +352,11 @@ export const GraphView3D: React.FC<GraphView3DProps> = ({
     ctx.shadowOffsetY = isLight ? 1 : 2;
     ctx.fillStyle = isLight ? '#1e293b' : '#F5F2F2';
     ctx.textAlign = 'center';
+    // Stroke halo behind text for extra contrast against pill background
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = isLight ? 'rgba(255, 255, 255, 0.8)' : 'rgba(0, 0, 0, 0.7)';
+    ctx.lineJoin = 'round';
+    ctx.strokeText(label, w / 2, pillH / 2 + 1);
     ctx.fillText(label, w / 2, pillH / 2 + 1);
     const texture = new THREE.CanvasTexture(canvas);
     texture.colorSpace = THREE.SRGBColorSpace;

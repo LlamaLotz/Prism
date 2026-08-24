@@ -484,7 +484,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       {/* Note Folder Info & Actions */}
       <div className="p-3 bg-slate-900/40 border-b border-slate-900 space-y-2">
         <div className="flex items-center justify-between">
-          <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Vault Location</span>
+          <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Prism Location</span>
           <button 
             onClick={onSelectVault}
             className="sidebar-pill-button gloss-text-button text-[10px] font-semibold text-brand-400 hover:text-brand-300 transition-colors flex items-center gap-1"
@@ -530,7 +530,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
               {/* Status dot mirrors the logs window's progress-bar color:
                   emerald = completed, rose = error, orange = ingesting, slate = idle */}
               <span
-                className={`absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full border border-slate-950 ${
+                className={`absolute top-0.5 right-1.5 w-2 h-2 rounded-full border border-slate-950 ${
                   progress.status === 'completed'
                     ? 'bg-emerald-400'
                     : progress.status === 'error'

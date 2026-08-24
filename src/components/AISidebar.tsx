@@ -224,7 +224,7 @@ export const AISidebar: React.FC<AISidebarProps> = ({
 <div 
                    className={`text-xs p-3 rounded-2xl leading-relaxed ${
                      isUser 
-                       ? 'bg-brand-500 text-slate-950 font-medium rounded-tr-none' 
+                       ? 'bg-brand-500 text-[#0F172A] font-semibold rounded-tr-none' 
                        : 'bg-surface border border-border text-slate-200 rounded-tl-none font-sans prose prose-invert prose-sm max-w-none'
                    }`}
                  >

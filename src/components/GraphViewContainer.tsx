@@ -65,13 +65,13 @@ export const GraphViewContainer: React.FC<GraphViewContainerProps> = ({
   };
 
   const toggle = (
-    <div className="flex items-center bg-neutral-900 p-1 rounded-lg border border-neutral-800">
+    <div className="graph-switcher flex items-center bg-[var(--color-surface)] p-1 rounded-lg border border-[var(--color-border)]">
       <button
         onClick={() => switchMode('2d')}
         className={`px-3 py-1 text-xs rounded-md transition-colors ${
           graphMode === '2d'
-            ? 'bg-brand-500/90 text-neutral-950 font-medium'
-            : 'text-neutral-400 hover:text-neutral-200'
+            ? 'bg-brand-500 text-[#0F172A] font-semibold'
+            : 'text-[var(--color-text-body)] hover:text-[var(--color-text-hi)]'
         }`}
       >
         2D Graph
@@ -80,8 +80,8 @@ export const GraphViewContainer: React.FC<GraphViewContainerProps> = ({
         onClick={() => switchMode('3d')}
         className={`px-3 py-1 text-xs rounded-md transition-colors ${
           graphMode === '3d'
-            ? 'bg-brand-500/90 text-neutral-950 font-medium'
-            : 'text-neutral-400 hover:text-neutral-200'
+            ? 'bg-brand-500 text-[#0F172A] font-semibold'
+            : 'text-[var(--color-text-body)] hover:text-[var(--color-text-hi)]'
         }`}
       >
         3D Graph

@@ -357,8 +357,8 @@ export const VersionHistoryRuler: React.FC<VersionHistoryRulerProps> = ({
                   className="block drop-shadow-[0_0_6px_rgba(90,122,205,0.8)]"
                   shapeRendering="crispEdges"
                 >
-                  <polygon points="0,0 11,0 5.5,6" fill="#FB923C" />
-                  <line x1="5.5" y1="6" x2="5.5" y2="16" stroke="#FB923C" strokeWidth="1" />
+                  <polygon points="0,0 11,0 5.5,6" fill="#F97316" />
+                  <line x1="5.5" y1="6" x2="5.5" y2="16" stroke="#F97316" strokeWidth="1" />
                 </svg>
               </div>
               <div
@@ -384,7 +384,7 @@ export const VersionHistoryRuler: React.FC<VersionHistoryRulerProps> = ({
                   paddingLeft: `calc(50% - ${TICK_SLOT_WIDTH / 2}px)`,
                   paddingRight: `calc(50% - ${TICK_SLOT_WIDTH / 2}px)`,
                 }}
-                className="no-scrollbar overflow-x-auto cursor-grab active:cursor-grabbing touch-pan-y outline-none h-14 flex items-end bg-surface-hover rounded-xl select-none"
+                className="no-scrollbar overflow-x-auto cursor-grab active:cursor-grabbing touch-pan-y outline-none h-14 flex items-end timeline-track select-none"
               >
                 {versions.map((v, i) => {
                   const selected = i === boundedSelIdx;
@@ -394,9 +394,11 @@ export const VersionHistoryRuler: React.FC<VersionHistoryRulerProps> = ({
                       key={v.version_id ?? 'base'}
                       onClick={() => centerOn(i)}
                       title={fmtTime(v.created_at)}
-                      className="shrink-0 flex items-end justify-center h-full outline-none rounded-none border-none"
+                      className="shrink-0 flex items-end justify-center h-full outline-none border-none"
                       style={{
                         width: TICK_SLOT_WIDTH,
+                        background: 'transparent',
+                        borderRadius: 0,
                         scrollSnapAlign: 'center',
                         scrollSnapStop: 'always',
                       }}
@@ -405,12 +407,12 @@ export const VersionHistoryRuler: React.FC<VersionHistoryRulerProps> = ({
                           same column as the 1px SVG needle above (the needle
                           drops into the tick's center pixel) */}
                       <div
-                        className={`w-[3px] rounded-none transition-all duration-150 ${
+                        className={`transition-all duration-150 ${
                           selected
-                            ? 'h-8 bg-brand-500 shadow-[0_0_10px_rgba(254,176,93,0.9)]'
+                            ? 'w-[2px] h-8 version-history-tick-selected'
                             : major
-                              ? 'h-5 bg-brand-400/80'
-                              : 'h-3 bg-slate-700 hover:bg-slate-500'
+                              ? 'w-[2px] h-5 version-history-tick-major'
+                              : 'w-[1.5px] h-3 version-history-tick-minor'
                         }`}
                       />
                     </button>

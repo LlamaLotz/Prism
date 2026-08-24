@@ -266,11 +266,13 @@ export const IngestionLogPanel: React.FC = () => {
     );
   }
 
-  // Expanded: free-draggable floating window
+  // Expanded: free-draggable floating window with backdrop scrim
   return (
+    <>
+    <div className="fixed inset-0 z-40 ingestion-log-scrim" />
     <div
       ref={panelRef}
-      className="ingestion-drawer fixed z-50 flex flex-col rounded-xl border border-slate-800 bg-slate-950/95 backdrop-blur shadow-2xl shadow-black/60 overflow-hidden"
+      className="ingestion-drawer fixed z-50 flex flex-col rounded-xl overflow-hidden ingestion-log-panel"
       style={{
         width: PANEL_W,
         maxWidth: 'calc(100vw - 1rem)',
@@ -413,7 +415,8 @@ export const IngestionLogPanel: React.FC = () => {
             style={{ width: `${percent ?? 0}%` }}
           />
         </div>
-      </div>
-    </div>
+      </div>    </div>
+    </>
   );
+
 };
