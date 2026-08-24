@@ -41,6 +41,6 @@ jobs:
           releaseBody: "See the assets below to download Prism for your operating system."
           releaseDraft: true
           prerelease: false
-          args: ${{ matrix.platform == 'macos-latest' && '--target universal-apple-darwin' || '' }}
+          args: ${{ matrix.platform == 'macos-latest' && '--target universal-apple-darwin -- --bin app' || '-- --bin app' }}
 
 
