@@ -43,46 +43,4 @@ jobs:
           prerelease: false
           args: ${{ matrix.platform == 'macos-latest' && '--target universal-apple-darwin' || '' }}
 
-      - name: Upload macOS artifacts
-        if: matrix.platform == 'macos-latest'
-        uses: softprops/action-gh-release@v1
-        with:
-          tag_name: ${{ github.ref_name }}
-          draft: true
-          files: |
-            src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Check for Windows artifacts
-        if: matrix.platform == 'windows-latest'
-        shell: pwsh
-        run: |
-          Write-Host "Checking for artifacts..."
-          if (Test-Path "src-tauri/target/release/bundle/nsis") {
-            Get-ChildItem -Path "src-tauri/target/release/bundle/nsis" -Recurse
-          } else {
-            Write-Host "NSIS bundle directory does not exist"
-            exit 1
-          }
-          if (Test-Path "src-tauri/target/release/bundle/msi") {
-            Get-ChildItem -Path "src-tauri/target/release/bundle/msi" -Recurse
-          } else {
-            Write-Host "MSI bundle directory does not exist (non-fatal)"
-          }
-
-      - name: Upload Windows artifacts
-        if: matrix.platform == 'windows-latest'
-        uses: softprops/action-gh-release@v1
-        with:
-          tag_name: ${{ github.ref_name }}
-          draft: true
-          fail_on_unmatched_files: false
-          files: |
-            src-tauri/target/release/bundle/nsis/*.exe
-            src-tauri/target/release/bundle/nsis/*.exe.sig
-            src-tauri/target/release/bundle/nsis/*.nsis.zip
-            src-tauri/target/release/bundle/nsis/*.nsis.zip.sig
-            src-tauri/target/release/bundle/msi/*.msi
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
