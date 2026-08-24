@@ -36,8 +36,8 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tagName: v__VERSION__ # Auto-extracts from package.json version
-          releaseName: "Prism v__VERSION__"
+          tagName: ${{ github.ref_name }}
+          releaseName: "Prism ${{ github.ref_name }}"
           releaseBody: "See the assets below to download Prism for your operating system."
           releaseDraft: true
           prerelease: false
