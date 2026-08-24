@@ -30,7 +30,7 @@
     "active": true,
     "targets": "all",
     "resources": [
-      "../Extractor Final/*"
+      "../Extractor Final"
     ],
     "icon": [
       "icons/32x32.png",

@@ -1110,18 +1110,30 @@ fn find_prism_python(app: &tauri::AppHandle) -> String {
 // Helper to find Extractor script
 fn resolve_resource_file(app: &tauri::AppHandle, relative_subpath: &str) -> PathBuf {
     if let Ok(resource_dir) = app.path().resource_dir() {
+        // 1. Try the full relative subpath (e.g. "Extractor Final/master_extractor.py")
         let p1 = resource_dir.join(relative_subpath);
         if p1.exists() { return p1; }
+        // 2. Try inside the _up_ staging directory (dev builds)
         let p2 = resource_dir.join("_up_").join(relative_subpath);
         if p2.exists() { return p2; }
+        // 3. Tauri may flatten globs — also try just the filename at the resource root
+        if let Some(filename) = std::path::Path::new(relative_subpath).file_name() {
+            let p3 = resource_dir.join(filename);
+            if p3.exists() { return p3; }
+            let p4 = resource_dir.join("_up_").join(filename);
+            if p4.exists() { return p4; }
+        }
     }
 
-    // Dev fallback
+    // Dev fallback: walk up from cwd looking for the directory
     if let Ok(cwd) = std::env::current_dir() {
         let p1 = cwd.join(relative_subpath);
         if p1.exists() { return p1; }
         let p2 = cwd.parent().unwrap_or(&cwd).join(relative_subpath);
         if p2.exists() { return p2; }
+        // Also try one more level up (e.g. cwd might be src-tauri)
+        let p3 = cwd.parent().unwrap_or(&cwd).parent().unwrap_or(&cwd).join(relative_subpath);
+        if p3.exists() { return p3; }
     }
 
     PathBuf::from(relative_subpath)
