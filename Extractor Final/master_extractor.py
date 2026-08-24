@@ -3,6 +3,29 @@ import sys
 import subprocess
 from pathlib import Path
 
+# ---------------------------------------------------------------------------
+# Prevent SIGSEGV from duplicate OpenMP runtimes (libiomp5.dylib).
+#
+# torch and ctranslate2 each bundle their own copy of the Intel OpenMP
+# runtime.  When both load into the same process, each initialises its
+# own global thread table (__kmp_threads) and spawns worker threads.
+# The two runtimes unknowingly fight over the same logical thread
+# indices, and the second runtime's __kmp_hyper_barrier_release
+# dereferences a null pointer in the first runtime's (now-corrupted)
+# thread table.  KMP_DUPLICATE_LIB_OK suppresses only the initial
+# duplicate-load fatal error, not the later thread-state corruption.
+#
+# The real fix: OMP_NUM_THREADS=1 forces both runtimes to run
+# single-threaded, so neither spawns worker threads that can collide.
+# ONNX Runtime (layout engine) uses its own thread pool, not OpenMP,
+# and is unaffected.  Must be set BEFORE any module that pulls in
+# OpenMP (numpy, scipy, torch, ctranslate2, onnxruntime) is imported.
+# ---------------------------------------------------------------------------
+os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
+os.environ.setdefault("OMP_NUM_THREADS", "1")
+# Also prevent MKL's internal threading (used by numpy/scipy on Intel).
+os.environ.setdefault("MKL_NUM_THREADS", "1")
+
 
 # =============================================================================
 # Isolated ingestion environment (~/.prism/env)
@@ -70,7 +93,8 @@ REQUIRED_PACKAGES = [
     "pypdf",
     "crawl4ai",
     "pandas",
-    "numpy",
+    "numpy<2",
+    "scipy<1.13",
     "Pillow",
     "opencv-python",
     "pydantic-settings",
@@ -114,7 +138,199 @@ def bootstrap_isolated_environment():
 
 
 # Self-Healing Environment: Check and auto-install core dependencies before importing them
+def _ensure_numpy_v1():
+    """Force NumPy < 2 so ctranslate2 and PyTorch's compiled extensions work.
+
+    The ingestion stack (faster-whisper → ctranslate2; docling → PyTorch)
+    relies on native modules compiled against the NumPy 1.x ABI. NumPy 2.x
+    changed the ABI, so even a successful import can cause a crash later.
+    This helper downgrades in-place when NumPy >= 2 is present.
+    """
+    try:
+        import numpy as _np
+        if _np.__version__ and not _np.__version__.startswith("1."):
+            print(f"[Prism Self-Healing] NumPy {_np.__version__} detected — "
+                  "ctranslate2/PyTorch require NumPy < 2. Downgrading…")
+            try:
+                subprocess.check_call(
+                    pip_install_args("numpy<2"),
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+            except Exception as e:
+                print(f"[Prism Self-Healing] Failed to downgrade NumPy: {e}")
+                print("ctranslate2 / PyTorch may crash. Try manual: pip install 'numpy<2'\n")
+                return  # Don't re-exec — let the rest of the script try anyway
+            # Re-exec so the old numpy module is out of memory entirely
+            print("[Prism Self-Healing] NumPy downgraded. Restarting…\n")
+            os.execv(sys.executable, [sys.executable] + sys.argv)
+    except ImportError:
+        pass  # Not installed yet — the normal heal path will install numpy<2
+
+
+def _ensure_scipy_compat():
+    """scipy >= 1.13 requires NumPy >= 2.  Since we pin numpy < 2 for
+    ctranslate2 compatibility, scipy must be < 1.13 as well."""
+    try:
+        import scipy as _sp
+        if _sp.__version__:
+            parts = _sp.__version__.split(".")
+            major, minor = int(parts[0]), int(parts[1])
+            if major > 1 or (major == 1 and minor >= 13):
+                print(f"[Prism Self-Healing] scipy {_sp.__version__} detected — "
+                      "scipy >= 1.13 requires NumPy >= 2. Downgrading…")
+                try:
+                    subprocess.check_call(
+                        pip_install_args("scipy<1.13"),
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                    )
+                except Exception as e:
+                    print(f"[Prism Self-Healing] Failed to downgrade scipy: {e}")
+                    return
+                print("[Prism Self-Healing] scipy downgraded. Restarting…")
+                os.execv(sys.executable, [sys.executable] + sys.argv)
+    except ImportError:
+        pass
+
+
+def _ensure_torch_v2_4_plus():
+    """PyTorch >= 2.4 is required by the installed transformers for docling's
+    layout detection model (AutoImageProcessor).  On platforms where a
+    newer PyTorch isn't available (e.g., macOS Intel, where the last wheel
+    is 2.2.2), we fall back to a compatible transformers version instead.
+
+    A marker file in TEMP prevents an infinite restart loop when pip
+    reports success but doesn't actually upgrade (pyTorch 2.2.2 is the
+    newest pip can find for the current platform tag).  A second
+    persistent marker in the venv skips the check entirely on subsequent
+    runs once the fallback is in place."""
+
+    # Persistent marker: set once the fallback is active so we never
+    # reattempt a doomed upgrade on this venv.
+    _fallback_marker = PRISM_ENV_DIR / ".torch_fallback_active"
+    if _fallback_marker.exists():
+        return  # Already handled — skip the entire check
+
+    # Temporary marker: survives a single os.execv restart so the next
+    # execution knows the upgrade was already attempted.
+    _attempt_marker = Path(os.environ.get("TEMP", "/tmp")) / ".prism_torch_upgrade_done"
+
+    try:
+        import torch as _th
+        if _th.__version__:
+            parts = _th.__version__.split(".")
+            major, minor = int(parts[0]), int(parts[1])
+            if major < 2 or (major == 2 and minor < 4):
+                if _attempt_marker.exists():
+                    # We already tried — this platform cannot get torch >= 2.4.
+                    _attempt_marker.unlink()
+                    _install_compatible_transformers()
+                    _fallback_marker.touch()  # skip on future runs
+                    return
+
+                print(f"[Prism Self-Healing] PyTorch {_th.__version__} detected — "
+                      "transformers requires PyTorch >= 2.4. Attempting upgrade…")
+                try:
+                    subprocess.check_call(
+                        pip_install_args("--upgrade", "torch", "torchvision", "torchaudio"),
+                    )
+                except Exception as e:
+                    print(f"[Prism Self-Healing] Failed to upgrade PyTorch: {e}")
+                    _install_compatible_transformers()
+                    _fallback_marker.touch()
+                    return
+                # Touch marker so the *next* execution knows we tried.
+                # If torch is still < 2.4 after restart, we'll fall back.
+                _attempt_marker.touch()
+                print("[Prism Self-Healing] Restarting…\n")
+                os.execv(sys.executable, [sys.executable] + sys.argv)
+    except ImportError:
+        pass  # Will be handled by the existing missing_torch path
+
+
+def _install_compatible_transformers():
+    """Install a transformers release that works with torch 2.2.x.
+
+    transformers >= 4.48 bumped the minimum torch requirement to >= 2.4,
+    so on Intel Macs (last torch wheel: 2.2.2) we need an older release.
+    docling works fine with transformers 4.42–4.47."""
+    print(f"[Prism Self-Healing] PyTorch cannot be upgraded on this platform. "
+          "Installing transformers<4.48 (compatible with torch 2.2)…")
+    try:
+        subprocess.check_call(
+            pip_install_args("transformers<4.48"),
+        )
+        print("[Prism Self-Healing] Compatible transformers installed.\n")
+    except Exception as e:
+        print(f"[Prism Self-Healing] Failed to install compatible transformers: {e}")
+        print("Docling layout detection may fail. "
+              "Try manual: pip install 'transformers<4.48'\n")
+
+
+def _patch_hf_model_configs():
+    """Patch cached HuggingFace model configs to use `rt_detr` model_type
+    instead of the unsupported `rt_detr_v2`.  transformers < 4.48 doesn't
+    know `rt_detr_v2`, but the ONNX engine only reads `id2label` from the
+    config — the actual model architecture doesn't matter.
+
+    Patches both the transformers and ONNX cached model directories.
+    """
+    import json
+    from pathlib import Path as _P
+    _cache = _P.home() / ".cache" / "huggingface" / "hub"
+    for glob_pat in ("models--docling-project--docling-layout-heron*/snapshots/*/config.json",
+                     "models--docling-project--docling-layout-heron-onnx*/snapshots/*/config.json"):
+        for cfg_path in _cache.glob(glob_pat):
+            try:
+                cfg = json.loads(cfg_path.resolve().read_text())
+                if cfg.get("model_type") == "rt_detr_v2":
+                    cfg["model_type"] = "rt_detr"
+                    cfg_path.resolve().write_text(json.dumps(cfg, indent=2))
+            except Exception:
+                pass  # Model not cached yet — no-op
+
+
 def auto_heal_environment():
+    # ---------------------------------------------------------------------
+    # PREFLIGHT: the compiled extensions in ctranslate2 / PyTorch require
+    # NumPy < 2.  Force-downgrade before any import so the version check
+    # succeeds regardless of what was installed previously.
+    # ---------------------------------------------------------------------
+    _ensure_numpy_v1()
+
+    # ---------------------------------------------------------------------
+    # PREFLIGHT: scipy >= 1.13 also demands NumPy >= 2 — pin it back too.
+    # ---------------------------------------------------------------------
+    _ensure_scipy_compat()
+
+    # ---------------------------------------------------------------------
+    # PREFLIGHT: transformers (used by docling's layout engine) requires
+    # PyTorch >= 2.4.  Upgrade if needed.
+    # ---------------------------------------------------------------------
+    _ensure_torch_v2_4_plus()
+
+    # ---------------------------------------------------------------------
+    # PREFLIGHT: on platforms where torch >= 2.4 is unavailable (macOS
+    # Intel), force docling to use docling_layout_default instead of the
+    # Transformers-based layout-object-detection engine.  The latter
+    # requires both torch >= 2.4 AND the rt_detr_v2 model architecture
+    # (transformers >= 4.48), which is impossible to satisfy on Intel Mac.
+    # ---------------------------------------------------------------------
+    # ---------------------------------------------------------------------
+    # PREFLIGHT: on platforms where torch >= 2.4 is unavailable (macOS
+    # Intel), the latest docling-layout-heron model uses `rt_detr_v2` in
+    # its config.json, which transformers < 4.48 doesn't recognise.  The
+    # ONNX engine only needs the id2label mapping from the config (not
+    # the architecture), so patch `rt_detr_v2` → `rt_detr` (supported by
+    # transformers 4.47) in any cached model snapshots.  Also force
+    # docling to use the ONNX Runtime layout engine.
+    # ---------------------------------------------------------------------
+    global _FORCE_DOCLING_DEFAULT_LAYOUT
+    if (PRISM_ENV_DIR / ".torch_fallback_active").exists():
+        _FORCE_DOCLING_DEFAULT_LAYOUT = True
+        _patch_hf_model_configs()
+        
     # Modules to check
     # Maps: "import_module_name": "pip_package_name"
     standard_required = {
@@ -126,6 +342,7 @@ def auto_heal_environment():
         "docling": "docling",
         "pandas": "pandas",
         "numpy": "numpy",
+        "scipy": "scipy",
         "PIL": "Pillow",
         "cv2": "opencv-python",
         "pydantic_settings": "pydantic-settings",
@@ -275,6 +492,11 @@ WHISPER_MODEL = None
 CONVERTER_NO_OCR = None
 CONVERTER_WITH_OCR = None
 
+# Use the ONNX Runtime layout engine (no transformers/torch required) on
+# platforms where PyTorch >= 2.4 cannot be installed (macOS Intel).
+# Set by auto_heal_environment() when the .torch_fallback_active marker exists.
+_FORCE_DOCLING_DEFAULT_LAYOUT = False
+
 def get_whisper():
     """Lazy loader for Faster-Whisper."""
     global WHISPER_MODEL
@@ -297,36 +519,60 @@ def get_docling(enable_ocr=False):
     
     # Dynamically import docling components to prevent startup crashes
     DocumentConverter, PdfFormatOption, PdfPipelineOptions, InputFormat, PyPdfiumDocumentBackend = get_docling_imports()
+
+    def _mk_options():
+        """Shared pipeline-options constructor."""
+        pipeline_options = PdfPipelineOptions()
+        pipeline_options.generate_picture_images = False
+        pipeline_options.generate_table_images = False
+        # On Intel Mac (torch 2.2.2 max), the transformers-based layout
+        # engine fails because it needs torch>=2.4 AND rt_detr_v2 support
+        # (transformers>=4.48).  Use the ONNX Runtime engine instead —
+        # onnxruntime is already installed, and the ONNX-exported model
+        # needs neither torch nor transformers.  Also checks the marker
+        # file directly (not just the module global) so subprocess
+        # workers pick it up too.
+        if _FORCE_DOCLING_DEFAULT_LAYOUT or \
+           (PRISM_ENV_DIR / ".torch_fallback_active").exists():
+            from docling.datamodel.object_detection_engine_options import \
+                OnnxRuntimeObjectDetectionEngineOptions
+            pipeline_options.layout_options.engine_options = \
+                OnnxRuntimeObjectDetectionEngineOptions()
+        return pipeline_options
     
     if enable_ocr:
         if CONVERTER_WITH_OCR is None:
-            pipeline_options = PdfPipelineOptions()
-            pipeline_options.generate_picture_images = False
-            pipeline_options.generate_table_images = False
-            pipeline_options.do_ocr = True # Enable OCR
+            pipeline_options = _mk_options()
+            pipeline_options.do_ocr = True
     
             CONVERTER_WITH_OCR = DocumentConverter(
                 format_options={
                     InputFormat.PDF: PdfFormatOption(
                         pipeline_options=pipeline_options,
                         backend=PyPdfiumDocumentBackend
-                    )
+                    ),
+                    InputFormat.IMAGE: PdfFormatOption(
+                        pipeline_options=pipeline_options,
+                        backend=PyPdfiumDocumentBackend
+                    ),
                 }
             )
         return CONVERTER_WITH_OCR
     else:
         if CONVERTER_NO_OCR is None:
-            pipeline_options = PdfPipelineOptions()
-            pipeline_options.generate_picture_images = False
-            pipeline_options.generate_table_images = False
-            pipeline_options.do_ocr = False # Disable OCR
+            pipeline_options = _mk_options()
+            pipeline_options.do_ocr = False
     
             CONVERTER_NO_OCR = DocumentConverter(
                 format_options={
                     InputFormat.PDF: PdfFormatOption(
                         pipeline_options=pipeline_options,
                         backend=PyPdfiumDocumentBackend
-                    )
+                    ),
+                    InputFormat.IMAGE: PdfFormatOption(
+                        pipeline_options=pipeline_options,
+                        backend=PyPdfiumDocumentBackend
+                    ),
                 }
             )
         return CONVERTER_NO_OCR
