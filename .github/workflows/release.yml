@@ -61,8 +61,8 @@ jobs:
           tag_name: ${{ github.ref_name }}
           draft: true
           files: |
-            src-tauri/target/release/bundle/nsis/*_x64-setup.exe
-            src-tauri/target/release/bundle/nsis/*_x64-setup.exe.sig
+            src-tauri/target/release/bundle/nsis/*-setup.exe
+            src-tauri/target/release/bundle/nsis/*-setup.exe.sig
             src-tauri/target/release/bundle/nsis/*.nsis.zip
             src-tauri/target/release/bundle/nsis/*.nsis.zip.sig
             src-tauri/target/release/bundle/msi/*.msi

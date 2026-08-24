@@ -13,9 +13,10 @@ default-run = "app"
 name = "app_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
-[[bin]]
-name = "linker-cli"
-path = "src/bin/linker-cli.rs"
+# [[bin]]
+# name = "linker-cli"
+# path = "src/bin/linker-cli.rs"
+# (commented out — this is a dev/testing CLI tool, not part of the app bundle)
 
 [build-dependencies]
 tauri-build = { version = "2.6.3", features = [] }
