@@ -1470,7 +1470,8 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                                   title={opt.label}
                                 >
                                   <img
-                                    src={opt.url}
+                                    key={`${opt.id}-${draft.appearance.themeMode}`}
+                                    src={getAppIcon(opt.id, draft.appearance.themeMode)}
                                     alt={opt.label}
                                     className="w-10 h-10 object-contain mx-auto"
                                   />
@@ -1841,6 +1842,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
               <X className="w-4 h-4" />
             </button>
             <img
+              key={draft.appearance.themeMode}
               src={getAppIcon(draft.appearance.appIcon, draft.appearance.themeMode)}
               alt="App icon preview"
               className="w-full h-full object-contain"
