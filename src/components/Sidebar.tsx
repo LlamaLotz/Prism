@@ -40,8 +40,6 @@ interface SidebarProps {
   isIngesting: boolean;
   onOpenSettings: () => void;
   onCollapse: () => void;
-  /** Show a red notification dot on the Settings icon when an update is pending. */
-  updateDot?: boolean;
 }
 
 /** A single folder in the sidebar tree. */
@@ -141,7 +139,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
   isIngesting,
   onOpenSettings,
   onCollapse,
-  updateDot,
 }) => {
   const [search, setSearch] = useState('');
   const { isMinimized, setMinimized, isHidden, setHidden, progress } = useIngestion();
@@ -480,9 +477,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
             title="Open Settings"
           >
             <Settings className="w-4 h-4" />
-            {updateDot && (
-              <span className="absolute -top-0.5 -right-0.5 w-2 h-2 bg-red-500 rounded-full border border-slate-950" />
-            )}
           </button>
         </div>
       </div>

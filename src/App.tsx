@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { check } from '@tauri-apps/plugin-updater';
 import { Sidebar } from './components/Sidebar';
 import { Editor } from './components/Editor';
 import { ErrorBoundary } from './components/ErrorBoundary';
@@ -153,8 +152,6 @@ const DEFAULT_SETTINGS: AppSettings = {
     watchVault: true,
     syncH1OnStartup: true,
     versionRetentionDays: 0,
-    updateChannel: 'stable',
-    autoCheckForUpdates: true,
   },
 };
 
@@ -201,13 +198,8 @@ export default function App() {
   const [settingsInitialSection, setSettingsInitialSection] = useState<SectionId>('general');
 
   const openSettings = (section?: SectionId) => {
-    // If an update is pending and no specific section was requested, land on
-    // System so the user sees the "Update Now" button right away.
-    const target = section ?? (startupUpdateAvailable ? 'system' : 'general');
-    setSettingsInitialSection(target);
+    setSettingsInitialSection(section ?? 'general');
     setIsSettingsOpen(true);
-    // Clear the notification dot — user has now seen the update prompt.
-    setStartupUpdateAvailable(false);
   };
 
   // Re-theme the brand ramp + hover glow whenever the saved colors change.
@@ -281,27 +273,6 @@ export default function App() {
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  // Auto-update check: runs once after the splash screen is gone and the UI
-  // is fully mounted, so it never competes with boot work. Silently logs
-  // the result; the Settings page has its own interactive check.
-  const [startupUpdateAvailable, setStartupUpdateAvailable] = useState(false);
-  useEffect(() => {
-    if (splashVisible) return;
-    if (!settings.system.autoCheckForUpdates) return;
-    const doCheck = async () => {
-      try {
-        const update = await check();
-        if (update) {
-          console.log(`[updater] Update available: ${update.version}`);
-          setStartupUpdateAvailable(true);
-        }
-      } catch {
-        // Silently ignore — user can manually check in Settings.
-      }
-    };
-    doCheck();
-  }, [splashVisible, settings.system.autoCheckForUpdates]);
 
   // Layout views: 'editor' | 'graph' | 'split' | 'topics'. Startup lands on
   // the graph view (3D by default) with the AI panel minimized — the toolbar
@@ -1560,7 +1531,6 @@ export default function App() {
             isIngesting={isIngesting}
             onOpenSettings={() => openSettings()}
             onCollapse={toggleSidebar}
-            updateDot={startupUpdateAvailable}
             onOpenNote={handleOpenNote}
             statusText={settings.appearance.sidebarStatusText}
             appIcon={settings.appearance.appIcon}
@@ -1656,7 +1626,6 @@ export default function App() {
         settings={settings}
         onSave={handleSaveSettings}
         initialSection={settingsInitialSection}
-        updateAvailable={startupUpdateAvailable}
       />
 
       {/* Ingest Modal overlay */}
