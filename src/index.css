@@ -1632,6 +1632,13 @@ html.theme-gloss {
   backdrop-filter: none !important;
   -webkit-backdrop-filter: none !important;
 }
+/* Glass theme: dropdowns keep their soft curvature. The blanket
+   `.theme-glass div { border-radius: unset }` reset (higher specificity)
+   would otherwise square off the shared dropdown/context surface. */
+.theme-glass .gloss-dropdown-surface {
+  border-radius: 14px !important;
+  overflow: hidden !important;
+}
 .gloss-dropdown-surface > button,
 .gloss-dropdown-surface .titlebar-menu-dropdown {
   border: none !important;
