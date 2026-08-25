@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useState } from 'react';
 import { GraphView, setGraphPalette as setPalette2D } from './GraphView';
 import { GraphView3D, setGraphPalette as setPalette3D } from './GraphView3D';
 import { GraphNode, GraphLink, NoteFile } from '../types';
@@ -44,21 +44,17 @@ export const GraphViewContainer: React.FC<GraphViewContainerProps> = ({
   themeStyle = 'industrial',
   themeMode = 'dark',
 }) => {
-  // Re-theme both graph palettes whenever the node color setting changes.
-  // Called synchronously during render (before the graph mounts) so the graph
-  // always paints with the correct color — never flashes the default orange.
-  const prevNodeColorRef = useRef(nodeColor);
-  if (prevNodeColorRef.current !== nodeColor) {
-    prevNodeColorRef.current = nodeColor;
-    setPalette2D(nodeColor);
-    setPalette3D(nodeColor);
-  }
-  // Redundant effect guard: if setPalette was called somewhere else (e.g.
-  // SettingsPage re-themes before the prop changes), sync on mount.
-  useEffect(() => {
-    setPalette2D(nodeColor);
-    setPalette3D(nodeColor);
-  }, [nodeColor]);
+  // Re-theme both graph palettes synchronously during every render — the
+  // module-level let assignments are cheap and this guarantees that the
+  // GraphView/GraphView3D effects (which read COLOR_ACTIVE etc.) always
+  // see the correct color before their first D3/Three.js paint.
+  //
+  // A useRef guard was tried here but it backfired: on initial mount (or
+  // remount from a key change) useRef is initialized WITH the current prop,
+  // so the guard evaluates to false and the first setPalette call is skipped
+  // entirely — the graph would paint in default orange before useEffect fired.
+  setPalette2D(nodeColor);
+  setPalette3D(nodeColor);
   // Open in the configured default mode; a user who explicitly picked a mode
   // before (key stored) keeps their choice.
   const [graphMode, setGraphMode] = useState<'2d' | '3d'>(
@@ -108,6 +104,7 @@ export const GraphViewContainer: React.FC<GraphViewContainerProps> = ({
       backgroundPattern={backgroundPattern}
       persistNodePositions={persistNodePositions}
       themeMode={themeMode}
+      nodeColor={nodeColor}
     />
   ) : (
     <GraphView3D

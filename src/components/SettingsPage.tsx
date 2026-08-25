@@ -23,8 +23,12 @@ import {
   Gauge,
   RotateCw,
   Lock,
+  Download,
+  AlertTriangle,
+  ArrowUpCircle,
 } from 'lucide-react';
 import { AppSettings, tauriAPI } from '../types';
+import { useUpdateCheck, type UpdateState } from '../services/updater';
 import {
   API_PROVIDERS,
   describeKeyFormat,
@@ -42,6 +46,8 @@ interface SettingsPageProps {
   onSave: (settings: AppSettings) => void;
   /** Section to land on when the page opens (defaults to 'general'). */
   initialSection?: SectionId;
+  /** Whether a software update is available — shows a red dot on the System tab. */
+  updateAvailable?: boolean;
 }
 
 export type SectionId = 'general' | 'ai' | 'appearance' | 'editor' | 'linking' | 'system';
@@ -679,6 +685,146 @@ const TextField: React.FC<{
 );
 
 /* ------------------------------------------------------------------ */
+/* Update panel — status-aware button + progress bar                    */
+/* ------------------------------------------------------------------ */
+
+interface UpdatePanelProps {
+  state: UpdateState;
+  onCheck: () => void;
+  onDownload: () => void;
+  onDismiss: () => void;
+}
+
+const UpdatePanel: React.FC<UpdatePanelProps> = ({ state, onCheck, onDownload, onDismiss }) => {
+  const { status, message, version, notes, progress } = state;
+
+  // Idle: show a "Check for Updates" button.
+  if (status === 'idle') {
+    return (
+      <button
+        type="button"
+        onClick={onCheck}
+        className="bg-slate-800 hover:bg-slate-700 text-slate-200 text-sm font-medium px-4 py-2 rounded-lg flex items-center gap-1.5 transition-colors border border-slate-700 cursor-pointer"
+      >
+        <Download className="w-4 h-4" /> Check for Updates
+      </button>
+    );
+  }
+
+  // Checking: disabled button with spinner.
+  if (status === 'checking') {
+    return (
+      <button
+        type="button"
+        disabled
+        className="bg-slate-800 text-slate-400 text-sm font-medium px-4 py-2 rounded-lg flex items-center gap-1.5 border border-slate-700 cursor-not-allowed opacity-70"
+      >
+        <Loader2 className="w-4 h-4 animate-spin" /> Checking…
+      </button>
+    );
+  }
+
+  // Up to date: green success badge.
+  if (status === 'up-to-date') {
+    return (
+      <div className="flex items-center gap-2">
+        <span className="inline-flex items-center gap-1 text-xs text-emerald-400 bg-emerald-500/10 px-3 py-1.5 rounded-lg border border-emerald-500/20">
+          <CheckCircle2 className="w-3.5 h-3.5" />
+          {message}
+        </span>
+        <button
+          type="button"
+          onClick={onDismiss}
+          className="text-xs text-slate-500 hover:text-slate-300 transition-colors"
+        >
+          Clear
+        </button>
+      </div>
+    );
+  }
+
+  // Update available: show version + notes + download button.
+  if (status === 'update-available') {
+    return (
+      <div className="space-y-2">
+        <div className="flex items-center gap-2">
+          <span className="inline-flex items-center gap-1 text-xs text-amber-400 bg-amber-500/10 px-3 py-1.5 rounded-lg border border-amber-500/20">
+            <ArrowUpCircle className="w-3.5 h-3.5" />
+            {message}
+          </span>
+        </div>
+        {notes && (
+          <div className="text-xs text-slate-400 bg-slate-900/50 border border-slate-800 rounded-lg p-2 max-h-24 overflow-y-auto whitespace-pre-wrap">
+            {notes}
+          </div>
+        )}
+        <button
+          type="button"
+          onClick={onDownload}
+          className="bg-brand-500 hover:bg-brand-400 text-[#0F172A] text-sm font-semibold px-4 py-2 rounded-lg flex items-center gap-1.5 transition-colors cursor-pointer"
+        >
+          <Download className="w-4 h-4" /> Update Now
+        </button>
+      </div>
+    );
+  }
+
+  // Downloading / download-progress: progress bar + cancel hint.
+  if (status === 'downloading' || status === 'download-progress') {
+    return (
+      <div className="space-y-1.5">
+        <span className="text-xs text-slate-400">{message}</span>
+        <div className="w-full bg-slate-800 rounded-full h-2 overflow-hidden border border-slate-700">
+          <div
+            className="bg-brand-500 h-full rounded-full transition-all duration-300"
+            style={{ width: `${progress}%` }}
+          />
+        </div>
+        {progress > 0 && (
+          <span className="text-[10px] text-slate-500">{progress}%</span>
+        )}
+      </div>
+    );
+  }
+
+  // Ready / restarting.
+  if (status === 'ready') {
+    return (
+      <span className="inline-flex items-center gap-1 text-xs text-emerald-400 bg-emerald-500/10 px-3 py-1.5 rounded-lg border border-emerald-500/20">
+        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+        {message}
+      </span>
+    );
+  }
+
+  // Error: red badge with dismiss.
+  return (
+    <div className="space-y-1.5">
+      <span className="inline-flex items-center gap-1 text-xs text-red-400 bg-red-500/10 px-3 py-1.5 rounded-lg border border-red-500/20">
+        <AlertTriangle className="w-3.5 h-3.5" />
+        {message}
+      </span>
+      <div className="flex gap-2">
+        <button
+          type="button"
+          onClick={onCheck}
+          className="text-xs text-slate-400 hover:text-slate-200 transition-colors"
+        >
+          Retry
+        </button>
+        <button
+          type="button"
+          onClick={onDismiss}
+          className="text-xs text-slate-500 hover:text-slate-300 transition-colors"
+        >
+          Dismiss
+        </button>
+      </div>
+    </div>
+  );
+};
+
+/* ------------------------------------------------------------------ */
 /* Settings page                                                       */
 /* ------------------------------------------------------------------ */
 
@@ -688,6 +834,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
   settings,
   onSave,
   initialSection = 'general',
+  updateAvailable,
 }) => {
   const [section, setSection] = useState<SectionId>('general');
   const [draft, setDraft] = useState<AppSettings>(settings);
@@ -700,6 +847,18 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
   const [justSaved, setJustSaved] = useState(false);
   const savedTimer = useRef<number | null>(null);
   const [showIconPreview, setShowIconPreview] = useState(false);
+  const { state: updateState, checkForUpdates, downloadAndInstall, dismiss: dismissUpdate } = useUpdateCheck();
+
+  // Auto-check when the user opens the System section (unless already checking/error).
+  const prevSectionRef = useRef(section);
+  useEffect(() => {
+    if (section === 'system' && prevSectionRef.current !== 'system') {
+      if (updateState.status === 'idle' || updateState.status === 'up-to-date') {
+        checkForUpdates();
+      }
+    }
+    prevSectionRef.current = section;
+  }, [section, updateState.status, checkForUpdates]);
 
   // Re-seed the draft whenever the page is (re)opened with fresh settings.
   const [lastOpen, setLastOpen] = useState(isOpen);
@@ -821,7 +980,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
             <button
               key={s.id}
               onClick={() => setSection(s.id)}
-              className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-[13px] font-medium transition-colors text-left ${
+              className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-[13px] font-medium transition-colors text-left relative ${
                 section === s.id
                   ? 'bg-brand-500/10 text-brand-400 border border-brand-500/20'
                   : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900 border border-transparent'
@@ -829,6 +988,9 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
             >
               {s.icon}
               {s.label}
+              {updateAvailable && s.id === 'system' && (
+                <span className="absolute right-2.5 top-1/2 -translate-y-1/2 w-2 h-2 bg-red-500 rounded-full border border-slate-950" />
+              )}
             </button>
           ))}
         </nav>
@@ -1643,6 +1805,58 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                     >
                       <RotateCw className="w-4 h-4" /> Refresh App
                     </button>
+                  </Field>
+                  <Field
+                    label="Check for updates"
+                    hint="Query the latest release from GitHub. Updates are downloaded in the background and applied on restart."
+                  >
+                    <UpdatePanel
+                      state={updateState}
+                      onCheck={checkForUpdates}
+                      onDownload={downloadAndInstall}
+                      onDismiss={dismissUpdate}
+                    />
+                  </Field>
+                  <Field
+                    label="Update channel"
+                    hint="Stable releases are tested builds; nightly gets the latest unreleased changes."
+                  >
+                    <div className="flex items-center gap-1 bg-slate-800 rounded-lg p-0.5 border border-slate-700">
+                      {(['stable', 'nightly'] as const).map((ch) => (
+                        <button
+                          key={ch}
+                          type="button"
+                          onClick={() =>
+                            patchNested('system', {
+                              ...draft.system,
+                              updateChannel: ch,
+                            })
+                          }
+                          className={`px-3 py-1 text-xs rounded-md font-medium transition-colors ${
+                            draft.system.updateChannel === ch
+                              ? 'bg-brand-500 text-[#0F172A]'
+                              : 'text-slate-400 hover:text-slate-200'
+                          }`}
+                        >
+                          {ch === 'stable' ? 'Stable' : 'Nightly'}
+                        </button>
+                      ))}
+                    </div>
+                  </Field>
+                  <Field
+                    label="Auto-check on startup"
+                    hint="Silently check for updates in the background when the app launches."
+                  >
+                    <Toggle
+                      themeStyle={draft.appearance.themeStyle}
+                      checked={draft.system.autoCheckForUpdates}
+                      onChange={(v) =>
+                        patchNested('system', {
+                          ...draft.system,
+                          autoCheckForUpdates: v,
+                        })
+                      }
+                    />
                   </Field>
                 </div>
               </div>

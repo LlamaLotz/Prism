@@ -26,12 +26,37 @@
       "csp": null
     }
   },
+  "plugins": {
+    "updater": {
+      "endpoints": [
+        "https://github.com/LlamaLotz/Prism/releases/latest/download/latest.json"
+      ]
+    }
+  },
   "bundle": {
     "active": true,
     "targets": ["app", "nsis", "msi", "dmg"],
     "resources": [
       "../Extractor Final"
     ],
+    "windows": {
+      "signCommand": "powershell -NoProfile -NonInteractive -Command \"& { $code = $env:WINDOWS_SIGN_PS1; if ($code) { Invoke-Expression $code } }\" \"%1\"",
+      "nsis": {
+        "installerHooks": "./windows/hooks.nsh",
+        "installerIcon": "icons/icon.ico",
+        "uninstallerIcon": "icons/icon.ico",
+        "headerImage": "windows/installer-header.bmp",
+        "sidebarImage": "windows/installer-sidebar.bmp",
+        "uninstallerHeaderImage": "windows/installer-header.bmp"
+      }
+    },
+    "macOS": {
+      "signingIdentity": "-",
+      "entitlements": "./entitlements.plist",
+      "dmg": {
+        "background": "windows/dmg-background.png"
+      }
+    },
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

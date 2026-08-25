@@ -54,6 +54,8 @@ interface GraphViewProps {
   persistNodePositions?: boolean;
   /** Light / dark mode so text labels and shadows adapt. */
   themeMode?: 'dark' | 'light';
+  /** User-chosen node color — triggers a targeted repaint without force rebuild. */
+  nodeColor?: string;
 }
 
 export const GraphView: React.FC<GraphViewProps> = ({
@@ -64,6 +66,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
   backgroundPattern = 'grid',
   persistNodePositions = true,
   themeMode = 'dark',
+  nodeColor,
 }) => {
   const svgRef = useRef<SVGSVGElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -403,17 +406,27 @@ export const GraphView: React.FC<GraphViewProps> = ({
     // Measure the glyph bounds, then place the text and pill around a shared
     // center. The pill starts nodeRadius + 4px below the circle and uses
     // uniform 7px horizontal / 6px vertical padding for a tight, balanced wrap.
+    // We use getComputedTextLength() + estimated cap-height instead of
+    // getBBox() because SVG elements freshly inserted into the DOM haven't
+    // had a layout pass yet — getBBox() would return zero dimensions and the
+    // pill background would collapse to nothing.
     nodeElements.each(function (d: any) {
       const textSelection = d3.select(this).select('text');
       const textEl = textSelection.node() as SVGTextElement | null;
       if (!textEl) return;
       try {
         const r = Math.max(7, Math.min(20, (d.linksCount || 1) * 1.8 + 6));
-        const metrics = textEl.getBBox();
+        // Use synchronous text measurement (no layout pass needed).
+        const textW = textEl.getComputedTextLength();
+        // Estimate glyph height from the font-size (10px) — cap-height is
+        // roughly 70% for most fonts, and dominant-baseline: central centers
+        // the glyph, so the visual height is about 7px with 3px of internal
+        // leading. A 16px total height (10px * 1.6) gives comfortable padding.
+        const textH = 16;
         const padX = 7;
-        const padY = 6;
-        const pillW = Math.max(metrics.width + padX * 2, 40);
-        const pillH = metrics.height + padY * 2;
+        const padY = 5;
+        const pillW = Math.max(textW + padX * 2, 40);
+        const pillH = Math.max(textH + padY * 2, 22);
         const centerY = r + 4 + pillH / 2;
         const pillX = -pillW / 2;
         const pillY = centerY - pillH / 2;
@@ -585,6 +598,41 @@ export const GraphView: React.FC<GraphViewProps> = ({
           : 'none'
     );
   }, [backgroundPattern]);
+
+  // Targeted repaint: when the user changes the node color or light/dark mode,
+  // the module-level COLOR_ACTIVE / COLOR_EXISTS / etc. variables have already
+  // been set by setGraphPalette. This effect walks the existing DOM and repaints
+  // circles, labels, and pill backgrounds without rebuilding the force sim.
+  useEffect(() => {
+    const svg = d3.select(svgRef.current);
+    const nodeGroup = svg.select('g.nodes');
+    if (nodeGroup.empty()) return;
+
+    const isLight = themeMode === 'light';
+    const textColor = isLight ? '#1e293b' : '#cbd5e1';
+    const textActive = isLight ? '#0f172a' : '#ffffff';
+    const pillFill = isLight ? 'rgba(241, 245, 249, 0.95)' : 'rgba(30, 30, 36, 0.92)';
+    const pillStroke = isLight ? 'rgba(148, 163, 184, 0.6)' : 'rgba(185, 182, 179, 0.25)';
+
+    nodeGroup.selectAll('g').each(function (d: any) {
+      const node = d3.select(this);
+      const isCurrent = activeNote && d.title && activeNote.title.toLowerCase() === d.title.toLowerCase();
+
+      // Update circle fill/stroke
+      node.select('circle')
+        .attr('fill', isCurrent ? COLOR_ACTIVE : (d.exists !== false ? COLOR_EXISTS : COLOR_MISSING))
+        .attr('stroke', isCurrent ? STROKE_COLOR : STROKE_EXISTS);
+
+      // Update text color
+      node.select('text')
+        .attr('fill', isCurrent ? textActive : textColor);
+
+      // Update pill background
+      node.select('rect.node-label-bg')
+        .attr('fill', pillFill)
+        .attr('stroke', pillStroke);
+    });
+  }, [nodeColor, themeMode, activeNote]);
 
   // Header Manual Reset Button
   const handleResetGraph = () => {

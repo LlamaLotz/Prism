@@ -136,6 +136,10 @@ export interface AppSettings {
     watchVault: boolean;
     syncH1OnStartup: boolean;
     versionRetentionDays: number;
+    /** Update release channel to check against. */
+    updateChannel: 'stable' | 'nightly';
+    /** Whether to check for updates automatically on app startup. */
+    autoCheckForUpdates: boolean;
   };
 }
 
