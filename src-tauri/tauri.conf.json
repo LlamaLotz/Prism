@@ -40,7 +40,6 @@
       "../Extractor Final"
     ],
     "windows": {
-      "signCommand": "powershell -NoProfile -NonInteractive -Command \"& { $code = $env:WINDOWS_SIGN_PS1; if ($code) { Invoke-Expression $code } }\" \"%1\"",
       "nsis": {
         "installerHooks": "./windows/hooks.nsh",
         "installerIcon": "icons/icon.ico",
@@ -51,8 +50,6 @@
       }
     },
     "macOS": {
-      "signingIdentity": "-",
-      "entitlements": "./entitlements.plist",
       "dmg": {
         "background": "windows/dmg-background.png"
       }
