@@ -170,8 +170,8 @@ jobs:
           APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         with:
-          tagName: ${{ github_ref_name }}
-          releaseName: "Prism ${{ github_ref_name }}"
+          tagName: ${{ github.ref_name }}
+          releaseName: "Prism ${{ github.ref_name }}"
           releaseBody: "See the assets below to download Prism for your operating system."
           releaseDraft: ${{ github.event_name == 'workflow_dispatch' && inputs.draft || true }}
           prerelease: false
