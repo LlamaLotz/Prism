@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 use tauri::{AppHandle, Emitter, Manager};
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, oneshot};
 
 use crate::db;
 use crate::engine::indexer::{is_self_write, suppress_self_write, SELF_WRITE_MASK_MS};
@@ -21,7 +21,11 @@ pub struct VaultChangePayload {
 
 /// Starts a background watcher on `vault_path` that keeps the SQLite index
 /// and backlink graph in sync with the files on disk.
-pub fn start_vault_watcher(vault_path: String, app_handle: AppHandle) -> Result<(), String> {
+pub fn start_vault_watcher(
+    vault_path: String,
+    app_handle: AppHandle,
+    mut stop_rx: oneshot::Receiver<()>,
+) -> Result<(), String> {
     let (tx, mut rx) = mpsc::channel::<Event>(256);
 
     let mut watcher = notify::recommended_watcher(move |res: notify::Result<Event>| {
@@ -43,12 +47,15 @@ pub fn start_vault_watcher(vault_path: String, app_handle: AppHandle) -> Result<
         .watch(Path::new(&vault_path), RecursiveMode::Recursive)
         .map_err(|e| e.to_string())?;
 
-    // The watcher is moved into the task and kept alive for the process lifetime.
+    // Keep the OS watcher alive for the lifetime of the task. Dropping it when
+    // this setup function returns silently disables filesystem notifications.
     tauri::async_runtime::spawn(async move {
+        let _watcher = watcher;
         let mut pending: HashMap<PathBuf, EventKind> = HashMap::new();
 
         loop {
             tokio::select! {
+                _ = &mut stop_rx => break,
                 event = rx.recv() => {
                     match event {
                         Some(ev) => {

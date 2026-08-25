@@ -30,6 +30,10 @@ export const linkerService = {
     await invoke('start_watching_vault', { vaultPath });
   },
 
+  async stopWatchingVault(): Promise<void> {
+    await invoke('stop_watching_vault');
+  },
+
   async getVaultDictionary(): Promise<[string, string][]> {
     return await invoke('get_vault_dictionary');
   },

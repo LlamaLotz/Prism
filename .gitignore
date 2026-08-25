@@ -1,5 +1,10 @@
 node_modules
 .freebuff
 
+# Tauri updater signing material must never enter the repository.
+myapp.key
+myapp.key.pub
+.tauri/
+
 # Vite dev cache (pre-bundled deps) — auto-regenerated on `vite dev`
 .vite/

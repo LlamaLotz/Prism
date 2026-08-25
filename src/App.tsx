@@ -24,6 +24,7 @@ import { TitleBar } from './components/TitleBar';
 import { LiquidGlass } from './components/LiquidGlass';
 
 import { SplashScreen } from './components/SplashScreen';
+import { UpdateBanner } from './components/UpdateBanner';
 import { FileText, Network, PanelLeftClose, PanelLeftOpen, SplitSquareVertical, Sparkles, Tags } from 'lucide-react';
 
 const LOCAL_STORAGE_KEY = 'prism_app_settings';
@@ -698,18 +699,15 @@ export default function App() {
       // Apply startup-only appearance settings (these only affect launch state).
       setLayout(merged.appearance.startupView);
       setShowAICoPilot(merged.appearance.aiPanelOpenOnStart);
-      // "Start with sidebar collapsed" applies on launch UNLESS the user has
-      // manually toggled the sidebar at some point — their last manual choice
-      // wins then. (The old `=== null` gate made the setting stop working the
-      // moment the sidebar was ever toggled.) When it applies, sync the
-      // persisted key too so the pre-settings first paint matches.
-      if (localStorage.getItem('prism_sidebar_toggled') !== '1') {
-        setSidebarCollapsed(merged.appearance.sidebarCollapsedOnStart);
-        localStorage.setItem(
-          'prism_sidebar_collapsed',
-          String(merged.appearance.sidebarCollapsedOnStart)
-        );
-      }
+      // The saved startup preference is authoritative on every launch. The
+      // toolbar state is still persisted for the current session, but it must
+      // not mask this setting after a restart.
+      setSidebarCollapsed(merged.appearance.sidebarCollapsedOnStart);
+      localStorage.setItem(
+        'prism_sidebar_collapsed',
+        String(merged.appearance.sidebarCollapsedOnStart)
+      );
+      localStorage.removeItem('prism_sidebar_toggled');
 
       // Enforce the version-history retention policy once at startup.
       if (merged.system.versionRetentionDays > 0) {
@@ -729,6 +727,14 @@ export default function App() {
     if (!path) {
       setNotes([]);
       setFolders([]);
+      if (watcherStartedRef.current !== null) {
+        try {
+          await linkerService.stopWatchingVault();
+        } catch (err) {
+          console.error('Failed to stop vault watcher:', err);
+        }
+        watcherStartedRef.current = null;
+      }
       return;
     }
     
@@ -811,14 +817,24 @@ export default function App() {
         backfillDoneRef.current = true;
       }
 
-      // Keep the index in sync reactively as files change on disk (once per
-      // vault, gated by the System setting `watchVault`).
-      if (settings.system.watchVault && watcherStartedRef.current !== path) {
-        watcherStartedRef.current = path;
+      // Keep the index in sync reactively as files change on disk (gated by
+      // the System setting `watchVault`). The command replaces an existing
+      // watcher, so toggling the setting can take effect without a restart.
+      if (settings.system.watchVault) {
+        if (watcherStartedRef.current !== path) {
+          try {
+            await linkerService.startWatchingVault(path);
+            watcherStartedRef.current = path;
+          } catch (err) {
+            console.error('Failed to start vault watcher:', err);
+          }
+        }
+      } else {
         try {
-          await linkerService.startWatchingVault(path);
+          await linkerService.stopWatchingVault();
+          watcherStartedRef.current = null;
         } catch (err) {
-          console.error('Failed to start vault watcher:', err);
+          console.error('Failed to stop vault watcher:', err);
         }
       }
 
@@ -842,7 +858,7 @@ export default function App() {
 
   useEffect(() => {
     fetchNotes();
-  }, [settings.vaultPath]);
+  }, [settings.vaultPath, settings.system.watchVault, settings.system.syncH1OnStartup, settings.linking.backfillOnVaultOpen]);
 
   // React to watcher events for OTHER notes (self-writes are masked in Rust,
   // so these are external edits/deletes). Refresh the list (debounced) so a
@@ -901,6 +917,12 @@ export default function App() {
   // the source of truth, keeping localStorage as a lightweight cache.
   const handleSaveSettings = (newSettings: AppSettings) => {
     setSettings(newSettings);
+    if (newSettings.appearance.linkHubVisibleByDefault !== settings.appearance.linkHubVisibleByDefault) {
+      localStorage.removeItem('prism_linkhub_visible');
+    }
+    if (newSettings.appearance.linkHubDefaultHeight !== settings.appearance.linkHubDefaultHeight) {
+      localStorage.removeItem('prism_linkhub_height');
+    }
     localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(newSettings));
     tauriAPI.saveRuntimeConfig(newSettings).catch((e) => {
       console.error('Failed to save settings to disk:', e);
@@ -914,11 +936,7 @@ export default function App() {
     }
     // Changing "Start with sidebar collapsed" re-arms it for the next launch:
     // clear the manual-toggle override so the new preference applies on start.
-    if (
-      newSettings.appearance.sidebarCollapsedOnStart !== settings.appearance.sidebarCollapsedOnStart
-    ) {
-      localStorage.removeItem('prism_sidebar_toggled');
-    }
+
   };
 
   // 4. Folder Select Trigger
@@ -1682,6 +1700,8 @@ export default function App() {
       )}
         </>
       )}
+
+      <UpdateBanner />
 
       {/* Startup splash overlay (fades out once boot completes) */}
       {splashVisible && (

@@ -15,8 +15,10 @@ use std::path::PathBuf;
 use tauri::Manager;
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", default)]
 pub struct OmniRouteConfig {
+    /// Provider id from the frontend API provider registry.
+    pub provider: String,
     pub api_key: String,
     pub base_url: String,
     pub model: String,
@@ -28,8 +30,12 @@ pub struct OmniRouteConfig {
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", default)]
 pub struct AppearanceConfig {
+    /// Visual archetype: industrial, glass, or gloss.
+    pub theme_style: String,
+    /// Color scheme: dark or light.
+    pub theme_mode: String,
     pub startup_view: String,
     pub default_graph_mode: String,
     pub background_pattern: String,
@@ -50,6 +56,10 @@ pub struct AppearanceConfig {
     pub app_icon: String,
     /// Status line beside the sidebar logo; supports {date}/{time} tokens.
     pub sidebar_status_text: String,
+    /// Opacity of Liquid Gloss glass surfaces.
+    pub liquid_glass_opacity: f64,
+    /// Viewport-level background environment.
+    pub background_environment: String,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -97,6 +107,7 @@ pub struct RuntimeConfig {
 impl Default for OmniRouteConfig {
     fn default() -> Self {
         Self {
+            provider: String::new(),
             api_key: String::new(),
             base_url: "https://api.omniroute.ai/v1".to_string(),
             model: "gpt-4o".to_string(),
@@ -110,6 +121,8 @@ impl Default for OmniRouteConfig {
 impl Default for AppearanceConfig {
     fn default() -> Self {
         Self {
+            theme_style: "industrial".to_string(),
+            theme_mode: "dark".to_string(),
             startup_view: "graph".to_string(),
             default_graph_mode: "3d".to_string(),
             background_pattern: "grid".to_string(),
@@ -120,11 +133,13 @@ impl Default for AppearanceConfig {
             label_quality: "high".to_string(),
             auto_rotate_on_load: false,
             auto_rotate_speed: 0.67,
-            accent_color: "#FEB05D".to_string(),
-            hover_glow_color: "#FEB05D".to_string(),
-            graph_node_color: "#FEB05D".to_string(),
+            accent_color: "#FB923C".to_string(),
+            hover_glow_color: "#FB923C".to_string(),
+            graph_node_color: "#FB923C".to_string(),
             app_icon: String::new(),
             sidebar_status_text: String::new(),
+            liquid_glass_opacity: 0.93,
+            background_environment: "none".to_string(),
         }
     }
 }
@@ -223,6 +238,9 @@ mod tests {
         assert!(json.contains("\"embeddingThreads\""));
         assert!(json.contains("\"versionRetentionDays\""));
         assert!(json.contains("\"injectUserProfile\""));
+        assert!(json.contains("\"provider\""));
+        assert!(json.contains("\"themeStyle\""));
+        assert!(json.contains("\"themeMode\""));
         assert!(json.contains("\"backgroundPattern\""));
         assert!(json.contains("\"userProfile\""));
         assert!(json.contains("\"accentColor\""));
@@ -230,11 +248,13 @@ mod tests {
         assert!(json.contains("\"graphNodeColor\""));
         assert!(json.contains("\"appIcon\""));
         assert!(json.contains("\"sidebarStatusText\""));
+        assert!(json.contains("\"liquidGlassOpacity\""));
+        assert!(json.contains("\"backgroundEnvironment\""));
 
         let back: RuntimeConfig = serde_json::from_str(&json).unwrap();
         assert_eq!(back.appearance.background_pattern, "grid");
         assert_eq!(back.appearance.default_graph_mode, "3d");
-        assert_eq!(back.appearance.accent_color, "#FEB05D");
+        assert_eq!(back.appearance.accent_color, "#FB923C");
         assert_eq!(back.appearance.app_icon, "");
         assert!((back.linking.similarity_threshold - 0.70).abs() < 1e-6);
         assert_eq!(back.linking.embedding_threads, 1);

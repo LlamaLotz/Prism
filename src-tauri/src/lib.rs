@@ -17,6 +17,7 @@ mod watcher;
 
 use linker::{LinkerEngine, NoteLinker, LinkMention};
 use std::sync::{Arc, Mutex};
+use tokio::sync::oneshot;
 
 use crate::engine::embeddings::EmbeddingEngine;
 use crate::engine::indexer::{suppress_self_write, SELF_WRITE_MASK_MS};
@@ -25,6 +26,7 @@ pub struct AppState {
     pub linker: Mutex<Option<LinkerEngine>>,
     pub db_path: Mutex<Option<String>>,
     pub watcher_path: Mutex<Option<String>>,
+    pub watcher_stop: Mutex<Option<oneshot::Sender<()>>>,
     /// Cached embedding-engine initialization result. Both success and failure
     /// are memoized so a broken model isn't re-initialized (and doesn't
     /// re-attempt network downloads) on every scan.
@@ -508,13 +510,33 @@ fn start_watching_vault(
     vault_path: String,
 ) -> Result<(), String> {
     {
-        let mut guard = state.watcher_path.lock().unwrap();
+        let guard = state.watcher_path.lock().unwrap();
         if guard.as_deref() == Some(&vault_path) {
             return Ok(());
         }
-        *guard = Some(vault_path.clone());
     }
-    watcher::start_vault_watcher(vault_path, app_handle)
+
+    // A notify watcher owns an OS handle and must be cancelled before a new
+    // vault watcher replaces it. This also makes the Watch Vault toggle take
+    // effect without restarting the app.
+    if let Some(stop_tx) = state.watcher_stop.lock().unwrap().take() {
+        let _ = stop_tx.send(());
+    }
+
+    let (stop_tx, stop_rx) = oneshot::channel();
+    watcher::start_vault_watcher(vault_path.clone(), app_handle, stop_rx)?;
+    *state.watcher_path.lock().unwrap() = Some(vault_path);
+    *state.watcher_stop.lock().unwrap() = Some(stop_tx);
+    Ok(())
+}
+
+#[tauri::command]
+fn stop_watching_vault(state: tauri::State<'_, AppState>) -> Result<(), String> {
+    if let Some(stop_tx) = state.watcher_stop.lock().unwrap().take() {
+        let _ = stop_tx.send(());
+    }
+    *state.watcher_path.lock().unwrap() = None;
+    Ok(())
 }
 
 #[tauri::command]
@@ -1496,10 +1518,15 @@ fn relaunch_app(app: tauri::AppHandle) -> Result<(), String> {
 pub fn run() {
     tauri::Builder::default()
         .setup(|app| {
+            #[cfg(desktop)]
+            app.handle()
+                .plugin(tauri_plugin_updater::Builder::new().build())?;
+
             app.manage(AppState {
                 linker: Mutex::new(None),
                 db_path: Mutex::new(None),
                 watcher_path: Mutex::new(None),
+                watcher_stop: Mutex::new(None),
                 embeddings: Mutex::new(None),
                 embed_lock: Mutex::new(()),
                 linker_cache: Mutex::new(None),
@@ -1553,6 +1580,7 @@ pub fn run() {
             index_note,
             get_incoming_backlinks,
             start_watching_vault,
+            stop_watching_vault,
             linker_scan,
             linker_diff,
             linker_apply,

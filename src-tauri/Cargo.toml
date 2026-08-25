@@ -61,3 +61,6 @@ webview2-com = "0.38.2"
 # carries AreBrowserAcceleratorKeysEnabled).
 windows-core = "0.61.2"
 
+[target.'cfg(any(target_os = "macos", windows, target_os = "linux"))'.dependencies]
+tauri-plugin-updater = "^2"
+

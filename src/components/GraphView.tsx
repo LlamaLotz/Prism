@@ -98,10 +98,14 @@ export const GraphView: React.FC<GraphViewProps> = ({
     }
   };
 
+  const persistNodePositionsRef = useRef(persistNodePositions);
+  persistNodePositionsRef.current = persistNodePositions;
+
   const savePositions = (nodes: any[]) => {
     // Disabled via the Linking setting "persist node positions" — the graph
-    // then re-lays out fresh on every open.
-    if (!persistNodePositions) return;
+    // then re-lays out fresh on every open. Read the ref so the mount-time
+    // simulation callback always sees the current preference.
+    if (!persistNodePositionsRef.current) return;
     const positions: Record<string, { x: number; y: number }> = {};
     for (const n of nodes) {
       if (Number.isFinite(n.x) && Number.isFinite(n.y) && (n.x !== 0 || n.y !== 0)) {

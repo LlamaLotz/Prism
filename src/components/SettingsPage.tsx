@@ -23,8 +23,15 @@ import {
   Gauge,
   RotateCw,
   Lock,
+  Download,
 } from 'lucide-react';
 import { AppSettings, tauriAPI } from '../types';
+import {
+  checkForAppUpdate,
+  downloadAndInstallAppUpdate,
+  updateNotes,
+  type UpdateStatus,
+} from '../services/updater';
 import {
   API_PROVIDERS,
   describeKeyFormat,
@@ -609,14 +616,14 @@ const RangeField: React.FC<{
             if (e.key === 'Escape') setEditing(false);
           }}
           onFocus={(e) => e.target.select()}
-          className="w-14 bg-[var(--color-surface)] border border-[var(--brand-500,#FB923C)] rounded px-1.5 py-0.5 text-xs text-[var(--color-text-hi)] focus:outline-none tabular-nums text-right font-semibold"
+          className="w-14 bg-[var(--color-surface)] border border-[var(--color-brand-500,#FB923C)] rounded px-1.5 py-0.5 text-xs text-[var(--color-text-hi)] focus:outline-none tabular-nums text-right font-semibold"
         />
       ) : (
         <button
           type="button"
           onClick={startEdit}
           title="Click to type a value"
-          className="w-14 text-right text-xs text-[var(--color-text-body)] font-semibold hover:text-[var(--brand-500,#FB923C)] tabular-nums cursor-text transition-colors"
+          className="w-14 text-right text-xs text-[var(--color-text-body)] font-semibold hover:text-[var(--color-brand-500,#FB923C)] tabular-nums cursor-text transition-colors"
         >
           {display}
         </button>
@@ -700,6 +707,9 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
   const [justSaved, setJustSaved] = useState(false);
   const savedTimer = useRef<number | null>(null);
   const [showIconPreview, setShowIconPreview] = useState(false);
+  // Manual update-check state (Settings → System), driven by the same
+  // plugin-backed updater service the startup banner uses.
+  const [updateStatus, setUpdateStatus] = useState<UpdateStatus>({ state: 'idle' });
 
   // Re-seed the draft whenever the page is (re)opened with fresh settings.
   const [lastOpen, setLastOpen] = useState(isOpen);
@@ -711,6 +721,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
     setIsDirty(false);
     setShowUnsaved(false);
     setJustSaved(false);
+    setUpdateStatus({ state: 'idle' });
   } else if (!isOpen && lastOpen) {
     setLastOpen(false);
   }
@@ -798,6 +809,49 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
       window.location.reload();
     }
   };
+
+  // Manual update check. Runs the same plugin-backed check the startup banner
+  // uses; the result is shown inline next to the button.
+  const checkForUpdates = async () => {
+    if (updateStatus.state === 'checking' || updateStatus.state === 'downloading') return;
+    setUpdateStatus({ state: 'checking' });
+    // Keep regular browser/Vite previews free of updater IPC calls.
+    if (!('__TAURI_INTERNALS__' in window)) {
+      setUpdateStatus({ state: 'error', message: 'Updates are only available in the desktop app.' });
+      return;
+    }
+    try {
+      const update = await checkForAppUpdate();
+      setUpdateStatus(update ? { state: 'available', update } : { state: 'up-to-date' });
+    } catch (error) {
+      console.warn('[updater] update check failed:', error);
+      setUpdateStatus({ state: 'error', message: String(error) });
+    }
+  };
+
+  const installUpdate = async () => {
+    if (updateStatus.state !== 'available') return;
+    const update = updateStatus.update;
+    setUpdateStatus({ state: 'downloading', update, downloaded: 0 });
+    try {
+      await downloadAndInstallAppUpdate(update, (downloaded, total) => {
+        setUpdateStatus({ state: 'downloading', update, downloaded, total });
+      });
+      setUpdateStatus({ state: 'installed', version: update.version });
+      // Tauri exits automatically while installing on Windows. On macOS/Linux
+      // this restarts the newly installed app when the install call returns.
+      await tauriAPI.relaunchApp();
+    } catch (error) {
+      console.error('[updater] install failed:', error);
+      setUpdateStatus({ state: 'error', message: String(error) });
+    }
+  };
+
+  // Download progress shown while an update is being installed.
+  const updatePercent =
+    updateStatus.state === 'downloading' && updateStatus.total
+      ? Math.min(100, Math.round((updateStatus.downloaded / updateStatus.total) * 100))
+      : 0;
 
   return (
     <div className="settings-page-overlay fixed inset-0 z-50 flex bg-neutral-950 text-neutral-100 select-none">
@@ -1643,6 +1697,83 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                     >
                       <RotateCw className="w-4 h-4" /> Refresh App
                     </button>
+                  </Field>
+                  <Field
+                    label="Check for updates"
+                    hint="Check the update server for a newer version of Prism and install it right here."
+                  >
+                    <div className="flex flex-col items-end gap-2">
+                      <button
+                        type="button"
+                        onClick={checkForUpdates}
+                        disabled={
+                          updateStatus.state === 'checking' ||
+                          updateStatus.state === 'downloading' ||
+                          updateStatus.state === 'installed'
+                        }
+                        className="bg-slate-800 hover:bg-slate-700 text-slate-200 text-sm font-medium px-4 py-2 rounded-lg flex items-center gap-1.5 transition-colors border border-slate-700 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        {updateStatus.state === 'checking' ? (
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                        ) : (
+                          <Download className="w-4 h-4" />
+                        )}
+                        {updateStatus.state === 'checking'
+                          ? 'Checking...'
+                          : updateStatus.state === 'available'
+                            ? 'Update available'
+                            : 'Check for updates'}
+                      </button>
+
+                      {updateStatus.state === 'up-to-date' && (
+                        <div className="flex items-center gap-1.5 text-xs text-emerald-400">
+                          <CheckCircle2 className="w-3.5 h-3.5" /> You're on the latest version.
+                        </div>
+                      )}
+
+                      {updateStatus.state === 'error' && (
+                        <div className="max-w-[260px] text-right text-[11px] leading-relaxed text-rose-400 break-words">
+                          Update check failed: {updateStatus.message}
+                        </div>
+                      )}
+
+                      {updateStatus.state === 'available' && (
+                        <div className="flex flex-col items-end gap-2">
+                          <button
+                            type="button"
+                            onClick={installUpdate}
+                            className="bg-brand-500 hover:bg-brand-400 text-slate-950 text-xs font-semibold px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-colors cursor-pointer"
+                          >
+                            <RotateCw className="w-3.5 h-3.5" /> Install and restart
+                          </button>
+                          <div className="max-w-[260px] text-right text-[11px] leading-relaxed text-slate-500 whitespace-pre-wrap">
+                            {updateNotes(updateStatus.update)}
+                          </div>
+                        </div>
+                      )}
+
+                      {updateStatus.state === 'downloading' && (
+                        <div className="w-52">
+                          <div className="mb-1 flex justify-between text-[11px] text-slate-500">
+                            <span>Downloading update</span>
+                            <span>{updateStatus.total ? `${updatePercent}%` : 'Preparing...'}</span>
+                          </div>
+                          <div className="h-1.5 overflow-hidden bg-slate-800">
+                            <div
+                              className="h-full bg-brand-500 transition-[width] duration-150"
+                              style={{ width: `${updatePercent}%` }}
+                            />
+                          </div>
+                        </div>
+                      )}
+
+                      {updateStatus.state === 'installed' && (
+                        <div className="flex items-center gap-1.5 text-xs text-emerald-400">
+                          <CheckCircle2 className="w-3.5 h-3.5" /> Prism {updateStatus.version}{' '}
+                          installed — restarting...
+                        </div>
+                      )}
+                    </div>
                   </Field>
                 </div>
               </div>

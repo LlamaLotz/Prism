@@ -389,13 +389,16 @@ export const Editor: React.FC<EditorProps> = ({
   const [deniedEntries, setDeniedEntries] = useState<DeniedLink[]>([]);
   const [deniedLoaded, setDeniedLoaded] = useState(false);
   const [linkHubVisible, setLinkHubVisible] = useState(
-    // A user who explicitly toggled the LinkHub before (key stored) keeps
-    // their choice; otherwise the Appearance setting wins.
     () =>
       localStorage.getItem('prism_linkhub_visible') === null
         ? settings.appearance.linkHubVisibleByDefault
         : localStorage.getItem('prism_linkhub_visible') !== 'false'
   );
+  // The saved default takes effect as soon as it changes; a manual toolbar
+  // choice remains valid until then.
+  useEffect(() => {
+    setLinkHubVisible(settings.appearance.linkHubVisibleByDefault);
+  }, [settings.appearance.linkHubVisibleByDefault]);
   const [showNoteMeta, setShowNoteMeta] = useState(false);
   // Time Machine: version timeline for the active note (base snapshot + every
   // delta, each reconstructed server-side).
@@ -442,6 +445,10 @@ export const Editor: React.FC<EditorProps> = ({
       ? saved
       : settings.appearance.linkHubDefaultHeight;
   });
+  useEffect(() => {
+    if (!Number.isFinite(settings.appearance.linkHubDefaultHeight)) return;
+    setLinkHubHeight(settings.appearance.linkHubDefaultHeight);
+  }, [settings.appearance.linkHubDefaultHeight]);
   const toggleLinkHub = (visible: boolean) => {
     setLinkHubVisible(visible);
     localStorage.setItem('prism_linkhub_visible', String(visible));

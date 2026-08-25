@@ -1262,13 +1262,13 @@ button.titlebar-menu-dropdown:hover {
   color: var(--color-text-muted) !important;
 }
 .settings-unsaved-apply {
-  background: var(--brand-500, #FB923C) !important;
-  border-color: color-mix(in srgb, var(--brand-500, #FB923C) 30%, transparent) !important;
+  background: var(--color-brand-500, var(--accent-color, #FB923C)) !important;
+  border-color: color-mix(in srgb, var(--color-brand-500, var(--accent-color, #FB923C)) 30%, transparent) !important;
   color: #ffffff !important;
-  border: 1px solid color-mix(in srgb, var(--brand-500, #FB923C) 30%, transparent) !important;
+  border: 1px solid color-mix(in srgb, var(--color-brand-500, var(--accent-color, #FB923C)) 30%, transparent) !important;
 }
 .settings-unsaved-apply:hover {
-  background: var(--brand-400, #FB923C) !important;
+  background: var(--color-brand-400, var(--accent-color, #FB923C)) !important;
 }
 .settings-unsaved-discard {
   color: var(--color-text-body) !important;
@@ -1785,11 +1785,12 @@ button[role="tab"][aria-selected="true"] {
    Placed at end of stylesheet to override any theme-specific rules.
    ===================================================================== */
 
-/* Checked track: always orange */
+/* Checked track: always the user's accent color (falls back to orange
+   when no accent override has been applied yet). */
 .switch-track[aria-checked="true"],
 .switch-track.bg-brand-500 {
-  background-color: #F97316 !important;
-  border-color: #F97316 !important;
+  background-color: var(--color-brand-500, var(--accent-color, #F97316)) !important;
+  border-color: var(--color-brand-500, var(--accent-color, #F97316)) !important;
 }
 
 /* Inactive track: light mode gets visible gray */

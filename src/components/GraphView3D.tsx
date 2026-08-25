@@ -78,6 +78,11 @@ export const GraphView3D: React.FC<GraphView3DProps> = ({
   const nodeGroupsRef = useRef<Set<THREE.Group>>(new Set());
 
   const [autoRotate, setAutoRotate] = useState(autoRotateOnLoad);
+  // Keep the runtime control synchronized when the saved preference changes
+  // while this graph instance is already mounted.
+  useEffect(() => {
+    setAutoRotate(autoRotateOnLoad);
+  }, [autoRotateOnLoad]);
   const [tooltip, setTooltip] = useState<TooltipState | null>(null);
   const tooltipTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const activeTitle = activeNote?.title?.toLowerCase();
@@ -398,7 +403,7 @@ export const GraphView3D: React.FC<GraphView3DProps> = ({
     group.add(mesh); group.add(label);
     nodeGroupsRef.current.add(group);
     return group;
-  }, []);
+  }, [activeTitle, configuredNodeColor, configuredExistsColor, labelQuality, themeCacheKey]);
 
   const applyNodeColor = (mesh: THREE.Mesh) => {
     const title = mesh.userData.title as string | undefined;
@@ -440,7 +445,7 @@ export const GraphView3D: React.FC<GraphView3DProps> = ({
     if (!node) { stopTooltipPoll(); setTooltip(null); return; }
     updateTooltip(node);
     startTooltipPoll(node);
-  }, []);
+  }, [activeTitle, configuredNodeColor, configuredExistsColor, configuredHoverColor]);
 
   const handlePointerLeave = useCallback(() => { stopTooltipPoll(); setTooltip(null); }, []);
 
