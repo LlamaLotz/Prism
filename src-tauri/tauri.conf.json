@@ -61,7 +61,7 @@
   },
   "plugins": {
     "updater": {
-      "pubkey": "untrusted comment: minisign public key: 7BC8880E3378AF5B\nRWRbr3gzDojIe7cT9yfBWBJHTi//NXTaWOUJtZmxmXVmpxKvOLvoF6Uf",
+      "pubkey": "RWRbr3gzDojIe7cT9yfBWBJHTi//NXTaWOUJtZmxmXVmpxKvOLvoF6Uf",
       "endpoints": [
         "https://github.com/LlamaLotz/Prism/releases/latest/download/latest.json"
       ],
