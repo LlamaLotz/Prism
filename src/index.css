@@ -1244,6 +1244,26 @@ button.titlebar-menu-dropdown:hover {
   overflow: hidden;
 }
 
+/* Rounded & Liquid Gloss already pad the layout container (p-2 in App.tsx),
+   so the rail's own margin would double the inset and leave it floating out
+   of alignment with the workspace panel (plus its h-full + margins would
+   overflow the padded container and clip the rail's bottom). Drop the margin
+   here — the container padding insets the rail to the same edge as the
+   expanded sidebar and the workspace, so toggling the sidebar never shifts
+   the workspace vertically. */
+.theme-glass .sidebar-collapsed-rail {
+  margin: 0;
+}
+/* Gloss: the theme's universal `div { border-radius: unset !important }`
+   reset would otherwise strip the rail's radius, and the gloss panel list
+   doesn't include [data-region="sidebar"]. Re-apply the shared panel radius
+   so the collapsed rail is rounded exactly like the workspace / expanded
+   sidebar (and like the Rounded theme's rail). */
+.theme-gloss .sidebar-collapsed-rail {
+  margin: 0;
+  border-radius: var(--radius-module, 24px) !important;
+}
+
 /* Settings unsaved-changes dialog: use theme tokens instead of hardcoded
    dark surfaces so the confirmation guard remains readable in both modes. */
 .settings-unsaved-backdrop {
@@ -1305,6 +1325,14 @@ button.titlebar-menu-dropdown:hover {
 .theme-gloss .liquid-gloss-header button.titlebar-menu,
 .theme-gloss .liquid-gloss-header [class*="titlebar"] button {
   border-radius: unset !important;
+}
+/* Gloss light: the shared --color-offwhite token stays near-white because the
+   always-black splash screen uses it as its title color. The light titlebar
+   and its dropdowns need a dark "offwhite" so hovered/active menu text stays
+   legible — override the token on the titlebar subtree only (dropdown items,
+   menu labels, tab buttons, window controls). */
+.theme-gloss.mode-light .liquid-gloss-header {
+  --color-offwhite: #0f172a;
 }
 
 /* Gloss: generic panel backdrop. Scrollable editor content is excluded

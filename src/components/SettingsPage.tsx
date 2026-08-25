@@ -1405,7 +1405,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                   {/* Liquid Gloss opacity slider — only shown when the gloss archetype is active */}
                   {draft.appearance.themeStyle === 'gloss' && (
                     <Field
-                      label="Glass transparency"
+                      label="Glass opaqueness"
                       hint="How translucent the Liquid Gloss frosted surfaces are. Lower = more transparent, higher = more opaque."
                     >
                       <RangeField
