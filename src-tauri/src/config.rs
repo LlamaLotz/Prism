@@ -133,9 +133,9 @@ impl Default for AppearanceConfig {
             label_quality: "high".to_string(),
             auto_rotate_on_load: false,
             auto_rotate_speed: 0.67,
-            accent_color: "#FB923C".to_string(),
-            hover_glow_color: "#FB923C".to_string(),
-            graph_node_color: "#FB923C".to_string(),
+            accent_color: "#38BDF8".to_string(),
+            hover_glow_color: "#38BDF8".to_string(),
+            graph_node_color: "#38BDF8".to_string(),
             app_icon: String::new(),
             sidebar_status_text: String::new(),
             liquid_glass_opacity: 0.93,
@@ -254,7 +254,7 @@ mod tests {
         let back: RuntimeConfig = serde_json::from_str(&json).unwrap();
         assert_eq!(back.appearance.background_pattern, "grid");
         assert_eq!(back.appearance.default_graph_mode, "3d");
-        assert_eq!(back.appearance.accent_color, "#FB923C");
+        assert_eq!(back.appearance.accent_color, "#38BDF8");
         assert_eq!(back.appearance.app_icon, "");
         assert!((back.linking.similarity_threshold - 0.70).abs() < 1e-6);
         assert_eq!(back.linking.embedding_threads, 1);

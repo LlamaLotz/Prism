@@ -1,5 +1,6 @@
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { Image as TauriImage } from '@tauri-apps/api/image';
+// Dark-mode logos (visible on dark backgrounds).
 import blueAC from '../assets/logos/Blue AC.svg';
 import bwAC from '../assets/logos/BW AC.svg';
 import greyAC from '../assets/logos/Grey AC.svg';
@@ -7,6 +8,15 @@ import whiteAC from '../assets/logos/White AC.svg';
 import blue from '../assets/logos/Blue.svg';
 import grey from '../assets/logos/Grey.svg';
 import white from '../assets/logos/White.svg';
+// Light-mode logos (visible on light backgrounds).
+// Each id maps to its light counterpart in Logo's/Light Mode/Transparent.
+import blueACLight from '../assets/logos/light/Blue AC.svg';
+import bwACLight from '../assets/logos/light/BW AC.svg';
+import greyACLight from '../assets/logos/light/Grey AC.svg';
+import whiteACLight from '../assets/logos/light/White AC.svg';
+import blueLight from '../assets/logos/light/Blue.svg';
+import greyLight from '../assets/logos/light/Grey.svg';
+import whiteLight from '../assets/logos/light/White.svg';
 import loaderBlue from '../assets/loaders/Blue.webp';
 import loaderBW from '../assets/loaders/BW.webp';
 import loaderGrey from '../assets/loaders/Grey.webp';
@@ -61,17 +71,46 @@ export const APP_ICON_GROUPS: AppIconGroup[] = [
   },
 ];
 
-/** Flat lookup list (used by getAppIcon). */
+/** Flat lookup list (used by the settings UI). */
 export const APP_ICONS: AppIconOption[] = APP_ICON_GROUPS.flatMap((g) => g.icons);
 
+/** Dark-mode icon URLs (visible on dark backgrounds). */
+const DARK_ICON_MAP: Record<string, string> = {
+  'blue-ac': blueAC,
+  'grey-ac': greyAC,
+  'white-ac': whiteAC,
+  'bw-ac': bwAC,
+  blue,
+  grey,
+  white,
+};
+
+/** Light-mode icon URLs (visible on light backgrounds).
+ *  Each id maps to the corresponding Logo's/Light Mode/Transparent variant. */
+const LIGHT_ICON_MAP: Record<string, string> = {
+  'blue-ac': blueACLight,
+  'grey-ac': greyACLight,
+  'white-ac': whiteACLight,
+  'bw-ac': bwACLight,
+  blue: blueLight,
+  grey: greyLight,
+  white: whiteLight,
+};
+
 /**
- * Resolves a stored app-icon id to its asset URL. Falls back to the default
- * /logo.png for empty ids, and keeps legacy data-URL uploads working.
+ * Resolves a stored app-icon id to its asset URL, selecting the appropriate
+ * dark-mode or light-mode variant based on `themeMode`.
+ *
+ * Falls back to /logo.png for empty ids, and keeps legacy data-URL uploads
+ * working. Each logo id maps to a dedicated light variant from
+ * Logo's/Light Mode/Transparent so the icon always reads clearly on the
+ * background colour scheme.
  */
-export function getAppIcon(id?: string): string {
+export function getAppIcon(id?: string, themeMode?: 'dark' | 'light'): string {
   if (!id) return '/logo.png';
   if (id.startsWith('data:')) return id;
-  return APP_ICONS.find((icon) => icon.id === id)?.url ?? '/logo.png';
+  const map = themeMode === 'light' ? LIGHT_ICON_MAP : DARK_ICON_MAP;
+  return map[id] ?? DARK_ICON_MAP[id] ?? '/logo.png';
 }
 
 /**
@@ -152,9 +191,12 @@ async function rasterizeToPng(url: string, size = 256): Promise<Uint8Array> {
  * icon on macOS/Linux). Falls back silently if the runtime icon can't be set
  * (e.g. bundled builds with a locked window icon).
  */
-export async function applyWindowIcon(id?: string): Promise<void> {
+export async function applyWindowIcon(
+  id?: string,
+  themeMode?: 'dark' | 'light',
+): Promise<void> {
   try {
-    const url = getAppIcon(id);
+    const url = getAppIcon(id, themeMode);
     const png = await rasterizeToPng(url);
     const icon = await TauriImage.fromBytes(png);
     await getCurrentWindow().setIcon(icon);

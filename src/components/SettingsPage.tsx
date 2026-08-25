@@ -55,12 +55,12 @@ export type SectionId = 'general' | 'ai' | 'appearance' | 'editor' | 'linking' |
 
 /** Preset swatches for the appearance accent-color picker. */
 const ACCENT_PRESETS = [
+  '#38BDF8', // sky
   '#FB923C', // orange
   '#F87171', // red
   '#FB7185', // rose
   '#A78BFA', // violet
   '#818CF8', // indigo
-  '#38BDF8', // sky
   '#2DD4BF', // teal
   '#34D399', // emerald
   '#A3E635', // lime
@@ -616,14 +616,14 @@ const RangeField: React.FC<{
             if (e.key === 'Escape') setEditing(false);
           }}
           onFocus={(e) => e.target.select()}
-          className="w-14 bg-[var(--color-surface)] border border-[var(--color-brand-500,#FB923C)] rounded px-1.5 py-0.5 text-xs text-[var(--color-text-hi)] focus:outline-none tabular-nums text-right font-semibold"
+          className="w-14 bg-[var(--color-surface)] border border-[var(--color-brand-500,#38BDF8)] rounded px-1.5 py-0.5 text-xs text-[var(--color-text-hi)] focus:outline-none tabular-nums text-right font-semibold"
         />
       ) : (
         <button
           type="button"
           onClick={startEdit}
           title="Click to type a value"
-          className="w-14 text-right text-xs text-[var(--color-text-body)] font-semibold hover:text-[var(--color-brand-500,#FB923C)] tabular-nums cursor-text transition-colors"
+          className="w-14 text-right text-xs text-[var(--color-text-body)] font-semibold hover:text-[var(--color-brand-500,#38BDF8)] tabular-nums cursor-text transition-colors"
         >
           {display}
         </button>
@@ -1841,7 +1841,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
               <X className="w-4 h-4" />
             </button>
             <img
-              src={getAppIcon(draft.appearance.appIcon)}
+              src={getAppIcon(draft.appearance.appIcon, draft.appearance.themeMode)}
               alt="App icon preview"
               className="w-full h-full object-contain"
             />

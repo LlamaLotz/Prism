@@ -69,23 +69,23 @@
   --color-surface: #2B2A2A;
   --color-surface-hover: #3A3939;
   --color-border: #383737;
-  --color-border-active: rgba(251, 146, 60, 0.4);
+  --color-border-active: rgba(56, 189, 248, 0.4);
 
-  /* Brand Accent: Warm Amber Gold */
-  --color-brand-50: #fff9f0;
-  --color-brand-100: #ffefd9;
-  --color-brand-200: #ffdfb3;
-  --color-brand-300: #ffcb85;
-  --color-brand-400: #ffc069;
-  --color-brand-500: #FB923C;
-  --color-brand-600: #f59e0b;
-  --color-brand-700: #c97f0a;
-  --color-brand-800: #9a610c;
-  --color-brand-900: #6d4408;
-  --color-brand-950: #3a2304;
-  --color-brand-glow: rgba(251, 146, 60, 0.15);
-  --color-hover-glow: rgba(251, 146, 60, 0.35);
-  --color-hover-glow-active: rgba(234, 124, 28, 0.45);
+  /* Brand Accent: Sky Blue (overridden at runtime by user accent) */
+  --color-brand-50: #CDEFFD;
+  --color-brand-100: #AFE5FC;
+  --color-brand-200: #92DBFB;
+  --color-brand-300: #74D1FA;
+  --color-brand-400: #56C7F9;
+  --color-brand-500: #38BDF8;
+  --color-brand-600: #31A6DA;
+  --color-brand-700: #2A8EBA;
+  --color-brand-800: #23759A;
+  --color-brand-900: #1B5B77;
+  --color-brand-950: #134054;
+  --color-brand-glow: rgba(56, 189, 248, 0.15);
+  --color-hover-glow: rgba(56, 189, 248, 0.35);
+  --color-hover-glow-active: rgba(49, 166, 218, 0.45);
 
   --color-accent-secondary: #5A7ACD;
 
@@ -457,7 +457,7 @@ input[type='range'].hue-slider::-moz-range-thumb {
   color: var(--color-text-hi);
 }
 .search-match-active {
-  background: #FB923C;
+  background: #38BDF8;
   color: var(--color-base);
   border-radius: 0;
 }
@@ -500,10 +500,25 @@ input[type='range'].hue-slider::-moz-range-thumb {
 
 /* Splash screen */
 @keyframes splash-in {
-  from { opacity: 0; transform: scale(0.97); }
-  to   { opacity: 1; transform: scale(1); }
+  from { opacity: 0; }
+  to   { opacity: 1; }
 }
 .splash-in { animation: splash-in 0.5s ease-out both; }
+
+/* Gradient-clipped title: keep the text fill transparent so the background
+   gradient shows through the glyphs, and inline-block so the gradient is
+   sized to the text box (not the full line box). */
+.splash-title {
+  background: linear-gradient(180deg, #ffffff 0%, #bde8ff 60%, #70c8ff 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+  display: inline-block;
+  overflow: visible;
+  filter: drop-shadow(0 2px 8px rgba(112, 200, 255, 0.3));
+  -webkit-filter: drop-shadow(0 2px 8px rgba(112, 200, 255, 0.3));
+}
 
 @keyframes logo-float {
   0%, 100% { transform: translateY(0); }
@@ -1172,8 +1187,8 @@ button.titlebar-menu-dropdown:hover {
   background: #e2e8f0 !important;
 }
 .mode-light .switch-track[aria-checked="true"] {
-  background: var(--color-brand-500, var(--accent-color, #fb923c)) !important;
-  border-color: var(--color-brand-500, var(--accent-color, #fb923c)) !important;
+  background: var(--color-brand-500, var(--accent-color, #38BDF8)) !important;
+  border-color: var(--color-brand-500, var(--accent-color, #38BDF8)) !important;
 }
 .mode-light .switch-thumb {
   box-sizing: border-box;
@@ -1188,10 +1203,10 @@ button.titlebar-menu-dropdown:hover {
    switch block at the end of this stylesheet. */
 
 /* Light-mode sidebar controls: selected note content stays charcoal while the
-   configured orange remains reserved for the left indicator and active states. */
+   configured accent remains reserved for the left indicator and active states. */
 .mode-light .sidebar-note-row-active {
-  background: rgba(249, 115, 22, 0.08) !important;
-  border-left-color: #f97316 !important;
+  background: color-mix(in srgb, var(--color-brand-500) 8%, transparent) !important;
+  border-left-color: var(--color-brand-500) !important;
   color: #0f172a !important;
 }
 .mode-light .sidebar-note-row-active .sidebar-note-content,
@@ -1282,13 +1297,13 @@ button.titlebar-menu-dropdown:hover {
   color: var(--color-text-muted) !important;
 }
 .settings-unsaved-apply {
-  background: var(--color-brand-500, var(--accent-color, #FB923C)) !important;
-  border-color: color-mix(in srgb, var(--color-brand-500, var(--accent-color, #FB923C)) 30%, transparent) !important;
+  background: var(--color-brand-500, var(--accent-color, #38BDF8)) !important;
+  border-color: color-mix(in srgb, var(--color-brand-500, var(--accent-color, #38BDF8)) 30%, transparent) !important;
   color: #ffffff !important;
-  border: 1px solid color-mix(in srgb, var(--color-brand-500, var(--accent-color, #FB923C)) 30%, transparent) !important;
+  border: 1px solid color-mix(in srgb, var(--color-brand-500, var(--accent-color, #38BDF8)) 30%, transparent) !important;
 }
 .settings-unsaved-apply:hover {
-  background: var(--color-brand-400, var(--accent-color, #FB923C)) !important;
+  background: var(--color-brand-400, var(--accent-color, #38BDF8)) !important;
 }
 .settings-unsaved-discard {
   color: var(--color-text-body) !important;
@@ -1597,7 +1612,7 @@ html.theme-gloss {
 .mode-light .sidebar-note-row-active {
   border-left-width: 3px !important;
   border-left-style: solid !important;
-  border-left-color: #f97316 !important;
+  border-left-color: var(--color-brand-500) !important;
   color: #0f172a !important;
 }
 .mode-light .sidebar-note-row-active * {

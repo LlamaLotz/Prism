@@ -11,6 +11,8 @@ interface SplashScreenProps {
   onFinish: () => void;
   /** Custom app icon id from the rainbow logo registry (falls back to default). */
   logo?: string;
+  /** User's accent color (#rrggbb) — mixed toward white for the title gradient. */
+  accentColor?: string;
 }
 
 /**
@@ -22,12 +24,24 @@ interface SplashScreenProps {
  * thread and stays smooth) and falls back to the animated WebP if the video
  * can't load or play. Both are preloaded/warmed during the static phase.
  */
-export function SplashScreen({ isLoading, playVideo, onFinish, logo }: SplashScreenProps) {
+export function SplashScreen({ isLoading, playVideo, onFinish, logo, accentColor = '#38BDF8' }: SplashScreenProps) {
   const [fade, setFade] = useState(false);
+  const [fontsReady, setFontsReady] = useState(false);
   const [preloaded, setPreloaded] = useState(false);
   const [videoFailed, setVideoFailed] = useState(false);
   const [videoReady, setVideoReady] = useState(false);
   const videoRef = useRef<HTMLVideoElement | null>(null);
+
+  // Wait for the Instrument Serif + Inter fonts to finish loading before
+  // showing the gradient-clipped title text, so the glyphs render correctly
+  // on the first paint instead of swapping in later.
+  useEffect(() => {
+    if ('fonts' in document) {
+      document.fonts.ready.then(() => setFontsReady(true));
+    } else {
+      setFontsReady(true); // fallback for environments without the API
+    }
+  }, []);
 
   useEffect(() => {
     document.documentElement.classList.add('splash-mode');
@@ -120,8 +134,8 @@ export function SplashScreen({ isLoading, playVideo, onFinish, logo }: SplashScr
         fade ? 'opacity-0 pointer-events-none' : 'opacity-100'
       }`}
     >
-      <div className="splash-in flex flex-col items-center gap-7 px-8 rounded-none">
-        <div className="relative w-80 h-80 splash-logo rounded-none">
+      <div className="splash-in flex flex-col items-center justify-center gap-7 px-8 rounded-none">
+        <div className="relative w-80 h-80 splash-logo mx-auto rounded-none">
           {useVideo && (
             <video
               ref={videoRef}
@@ -154,10 +168,27 @@ export function SplashScreen({ isLoading, playVideo, onFinish, logo }: SplashScr
             }`}
           />
         </div>
-        <div className="flex flex-col items-center gap-2 text-center rounded-none">
-          <h1 className="text-8xl font-serif italic tracking-wide text-offwhite">
+        <div className="flex flex-col items-center text-center rounded-none">
+          <h1
+            className={`text-8xl font-serif italic font-normal tracking-wide splash-title transition-opacity duration-500 ${
+              fontsReady ? 'opacity-100' : 'opacity-0'
+            }`}
+            style={{
+              // Accent-tinted gradient (brightened with white so dark accents
+              // stay readable on black). Engines without color-mix() drop this
+              // and fall back to the ice-blue gradient in .splash-title.
+              backgroundImage: `linear-gradient(to bottom, #ffffff 0%, color-mix(in srgb, ${accentColor} 60%, white) 100%)`,
+            }}
+          >
             Prism
           </h1>
+          <p
+            className={`text-sm text-white/60 font-sans tracking-wider mt-2 transition-opacity duration-500 ${
+              fontsReady ? 'opacity-100' : 'opacity-0'
+            }`}
+          >
+            by SDKid
+          </p>
         </div>
       </div>
     </div>

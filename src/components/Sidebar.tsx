@@ -21,6 +21,8 @@ interface SidebarProps {
   statusText?: string;
   /** Custom app icon id from the rainbow logo registry (empty = default). */
   appIcon?: string;
+  /** Current theme mode — used to swap white logos to grey in light mode. */
+  themeMode?: 'dark' | 'light';
   onNewNote: () => void;
   onNewFolder: () => void;
   /** Delete a folder (and everything inside it). Receives the folder's
@@ -124,6 +126,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onOpenNote,
   statusText = '',
   appIcon = '',
+  themeMode = 'dark',
   onNewNote,
   onNewFolder,
   onDeleteFolder,
@@ -324,7 +327,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         } ${
           isActive 
             ? 'sidebar-note-row-active bg-slate-900 border-l-2 border-brand-400 text-brand-100 font-medium' 
-            : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/50'
+            : 'text-slate-400 hover:text-slate-200 hover:bg-brand-500/10'
         }`}
         style={{ paddingLeft: depth * 16 + 12 }}
         onClick={() => {
@@ -455,7 +458,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       <div className="p-4 border-b border-slate-900 flex items-center justify-between">
         <div className="flex items-center gap-2.5 min-w-0">
           <img
-            src={getAppIcon(appIcon)}
+            src={getAppIcon(appIcon, themeMode)}
             alt="Prism logo"
             className="w-[38px] h-[38px] shrink-0 object-contain"
           />

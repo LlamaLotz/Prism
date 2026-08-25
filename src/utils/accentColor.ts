@@ -5,7 +5,7 @@
  * re-theme every `brand-*` utility (buttons, links, nodes, glows) instantly.
  */
 
-const DEFAULT_ACCENT = '#FB923C';
+const DEFAULT_ACCENT = '#38BDF8';
 
 /** Normalizes a hex color (#rgb or #rrggbb), falling back to the default. */
 export function normalizeAccent(hex: string): string {

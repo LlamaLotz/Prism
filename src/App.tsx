@@ -127,9 +127,9 @@ const DEFAULT_SETTINGS: AppSettings = {
     labelQuality: 'high',
     autoRotateOnLoad: false,
     autoRotateSpeed: 0.67,
-    accentColor: '#FB923C',
-    hoverGlowColor: '#FB923C',
-    graphNodeColor: '#FB923C',
+    accentColor: '#38BDF8',
+    hoverGlowColor: '#38BDF8',
+    graphNodeColor: '#38BDF8',
     appIcon: '',
     sidebarStatusText: '',
     liquidGlassOpacity: 0.93,
@@ -229,10 +229,11 @@ export default function App() {
   // Panel rounding class (Rounded theme only)
   const panelRounded = isRounded ? 'rounded-2xl overflow-hidden' : '';
 
-  // Apply the chosen logo as the OS window (taskbar) icon.
+  // Apply the chosen logo as the OS window (taskbar) icon. The theme mode is
+  // passed so light mode swaps white logos to their grey counterparts.
   useEffect(() => {
-    applyWindowIcon(settings.appearance.appIcon);
-  }, [settings.appearance.appIcon]);
+    applyWindowIcon(settings.appearance.appIcon, settings.appearance.themeMode);
+  }, [settings.appearance.appIcon, settings.appearance.themeMode]);
 
   // Startup splash: the static logo shows while boot + first-run backfill run;
   // the animated video only plays once ALL booting work is finished (on an
@@ -665,13 +666,13 @@ export default function App() {
       const migratedAppearance = {
         ...merged.appearance,
         accentColor: merged.appearance.accentColor?.toLowerCase() === legacyDefault
-          ? '#FB923C'
+          ? '#38BDF8'
           : merged.appearance.accentColor,
         hoverGlowColor: merged.appearance.hoverGlowColor?.toLowerCase() === legacyDefault
-          ? '#FB923C'
+          ? '#38BDF8'
           : merged.appearance.hoverGlowColor,
         graphNodeColor: merged.appearance.graphNodeColor?.toLowerCase() === legacyDefault
-          ? '#FB923C'
+          ? '#38BDF8'
           : merged.appearance.graphNodeColor,
       };
       const hadLegacyDefault =
@@ -1494,6 +1495,7 @@ export default function App() {
           {/* Custom frameless-window titlebar: drag region + view tabs + window controls */}
           <TitleBar
             appIcon={settings.appearance.appIcon}
+            themeMode={settings.appearance.themeMode}
             layout={layout}
             onLayoutChange={setLayout}
             showAI={showAICoPilot}
@@ -1552,6 +1554,7 @@ export default function App() {
             onOpenNote={handleOpenNote}
             statusText={settings.appearance.sidebarStatusText}
             appIcon={settings.appearance.appIcon}
+            themeMode={settings.appearance.themeMode}
           />
           </LiquidGlass>
           <ResizeHandle
@@ -1710,6 +1713,7 @@ export default function App() {
           playVideo={playVideo}
           onFinish={() => setSplashVisible(false)}
           logo={settings.appearance.appIcon || undefined}
+          accentColor={settings.appearance.accentColor}
         />
       )}
     </div>

@@ -9,6 +9,8 @@ type Layout = 'editor' | 'graph' | 'split' | 'topics';
 
 interface TitleBarProps {
   appIcon?: string;
+  /** Current theme mode — used to swap white logos to grey in light mode. */
+  themeMode?: 'dark' | 'light';
   layout: Layout;
   onLayoutChange: (layout: Layout) => void;
   showAI: boolean;
@@ -39,6 +41,7 @@ interface MenuItem {
  */
 export const TitleBar: React.FC<TitleBarProps> = ({
   appIcon = '',
+  themeMode = 'dark',
   layout,
   onLayoutChange,
   showAI,
@@ -172,7 +175,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
         data-tauri-drag-region
         className="flex items-center h-full gap-1.5 pl-3 cursor-default"
       >
-        <img src={getAppIcon(appIcon)} alt="" className="w-6 h-6 shrink-0 pointer-events-none object-contain" />
+        <img src={getAppIcon(appIcon, themeMode)} alt="" className="w-6 h-6 shrink-0 pointer-events-none object-contain" />
 
       </div>
 

@@ -17,23 +17,23 @@ const normalizeKey = (str: any): string => {
     .trim();
 };
 
-// Prism palette (Neutral Charcoal + Warm Amber): active note primary amber,
-// existing notes lighter amber, uncreated wiki-link targets slate-grey.
+// Prism palette (Neutral Charcoal + Sky): active note primary sky,
+// existing notes lighter sky, uncreated wiki-link targets slate-grey.
 // Mirrors GraphView3D. Mutable so the Appearance "Graph node color" setting
 // re-themes the nodes at runtime via setGraphPalette.
-let COLOR_ACTIVE = '#FB923C'; // brand-500
-let COLOR_EXISTS = '#ffc069'; // brand-400
+let COLOR_ACTIVE = '#38BDF8'; // brand-500
+let COLOR_EXISTS = '#64CCFA'; // brand-400 (lighter sky)
 const COLOR_MISSING = '#4a4947'; // slate-grey
-let COLOR_HOVER = '#f59e0b'; // brand-600 (hover/pressed)
+let COLOR_HOVER = '#31A6DA'; // brand-600 (hover/pressed, darker sky)
 const STROKE_COLOR = '#F5F2F2'; // off-white
-let STROKE_EXISTS = '#f59e0b'; // brand-600
-let GRID_COLOR = 'rgba(254, 176, 93, 0.05)';
-let MESH_COLOR = 'rgba(254, 176, 93, 0.18)';
+let STROKE_EXISTS = '#31A6DA'; // brand-600
+let GRID_COLOR = 'rgba(56, 189, 248, 0.05)';
+let MESH_COLOR = 'rgba(56, 189, 248, 0.18)';
 const LINK_COLOR = 'rgba(150, 147, 143, 0.35)';
 
 /** Re-derives the node palette from a user-picked base color. */
 export function setGraphPalette(nodeColor: string): void {
-  const base = /^#[0-9a-f]{6}$/i.test(nodeColor) ? nodeColor.toLowerCase() : '#FB923C';
+  const base = /^#[0-9a-f]{6}$/i.test(nodeColor) ? nodeColor.toLowerCase() : '#38BDF8';
   COLOR_ACTIVE = base;
   COLOR_EXISTS = mixHex(base, '#ffffff', 0.22); // lighter "exists" shade
   COLOR_HOVER = mixHex(base, '#000000', 0.12); // darker hover shade
