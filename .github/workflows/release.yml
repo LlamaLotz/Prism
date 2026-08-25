@@ -68,7 +68,7 @@ jobs:
 
             const cargoPath = "src-tauri/Cargo.toml";
             const cargo = fs.readFileSync(cargoPath, "utf8");
-            const next = cargo.replace(/^version = .*$/m, 'version = "' + v + '"');
+            const next = cargo.replace(/^version = .*$/m, "version = \"" + v + "\"");
             fs.writeFileSync(cargoPath, next);
             console.log("Cargo.toml -> " + v);
           '
