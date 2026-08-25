@@ -10,7 +10,8 @@
     "build": "tauri build",
     "build-universal": "tauri build --target universal-apple-darwin",
     "build-frontend": "tsc && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "icons": "tauri icon public/logo.png"
   },
   "keywords": [],
   "author": "",
