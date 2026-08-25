@@ -107,7 +107,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
       label: 'Prism',
       items: [
         { label: 'Settings…', shortcut: 'Ctrl+,', action: () => { onSettings(); closeMenu(); } },
-        { label: 'Reload App', shortcut: 'Ctrl+Shift+R', action: () => { onReload(); closeMenu(); } },
+        { label: 'Reload App', action: () => { onReload(); closeMenu(); } },
       ],
     },
     file: {

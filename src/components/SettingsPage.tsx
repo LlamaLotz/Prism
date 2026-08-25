@@ -1348,6 +1348,43 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                       }
                     />
                   </Field>
+                  {/* Liquid Gloss opacity slider — only shown when the gloss archetype is active */}
+                  {draft.appearance.themeStyle === 'gloss' && (
+                    <Field
+                      label="Glass transparency"
+                      hint="How translucent the Liquid Gloss frosted surfaces are. Lower = more transparent, higher = more opaque."
+                    >
+                      <RangeField
+                        label="opacity"
+                        value={draft.appearance.liquidGlassOpacity}
+                        onChange={(v) =>
+                          patchNested('appearance', { ...draft.appearance, liquidGlassOpacity: v })
+                        }
+                        min={0.3}
+                        max={1}
+                        step={0.01}
+                        format={(v) => `${Math.round(v * 100)}%`}
+                      />
+                    </Field>
+                  )}
+                  <Field label="Background environment" hint="Viewport-level backdrop rendered behind the application canvas.">
+                    <Segmented
+                      themeStyle={draft.appearance.themeStyle}
+                      options={[
+                        { value: 'none', label: 'None' },
+                        { value: 'solar-system', label: 'Solar' },
+                        { value: 'stars', label: 'Stars' },
+                        { value: 'clouds', label: 'Clouds' },
+                      ]}
+                      value={draft.appearance.backgroundEnvironment}
+                      onChange={(v) =>
+                        patchNested('appearance', {
+                          ...draft.appearance,
+                          backgroundEnvironment: v as AppSettings['appearance']['backgroundEnvironment'],
+                        })
+                      }
+                    />
+                  </Field>
                   <Field
                     label="App icon"
                     hint="Pick a Prism logo — shown in the sidebar, title bar and splash screen."

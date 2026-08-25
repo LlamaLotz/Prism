@@ -113,6 +113,10 @@ export interface AppSettings {
     appIcon: string;
     /** Status line beside the sidebar logo; supports {date} and {time} tokens. */
     sidebarStatusText: string;
+    /** Opacity of Liquid Gloss glass surfaces (0.0–1.0). Only affects the 'gloss' theme style. */
+    liquidGlassOpacity: number;
+    /** Background environment rendered behind the app canvas (viewport-level). */
+    backgroundEnvironment: 'none' | 'solar-system' | 'stars' | 'clouds';
   };
   editor: {
     autosaveDebounceMs: number;

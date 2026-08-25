@@ -545,7 +545,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
               onClick={onRunIngest}
               disabled={isIngesting}
               className="sidebar-toolbar-button flex-1 bg-surface hover:bg-surface-hover text-text-body disabled:bg-surface disabled:text-text-muted border border-border rounded p-1.5 flex items-center justify-center transition-colors"
-              title={isIngesting ? "Ingesting..." : "Run custom ingestion script"}
+              title={isIngesting ? "Ingesting..." : "Injest files"}
             >
               {isIngesting ? (
                 <RefreshCw className="w-4 h-4 animate-spin text-text-body" />

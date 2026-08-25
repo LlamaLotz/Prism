@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { GraphView, setGraphPalette as setPalette2D } from './GraphView';
 import { GraphView3D, setGraphPalette as setPalette3D } from './GraphView3D';
 import { GraphNode, GraphLink, NoteFile } from '../types';
@@ -45,6 +45,16 @@ export const GraphViewContainer: React.FC<GraphViewContainerProps> = ({
   themeMode = 'dark',
 }) => {
   // Re-theme both graph palettes whenever the node color setting changes.
+  // Called synchronously during render (before the graph mounts) so the graph
+  // always paints with the correct color — never flashes the default orange.
+  const prevNodeColorRef = useRef(nodeColor);
+  if (prevNodeColorRef.current !== nodeColor) {
+    prevNodeColorRef.current = nodeColor;
+    setPalette2D(nodeColor);
+    setPalette3D(nodeColor);
+  }
+  // Redundant effect guard: if setPalette was called somewhere else (e.g.
+  // SettingsPage re-themes before the prop changes), sync on mount.
   useEffect(() => {
     setPalette2D(nodeColor);
     setPalette3D(nodeColor);

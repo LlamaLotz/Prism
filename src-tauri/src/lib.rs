@@ -5,6 +5,8 @@ use tauri::{Manager, Window, Emitter};
 use rusqlite::params;
 #[cfg(windows)]
 use windows_core::Interface;
+#[cfg(target_os = "windows")]
+use std::os::windows::process::CommandExt;
 
 mod config;
 mod db;
@@ -1046,7 +1048,7 @@ fn run_ingestion_script(script_command: String, vault_path: String) -> Result<St
     #[cfg(target_os = "windows")]
     let mut cmd = std::process::Command::new("cmd");
     #[cfg(target_os = "windows")]
-    cmd.args(&["/C", &formatted_command]);
+    cmd.args(&["/C", &formatted_command]).creation_flags(0x08000000);
 
     #[cfg(not(target_os = "windows"))]
     let mut cmd = std::process::Command::new("sh");
@@ -1178,6 +1180,9 @@ async fn run_builtin_extractor_async(
         cmd.arg(&value);
     }
 
+    #[cfg(target_os = "windows")]
+    cmd.creation_flags(0x08000000);
+
     let mut child = cmd
         .current_dir(&vault_path)
         .stdout(Stdio::piped())
@@ -1244,6 +1249,8 @@ fn run_extractor_installer(app: tauri::AppHandle) -> Result<String, String> {
     cmd.arg("/C");
     #[cfg(target_os = "windows")]
     cmd.arg(clean_installer_path);
+    #[cfg(target_os = "windows")]
+    cmd.creation_flags(0x08000000);
 
     #[cfg(not(target_os = "windows"))]
     let mut cmd = std::process::Command::new("bash");

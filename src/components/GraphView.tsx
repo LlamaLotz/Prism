@@ -402,7 +402,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
 
     // Measure the glyph bounds, then place the text and pill around a shared
     // center. The pill starts nodeRadius + 4px below the circle and uses
-    // symmetric 8px horizontal / 5px vertical padding.
+    // uniform 7px horizontal / 6px vertical padding for a tight, balanced wrap.
     nodeElements.each(function (d: any) {
       const textSelection = d3.select(this).select('text');
       const textEl = textSelection.node() as SVGTextElement | null;
@@ -410,9 +410,9 @@ export const GraphView: React.FC<GraphViewProps> = ({
       try {
         const r = Math.max(7, Math.min(20, (d.linksCount || 1) * 1.8 + 6));
         const metrics = textEl.getBBox();
-        const padX = 8;
-        const padY = 5;
-        const pillW = metrics.width + padX * 2;
+        const padX = 7;
+        const padY = 6;
+        const pillW = Math.max(metrics.width + padX * 2, 40);
         const pillH = metrics.height + padY * 2;
         const centerY = r + 4 + pillH / 2;
         const pillX = -pillW / 2;

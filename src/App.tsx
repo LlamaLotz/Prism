@@ -131,6 +131,8 @@ const DEFAULT_SETTINGS: AppSettings = {
     graphNodeColor: '#FB923C',
     appIcon: '',
     sidebarStatusText: '',
+    liquidGlassOpacity: 0.93,
+    backgroundEnvironment: 'none',
   },
   editor: {
     autosaveDebounceMs: 800,
@@ -217,7 +219,9 @@ export default function App() {
     const style = settings.appearance.themeStyle;
     const mode = settings.appearance.themeMode;
     root.classList.add(`theme-${style}`, `mode-${mode}`);
-  }, [settings.appearance.themeStyle, settings.appearance.themeMode]);
+    // Liquid Gloss surface opacity (CSS variable consumed by gloss backgrounds).
+    root.style.setProperty('--liquid-glass-opacity', String(settings.appearance.liquidGlassOpacity));
+  }, [settings.appearance.themeStyle, settings.appearance.themeMode, settings.appearance.liquidGlassOpacity]);
 
   const isRounded = settings.appearance.themeStyle === 'glass' || settings.appearance.themeStyle === 'gloss';
 
@@ -1453,6 +1457,14 @@ export default function App() {
   };
 
   return (
+    <>
+      {/* Background environment layer (behind the app, viewport-level) */}
+      {settings.appearance.backgroundEnvironment !== 'none' && (
+        <div
+          aria-hidden="true"
+          className={`prism-bg-environment prism-bg-${settings.appearance.backgroundEnvironment === 'solar-system' ? 'solar' : settings.appearance.backgroundEnvironment}`}
+        />
+      )}
     <div className="liquid-gloss-app flex flex-col h-screen w-screen bg-base text-slate-100 font-sans overflow-hidden select-none">
       {/* Everything except the splash is gated until the splash is fully gone
           (splashVisible false): the heavy UI (graph force simulation, editor,
@@ -1681,5 +1693,6 @@ export default function App() {
         />
       )}
     </div>
+    </>
   );
 }
