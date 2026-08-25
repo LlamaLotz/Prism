@@ -61,7 +61,7 @@
   },
   "plugins": {
     "updater": {
-      "pubkey": "RWRbr3gzDojIe7cT9yfBWBJHTi//NXTaWOUJtZmxmXVmpxKvOLvoF6Uf",
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDg2N0M3REJFOUEzNkJBREIKUldUYnVqYWF2bjE4aHRzT1NuY0xuSTNxdG1TZjdmaXBSVDBUWjQreWlTYWw2bTY3V0Nwb1AxNjkK",
       "endpoints": [
         "https://github.com/LlamaLotz/Prism/releases/latest/download/latest.json"
       ],
