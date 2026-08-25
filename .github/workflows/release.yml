@@ -32,22 +32,54 @@ jobs:
         run: npm ci
 
       - name: Sync version across package.json, tauri.conf.json, and Cargo.toml
+        shell: bash
         run: |
-          # Strip 'v' prefix from tag (e.g. v1.0.1 -> 1.0.1)
-          VERSION=${GITHUB_REF_NAME#v}
+          # Strip 'v' prefix from tag (e.g. v1.0.1 -> 1.0.1) and export for node
+          export VERSION="${GITHUB_REF_NAME#v}"
           echo "Syncing all manifests to version: $VERSION"
 
-          # 1. Update package.json
-          npm version $VERSION --no-git-tag-version
+          # Guard: tag must be a semantic version
+          if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+ ]]; then
+            echo "::error::Tag '$GITHUB_REF_NAME' is not a semantic version (got '$VERSION')"
+            exit 1
+          fi
 
-          # 2. Update tauri.conf.json (uses jq)
-          jq --arg v "$VERSION" '.version = $v' src-tauri/tauri.conf.json > src-tauri/tauri.conf.json.tmp && mv src-tauri/tauri.conf.json.tmp src-tauri/tauri.conf.json
+          # 1. package.json + package-lock.json. Skip when already at VERSION —
+          #    `npm version` exits 1 with "Version not changed" in that case.
+          CURRENT="$(node -p "require('./package.json').version")"
+          if [ "$CURRENT" != "$VERSION" ]; then
+            npm version "$VERSION" --no-git-tag-version
+          else
+            echo "package.json already at $VERSION — skipping npm version"
+          fi
 
-          # 3. Update src-tauri/Cargo.toml package version
-          sed -i '0,/^version = .*/s//version = "'"$VERSION"'"/' src-tauri/Cargo.toml
+          # 2. tauri.conf.json + 3. Cargo.toml via node. Avoids jq (absent on
+          #    windows-latest runners) and GNU-only sed address syntax (macOS
+          #    ships BSD sed which rejects `0,/re/`).
+          node -e '
+            const fs = require("fs");
+            const v = process.env.VERSION;
 
-          # Optional sanity check step
+            const tauriPath = "src-tauri/tauri.conf.json";
+            const tauri = JSON.parse(fs.readFileSync(tauriPath, "utf8"));
+            tauri.version = v;
+            fs.writeFileSync(tauriPath, JSON.stringify(tauri, null, 2) + "\n");
+            console.log("tauri.conf.json -> " + v);
+
+            const cargoPath = "src-tauri/Cargo.toml";
+            const cargo = fs.readFileSync(cargoPath, "utf8");
+            const next = cargo.replace(/^version = .*$/m, 'version = "' + v + '"');
+            fs.writeFileSync(cargoPath, next);
+            console.log("Cargo.toml -> " + v);
+          '
+
+          # Sanity check
+          echo "--- Cargo.toml ---"
           grep -E '^version =' src-tauri/Cargo.toml
+          echo "--- tauri.conf.json ---"
+          node -p "JSON.parse(require('fs').readFileSync('src-tauri/tauri.conf.json','utf8')).version"
+          echo "--- package.json ---"
+          node -p "require('./package.json').version"
       - name: Build and Package with Tauri Action
         uses: tauri-apps/tauri-action@v0
         env:
