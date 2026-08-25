@@ -31,25 +31,23 @@ jobs:
       - name: Install Frontend Dependencies
         run: npm ci
 
-      - name: Synchronize Version from Git Tag
-        shell: bash
+      - name: Sync version across package.json, tauri.conf.json, and Cargo.toml
         run: |
-          # Extract version number from tag (e.g., v1.0.1 -> 1.0.1)
-          VERSION="${GITHUB_REF_NAME#v}"
-          echo "Updating app version to $VERSION"
+          # Strip 'v' prefix from tag (e.g. v1.0.1 -> 1.0.1)
+          VERSION=${GITHUB_REF_NAME#v}
+          echo "Syncing all manifests to version: $VERSION"
 
-          # Update package.json (and package-lock.json)
-          npm version "$VERSION" --no-git-tag-version
+          # 1. Update package.json
+          npm version $VERSION --no-git-tag-version
 
-          # Update src-tauri/tauri.conf.json
-          node -e "
-            const fs = require('fs');
-            const file = './src-tauri/tauri.conf.json';
-            const config = JSON.parse(fs.readFileSync(file));
-            config.version = '$VERSION';
-            fs.writeFileSync(file, JSON.stringify(config, null, 2) + '\n');
-          "
+          # 2. Update tauri.conf.json (uses jq)
+          jq --arg v "$VERSION" '.version = $v' src-tauri/tauri.conf.json > src-tauri/tauri.conf.json.tmp && mv src-tauri/tauri.conf.json.tmp src-tauri/tauri.conf.json
 
+          # 3. Update src-tauri/Cargo.toml package version
+          sed -i '0,/^version = .*/s//version = "'"$VERSION"'"/' src-tauri/Cargo.toml
+
+          # Optional sanity check step
+          grep -E '^version =' src-tauri/Cargo.toml
       - name: Build and Package with Tauri Action
         uses: tauri-apps/tauri-action@v0
         env:
