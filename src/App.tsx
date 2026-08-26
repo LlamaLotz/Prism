@@ -131,7 +131,7 @@ const DEFAULT_SETTINGS: AppSettings = {
     hoverGlowColor: '#38BDF8',
     graphNodeColor: '#38BDF8',
     appIcon: '',
-    sidebarStatusText: '',
+    sidebarStatusText: '{time}',
     liquidGlassOpacity: 0.93,
     backgroundEnvironment: 'none',
   },

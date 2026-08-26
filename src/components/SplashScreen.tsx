@@ -180,7 +180,7 @@ export function SplashScreen({ isLoading, playVideo, onFinish, logo, accentColor
               backgroundImage: `linear-gradient(to bottom, #ffffff 0%, color-mix(in srgb, ${accentColor} 60%, white) 100%)`,
             }}
           >
-            Prism1
+            Prism
           </h1>
           <p
             className={`text-sm text-white/60 font-sans tracking-wider mt-2 transition-opacity duration-500 ${

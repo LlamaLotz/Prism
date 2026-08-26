@@ -137,7 +137,7 @@ impl Default for AppearanceConfig {
             hover_glow_color: "#38BDF8".to_string(),
             graph_node_color: "#38BDF8".to_string(),
             app_icon: String::new(),
-            sidebar_status_text: String::new(),
+            sidebar_status_text: "{time}".to_string(),
             liquid_glass_opacity: 0.93,
             background_environment: "none".to_string(),
         }
