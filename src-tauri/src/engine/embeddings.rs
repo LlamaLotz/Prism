@@ -443,6 +443,27 @@ impl EmbeddingEngine {
         cache_dir: PathBuf,
         config: &crate::config::RuntimeConfig,
     ) -> Result<Self, String> {
+        // Log model directory size as a memory diagnostic — the ONNX session
+        // can consume several hundred MB once loaded; on memory-tight machines
+        // this plus the webview + AI SDK can push into an OOM state.
+        let model_repo_dir = cache_dir.join("models--Qdrant--bge-base-en-v1.5-onnx-Q");
+        if model_repo_dir.exists() {
+            let total_bytes: u64 = walkdir::WalkDir::new(&model_repo_dir)
+                .into_iter()
+                .filter_map(|e| e.ok())
+                .filter(|e| e.file_type().is_file())
+                .filter_map(|e| e.metadata().ok())
+                .map(|m| m.len())
+                .sum();
+            println!(
+                "[embeddings] model cache {:?}: {} MB on disk",
+                model_repo_dir,
+                total_bytes / (1024 * 1024)
+            );
+        }
+        println!("[embeddings] starting ONNX session load from {:?}", cache_dir);
+        let load_start = std::time::Instant::now();
+
         let options = InitOptions {
             model_name: EmbeddingModel::BGEBaseENV15Q,
             execution_providers: Default::default(),
@@ -455,6 +476,7 @@ impl EmbeddingEngine {
         };
 
         let model = TextEmbedding::try_new(options).map_err(|e| e.to_string())?;
+        println!("[embeddings] ONNX session loaded in {:?}", load_start.elapsed());
 
         // Detect a vector-dimension change (e.g. a model swap): every stored
         // embedding from the old model is garbage for the new one, so wipe

@@ -1,10 +1,10 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { 
   Sparkles, Send, Loader2, RefreshCw, FileText, 
-  BookOpen, Link2, Hash, AlertTriangle 
+  BookOpen, Link2, Hash, AlertTriangle, Globe 
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
-import { NoteFile, OmniRouteConfig } from '../types';
+import { NoteFile, OmniRouteConfig, tauriAPI } from '../types';
 import { summarizeNote, suggestConnections, suggestMetadata, sendChatMessage } from '../services/apiService';
 import { buildChatSystemPrompt } from '../services/systemMessages';
 
@@ -31,6 +31,8 @@ export const AISidebar: React.FC<AISidebarProps> = ({
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [inputValue, setInputValue] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [isSearching, setIsSearching] = useState(false);
+  const [searchMode, setSearchMode] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const chatEndRef = useRef<HTMLDivElement | null>(null);
@@ -64,8 +66,10 @@ export const AISidebar: React.FC<AISidebarProps> = ({
         },
       ];
 
-      // Add chat history
-      messages.forEach((msg) => {
+      // Add chat history — capped to the last 12 turns so long sessions
+      // don't overflow the model's context window (Gemini surfaces that as
+      // "Error code: Out of Memory").
+      messages.slice(-12).forEach((msg) => {
         fullMessages.push({ role: msg.role, content: msg.content });
       });
 
@@ -78,6 +82,40 @@ export const AISidebar: React.FC<AISidebarProps> = ({
       setError(err.message || 'An error occurred.');
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleSearch = async (query: string) => {
+    if (!query || isSearching) return;
+
+    setIsSearching(true);
+    setError(null);
+    setMessages((prev) => [...prev, { role: 'user', content: `🔍 Search: ${query}` }]);
+
+    try {
+      const results = await tauriAPI.webSearch(query);
+      if (results.length === 0) {
+        setMessages((prev) => [...prev, { role: 'assistant', content: `No results found for "${query}".` }]);
+        return;
+      }
+      const formatted = results.map((r, i) => 
+        `${i + 1}. **[${r.title}](${r.url})**\n   ${r.snippet}`
+      ).join('\n\n');
+      setMessages((prev) => [...prev, { role: 'assistant', content: formatted }]);
+    } catch (err: any) {
+      setError(err.message || 'Search failed.');
+    } finally {
+      setIsSearching(false);
+    }
+  };
+
+  const handleSubmit = async () => {
+    if (searchMode) {
+      const query = inputValue.trim();
+      setInputValue('');
+      await handleSearch(query);
+    } else {
+      await handleSend();
     }
   };
 
@@ -144,7 +182,7 @@ export const AISidebar: React.FC<AISidebarProps> = ({
           <div className="space-y-1.5">
             <h4 className="text-[11px] font-semibold text-brand-200 leading-none">AI Integration Offline</h4>
             <p className="text-[10px] text-slate-400 leading-relaxed">
-              OmniRoute API keys or endpoints are missing. Paste your credentials to enable chat & note analysis.
+              API keys or endpoints are missing. Paste your credentials to enable chat & note analysis.
             </p>
             <button
               onClick={onOpenSettings}
@@ -242,7 +280,7 @@ export const AISidebar: React.FC<AISidebarProps> = ({
             <span className="text-[9px] font-bold text-slate-500 mb-0.5">PRISM AI</span>
             <div className="bg-slate-900 border border-border p-3.5 rounded-2xl rounded-tl-none flex items-center gap-2.5">
               <Loader2 className="w-4 h-4 text-brand-400 animate-spin" />
-              <span className="text-xs text-slate-400">Consulting OmniRoute routing...</span>
+              <span className="text-xs text-slate-400">Fetching response...</span>
             </div>
           </div>
         )}
@@ -265,24 +303,36 @@ export const AISidebar: React.FC<AISidebarProps> = ({
       <form 
         onSubmit={(e) => {
           e.preventDefault();
-          handleSend();
+          handleSubmit();
         }}
         className="p-3 border-t border-slate-900 bg-panel flex gap-2"
       >
+        <button
+          type="button"
+          onClick={() => setSearchMode((m) => !m)}
+          title={searchMode ? 'Switch to chat mode' : 'Switch to search mode'}
+          className={`shrink-0 w-8 h-8 rounded-xl flex items-center justify-center transition-all border ${
+            searchMode
+              ? 'bg-brand-600 hover:bg-brand-500 border-brand-400/40 text-white shadow-[0_0_12px_var(--color-brand-400)]'
+              : 'bg-slate-800 hover:bg-slate-700 border-slate-700 text-slate-400 hover:text-slate-200'
+          }`}
+        >
+          <Globe className="w-3.5 h-3.5" />
+        </button>
         <input
           type="text"
           value={inputValue}
           onChange={(e) => setInputValue(e.target.value)}
-          placeholder={note ? "Chat with active note context..." : "Ask Prism AI anything..."}
+          placeholder={searchMode ? 'Search the web...' : (note ? 'Chat with active note context...' : 'Ask Prism AI anything...')}
           className="flex-1 bg-slate-900/60 border border-border focus:border-slate-700 text-xs rounded-xl px-3.5 py-2 text-slate-200 focus:outline-none transition-colors"
         />
-          <button
-            type="submit"
-            disabled={!inputValue.trim() || isLoading}
-            className="bg-brand-600 hover:bg-brand-500 disabled:opacity-30 disabled:pointer-events-none text-white px-3.5 rounded-xl transition-all flex items-center justify-center border border-brand-500/20"
-          >
-            <Send className="w-3.5 h-3.5" />
-          </button>
+        <button
+          type="submit"
+          disabled={!inputValue.trim() || isLoading || isSearching}
+          className={`${searchMode ? 'bg-brand-600 hover:bg-brand-500 border-brand-400/20 shadow-[0_0_10px_var(--color-brand-400)]' : 'bg-brand-600 hover:bg-brand-500 border-brand-500/20'} disabled:opacity-30 disabled:pointer-events-none text-white px-3.5 rounded-xl transition-all flex items-center justify-center border`}
+        >
+          {(isLoading || isSearching) ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
+        </button>
       </form>
     </div>
   );

@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use tauri::{Manager, Window, Emitter};
 use rusqlite::params;
+use scraper::{Html, Selector};
 #[cfg(windows)]
 use windows_core::Interface;
 #[cfg(target_os = "windows")]
@@ -20,6 +21,13 @@ use std::sync::{Arc, Mutex};
 use tokio::sync::oneshot;
 
 use crate::engine::embeddings::EmbeddingEngine;
+
+#[derive(serde::Serialize, Clone)]
+pub struct WebSearchResult {
+    title: String,
+    url: String,
+    snippet: String,
+}
 use crate::engine::indexer::{suppress_self_write, SELF_WRITE_MASK_MS};
 
 pub struct AppState {
@@ -1509,14 +1517,69 @@ fn relaunch_app(app: tauri::AppHandle) -> Result<(), String> {
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .spawn()
-        .map_err(|e| format!("Failed to relaunch: {e}"))?;
-    app.exit(0);
+        .map_err(|e| format!("Failed to relaunch: {e}"))?;    app.exit(0);
     Ok(())
 }
+
+/// Searches the web via DuckDuckGo's HTML-lite endpoint (no API key needed)
+/// and returns the top results. The response body is parsed with the scraper
+/// crate — the HTML structure is simple enough for CSS selectors.
+#[tauri::command]
+async fn web_search(query: String) -> Result<Vec<WebSearchResult>, String> {
+    let url = format!(
+        "https://html.duckduckgo.com/html/?q={}",
+        urlencoding::encode(&query)
+    );
+
+    let body = reqwest::get(&url)
+        .await
+        .map_err(|e| format!("Network error: {e}"))?
+        .text()
+        .await
+        .map_err(|e| format!("Failed to read response: {e}"))?;
+
+    let document = Html::parse_document(&body);
+    let link_sel = Selector::parse(".result__a").map_err(|e| e.to_string())?;
+    let snippet_sel = Selector::parse(".result__snippet").map_err(|e| e.to_string())?;
+    let container_sel = Selector::parse(".result.results_links").map_err(|e| e.to_string())?;
+
+    let mut results = Vec::new();
+    for container in document.select(&container_sel) {
+        let title = container
+            .select(&link_sel)
+            .next()
+            .map(|el| el.text().collect::<String>().trim().to_string())
+            .unwrap_or_default();
+        let url = container
+            .select(&link_sel)
+            .next()
+            .and_then(|el| el.value().attr("href"))
+            .unwrap_or("")
+            .to_string();
+        let snippet = container
+            .select(&snippet_sel)
+            .next()
+            .map(|el| el.text().collect::<String>().trim().to_string())
+            .unwrap_or_default();
+
+        if !title.is_empty() {
+            results.push(WebSearchResult { title, url, snippet });
+        }
+        if results.len() >= 5 {
+            break;
+        }
+    }
+
+    Ok(results)
+}
+
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        // Rust-backed fetch (reqwest) so the AI Co-Pilot's OpenAI SDK calls
+        // don't depend on the webview's network stack (see Cargo.toml note).
+        .plugin(tauri_plugin_http::init())
         .setup(|app| {
             #[cfg(desktop)]
             app.handle()
@@ -1621,7 +1684,8 @@ pub fn run() {
             get_runtime_config,
             save_runtime_config,
             purge_expired_history,
-            relaunch_app
+            relaunch_app,
+            web_search
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

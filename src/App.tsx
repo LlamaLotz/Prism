@@ -382,6 +382,8 @@ export default function App() {
   // Incremented when the once-per-session semantic backfill completes, so the
   // Related Notes panel knows embeddings now exist and refreshes itself.
   const [semanticTick, setSemanticTick] = useState(0);
+  // Visible banner when the embedding model fails to load (e.g. OOM).
+  const [embeddingError, setEmbeddingError] = useState<string | null>(null);
 
   const loadGraph = () => {
     tauriAPI
@@ -811,6 +813,7 @@ export default function App() {
           })
           .catch((e) => {
             console.error('Embedding backfill failed:', e);
+            setEmbeddingError(String(e));
             backfillDoneRef.current = true;
             tryPlayVideo();
           });
@@ -1705,6 +1708,25 @@ export default function App() {
       )}
 
       <UpdateBanner />
+
+      {embeddingError && (
+        <div className="fixed right-4 top-12 z-[90] flex max-w-[min(420px,calc(100vw-2rem))] items-start gap-3 border border-amber-400/30 bg-slate-950/95 px-4 py-3 text-xs text-slate-300 shadow-2xl backdrop-blur-md">
+          <div className="min-w-0 flex-1">
+            <div className="font-semibold text-amber-300">Semantic search unavailable</div>
+            <div className="mt-1 break-words text-slate-500">{embeddingError}</div>
+            <p className="mt-2 text-slate-500">Related notes and block matching will work once the embedding model is available. This is a one-time cost on first launch.</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setEmbeddingError(null)}
+            className="shrink-0 p-1 text-slate-500 transition-colors hover:text-slate-200"
+            title="Dismiss"
+            aria-label="Dismiss embedding error"
+          >
+            ×
+          </button>
+        </div>
+      )}
 
       {/* Startup splash overlay (fades out once boot completes) */}
       {splashVisible && (

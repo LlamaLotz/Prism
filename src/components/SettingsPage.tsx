@@ -768,9 +768,21 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
     if (selected) patch('vaultPath', selected);
   };
 
+  // Providers with a fixed endpoint (canEditBaseUrl unset) always save their
+  // registry default, never a stale/custom URL from an older config.
+  const normalizeDraft = (d: AppSettings): AppSettings => {
+    const provider = getApiProvider(d.omniRoute.provider);
+    if (provider && !provider.canEditBaseUrl && d.omniRoute.baseUrl !== provider.baseUrl) {
+      return { ...d, omniRoute: { ...d.omniRoute, baseUrl: provider.baseUrl } };
+    }
+    return d;
+  };
+
   // Save changes but KEEP the settings panel open (shows a brief "Saved").
   const handleSave = () => {
-    onSave(draft);
+    const next = normalizeDraft(draft);
+    onSave(next);
+    setDraft(next);
     setIsDirty(false);
     setJustSaved(true);
     if (savedTimer.current) window.clearTimeout(savedTimer.current);
@@ -778,7 +790,9 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
   };
   // Small "Apply & Close": saves and exits in one step.
   const handleApplyAndClose = () => {
-    onSave(draft);
+    const next = normalizeDraft(draft);
+    onSave(next);
+    setDraft(next);
     setIsDirty(false);
     setShowUnsaved(false);
     onClose();
@@ -1075,12 +1089,40 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div className="space-y-1.5">
                       <label className="text-xs font-medium text-slate-400">API Base URL</label>
-                      <TextField
-                        value={draft.omniRoute.baseUrl}
-                        onChange={(v) => patchNested('omniRoute', { ...draft.omniRoute, baseUrl: v })}
-                        placeholder={aiProvider?.baseUrl ?? 'https://...'}
-                        disabled={!aiProvider}
-                      />
+                      {aiProvider && aiProvider.canEditBaseUrl ? (
+                        <>
+                          <TextField
+                            value={draft.omniRoute.baseUrl}
+                            onChange={(v) =>
+                              patchNested('omniRoute', { ...draft.omniRoute, baseUrl: v })
+                            }
+                            placeholder={aiProvider.baseUrl}
+                          />
+                          <p className="text-[11px] text-slate-500 leading-relaxed">
+                            Defaults to <code className="font-mono">{aiProvider.baseUrl}</code> —
+                            change it only if your endpoint differs.
+                          </p>
+                        </>
+                      ) : aiProvider ? (
+                        <>
+                          <div className="bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-slate-500 font-mono cursor-not-allowed truncate">
+                            &nbsp;
+                          </div>
+                          <p className="text-[11px] text-slate-500 leading-relaxed">
+                            Fixed endpoint — {aiProvider.name} always uses its default base URL
+                            automatically.
+                          </p>
+                        </>
+                      ) : (
+                        <TextField
+                          value={draft.omniRoute.baseUrl}
+                          onChange={(v) =>
+                            patchNested('omniRoute', { ...draft.omniRoute, baseUrl: v })
+                          }
+                          placeholder="https://..."
+                          disabled
+                        />
+                      )}
                     </div>
                     <div className="space-y-1.5">
                       <label className="text-xs font-medium text-slate-400">Model</label>

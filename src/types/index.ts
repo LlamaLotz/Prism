@@ -47,6 +47,12 @@ export interface GraphLink {
   target: string;
 }
 
+export interface WebSearchResult {
+  title: string;
+  url: string;
+  snippet: string;
+}
+
 export interface OmniRouteConfig {
   /** Provider id from the API provider registry (see apiProviders.ts). */
   provider: string;
@@ -316,6 +322,10 @@ export const tauriAPI = {
   // a webview reload). Never resolves on success — the process exits.
   relaunchApp: async (): Promise<void> => {
     await invoke('relaunch_app');
+  },
+  // Web search via DuckDuckGo (no API key needed) — returns top 5 results.
+  webSearch: async (query: string): Promise<WebSearchResult[]> => {
+    return await invoke<WebSearchResult[]>('web_search', { query });
   },
   onVaultChanged: (callback: (data: { eventType: string; filename: string }) => void) => {
     // Return unsubscribe no-op since UI action saves trigger list refresh directly
