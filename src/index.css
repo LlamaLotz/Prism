@@ -127,12 +127,13 @@ body {
 }
 
 /* Startup surface: keep the first native/WebView frame and the React splash
-   uniformly pure black before theme tokens or media content are ready. */
+   uniformly on the 3D loader's slate background before theme tokens or media
+   content are ready. */
 html.splash-mode,
 body.splash-mode,
 body.splash-mode #root,
 .splash-screen-container {
-  background-color: #000000 !important;
+  background-color: #35383e !important;
   background-image: none !important;
   margin: 0;
   width: 100vw;

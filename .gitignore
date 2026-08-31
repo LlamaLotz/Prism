@@ -1,5 +1,6 @@
 node_modules
 .freebuff
+graphify-out
 
 # Tauri updater signing material must never enter the repository.
 myapp.key

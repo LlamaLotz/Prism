@@ -819,6 +819,7 @@ export default function App() {
           });
       } else {
         backfillDoneRef.current = true;
+        tryPlayVideo();
       }
 
       // Keep the index in sync reactively as files change on disk (gated by

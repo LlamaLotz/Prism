@@ -17,14 +17,7 @@ import whiteACLight from '../assets/logos/light/White AC.svg';
 import blueLight from '../assets/logos/light/Blue.svg';
 import greyLight from '../assets/logos/light/Grey.svg';
 import whiteLight from '../assets/logos/light/White.svg';
-import loaderBlue from '../assets/loaders/Blue.webp';
-import loaderBW from '../assets/loaders/BW.webp';
-import loaderGrey from '../assets/loaders/Grey.webp';
-import loaderWhite from '../assets/loaders/White.webp';
-import videoBlue from '../assets/loaders/Blue.mp4';
-import videoBW from '../assets/loaders/BW.mp4';
-import videoGrey from '../assets/loaders/Grey.mp4';
-import videoWhite from '../assets/loaders/White.mp4';
+import video3D from '../assets/loaders/3D Loader.mp4';
 
 /**
  * The Prism logos the user can pick from as the app icon (SVG, transparent
@@ -113,53 +106,9 @@ export function getAppIcon(id?: string, themeMode?: 'dark' | 'light'): string {
   return map[id] ?? DARK_ICON_MAP[id] ?? '/logo.png';
 }
 
-/**
- * Animated splash loaders (mp4) keyed by the logo color they match. Blue,
- * grey and white variants (rainbow or no-rainbow) collapse onto their shared
- * color video; the monochrome black & white logo maps to the BW loader.
- */
-const SPLASH_LOADERS: Record<string, string> = {
-  blue: loaderBlue,
-  'blue-ac': loaderBlue,
-  grey: loaderGrey,
-  'grey-ac': loaderGrey,
-  white: loaderWhite,
-  'white-ac': loaderWhite,
-  'bw-ac': loaderBW,
-};
-
-/**
- * Resolves a stored app-icon id to its matching animated splash loader WebP.
- * Empty/default ids fall back to the blue loader; unknown ids and legacy
- * data-URL uploads return `undefined` so callers can show a static fallback.
- */
-export function getSplashLoader(id?: string): string | undefined {
-  if (!id) return loaderBlue;
-  if (id.startsWith('data:')) return undefined;
-  return SPLASH_LOADERS[id];
-}
-
-/**
- * H.264 mp4 variants of the splash loaders (same color mapping as the WebPs).
- * Video is hardware-decoded in WKWebView, so it plays off the main thread and
- * stays smooth where the animated WebP stutters. Used as the primary loader;
- * getSplashLoader() remains the fallback if the video fails to load/play.
- */
-const SPLASH_VIDEOS: Record<string, string> = {
-  blue: videoBlue,
-  'blue-ac': videoBlue,
-  grey: videoGrey,
-  'grey-ac': videoGrey,
-  white: videoWhite,
-  'white-ac': videoWhite,
-  'bw-ac': videoBW,
-};
-
-/** Resolves a stored app-icon id to its matching mp4 splash loader. */
-export function getSplashVideo(id?: string): string | undefined {
-  if (!id) return videoBlue;
-  if (id.startsWith('data:')) return undefined;
-  return SPLASH_VIDEOS[id];
+/** Always use the 3D MP4 for the startup splash, regardless of app icon. */
+export function getSplashVideo(): string {
+  return video3D;
 }
 
 /**
