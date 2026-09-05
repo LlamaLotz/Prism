@@ -5,6 +5,16 @@ def _is_supported_python_version(version_info):
     """Return whether a Python version can run the ingestion dependencies."""
     return tuple(version_info[:2]) >= (3, 10)
 
+
+def _mac_python_paths():
+    """Keep the GUI-launched app's Python locations covered by regression tests."""
+    return [
+        "/opt/homebrew/bin/python3.12",
+        "/opt/homebrew/opt/python@3.12/bin/python3.12",
+        "/usr/local/bin/python3.12",
+        "/Library/Frameworks/Python.framework/Versions/3.12/bin/python3.12",
+    ]
+
 def sanitize_filename(name: str) -> str:
     """Removes invalid OS filename characters from string."""
     name = re.sub(r'[\\/*?:"<>|]', ' ', name)
@@ -46,6 +56,11 @@ print("Testing Python version compatibility...")
 assert _is_supported_python_version((3, 9)) is False
 assert _is_supported_python_version((3, 10)) is True
 assert _is_supported_python_version((3, 12)) is True
+
+print("Testing macOS GUI Python paths...")
+assert "/opt/homebrew/bin/python3.12" in _mac_python_paths()
+assert "/usr/local/bin/python3.12" in _mac_python_paths()
+assert "/Library/Frameworks/Python.framework/Versions/3.12/bin/python3.12" in _mac_python_paths()
 
 print("Testing sanitize_filename...")
 test_names = ["Invalid/Filename:*", "Normal File Name", "  Spaces  Test  "]

@@ -70,20 +70,43 @@ def _is_supported_python(python_bin):
         return False
 
 
-def _find_compatible_base_python():
-    """Find a system Python capable of creating a supported venv."""
+def _python_candidates():
+    """Return likely Python executable names and paths.
+
+    macOS GUI apps do not inherit the shell's PATH, so names such as
+    ``python3.12`` are not enough when Prism is launched from Finder or a
+    packaged .app. Include the standard Homebrew and python.org locations.
+    """
     candidates = []
-    if sys.version_info[:2] >= MIN_SUPPORTED_PYTHON:
+    if _is_supported_python_version(sys.version_info):
         candidates.append(sys.executable)
     if sys.platform == "darwin":
-        candidates.extend(f"python3.{minor}" for minor in (12, 11, 10))
+        candidates.extend((
+            "/opt/homebrew/bin/python3",
+            "/opt/homebrew/opt/python/bin/python3",
+            "/usr/local/bin/python3",
+            "/usr/local/opt/python/bin/python3",
+        ))
+        for minor in (12, 11, 10, 13):
+            candidates.extend((
+                f"python3.{minor}",
+                f"/opt/homebrew/bin/python3.{minor}",
+                f"/opt/homebrew/opt/python@3.{minor}/bin/python3.{minor}",
+                f"/usr/local/bin/python3.{minor}",
+                f"/usr/local/opt/python@3.{minor}/bin/python3.{minor}",
+                f"/Library/Frameworks/Python.framework/Versions/3.{minor}/bin/python3.{minor}",
+            ))
     elif sys.platform == "win32":
         candidates.extend(("python.exe", "python3.exe"))
     else:
         candidates.extend(("python3", "python"))
+    return candidates
 
+
+def _find_compatible_base_python():
+    """Find a system Python capable of creating a supported venv."""
     seen = set()
-    for candidate in candidates:
+    for candidate in _python_candidates():
         resolved = candidate if Path(candidate).is_file() else shutil.which(candidate)
         if not resolved:
             continue
@@ -172,8 +195,9 @@ def bootstrap_isolated_environment():
             base_python = _find_compatible_base_python()
             if not base_python:
                 raise RuntimeError(
-                    "Prism ingestion requires Python 3.10 or newer. "
-                    "Install Python 3.12 with the macOS installer and try again."
+                    "Prism could not find Python 3.10 or newer. "
+                    "Install Python 3.12 with Homebrew (brew install python@3.12) "
+                    "or from python.org, then try again."
                 )
             if PRISM_ENV_DIR.exists():
                 print("[Prism Ingestion] Replacing the existing Python <3.10 environment...")
@@ -202,14 +226,17 @@ def bootstrap_isolated_environment():
     except Exception as e:
         print(f"[Prism Ingestion ERROR] Failed to set up isolated environment: {e}")
         print("Falling back to the system interpreter (some imports may fail).\n")
+        if not _is_supported_python_version(sys.version_info):
+            raise RuntimeError(str(e)) from e
 
     # Never continue with Python 3.9: current Crawl4AI releases use syntax
     # that Python 3.9 cannot evaluate, which would otherwise fail much later
     # during the first third-party import with an opaque TypeError.
     if not _is_supported_python_version(sys.version_info):
         raise RuntimeError(
-            "Prism ingestion requires Python 3.10 or newer. "
-            "Install Python 3.12 with the macOS installer and try again."
+            "Prism could not find Python 3.10 or newer. "
+            "Install Python 3.12 with Homebrew (brew install python@3.12) "
+            "or from python.org, then try again."
         )
 
 

@@ -1108,17 +1108,48 @@ fn run_ingestion_script(script_command: String, vault_path: String) -> Result<St
 // Helper to discover python executable
 fn find_python() -> String {
     #[cfg(target_os = "windows")]
-    let candidates = vec!["python", "py", "python3"];
+    let candidates = vec![
+        "%LOCALAPPDATA%\\Programs\\Python\\Python312\\python.exe".to_string(),
+        "%ProgramFiles%\\Python312\\python.exe".to_string(),
+        "python".to_string(),
+        "py".to_string(),
+        "python3".to_string(),
+    ];
 
-    #[cfg(not(target_os = "windows"))]
-    let candidates = vec!["python3.12", "python3", "python"];
+    #[cfg(target_os = "macos")]
+    let candidates = vec![
+        "/opt/homebrew/bin/python3.12".to_string(),
+        "/opt/homebrew/opt/python@3.12/bin/python3.12".to_string(),
+        "/usr/local/bin/python3.12".to_string(),
+        "/usr/local/opt/python@3.12/bin/python3.12".to_string(),
+        "/Library/Frameworks/Python.framework/Versions/3.12/bin/python3.12".to_string(),
+        "python3.12".to_string(),
+        "python3".to_string(),
+        "python".to_string(),
+    ];
 
-    for cand in candidates {
-        if std::process::Command::new(cand).arg("--version").output().is_ok() {
-            return cand.to_string();
+    #[cfg(all(not(target_os = "windows"), not(target_os = "macos")))]
+    let candidates = vec!["python3".to_string(), "python".to_string()];
+
+    for candidate in candidates {
+        let candidate = if candidate.starts_with('%') {
+            let expanded = candidate
+                .replace("%LOCALAPPDATA%", &std::env::var("LOCALAPPDATA").unwrap_or_default())
+                .replace("%ProgramFiles%", &std::env::var("ProgramFiles").unwrap_or_default());
+            expanded
+        } else {
+            candidate
+        };
+        if std::process::Command::new(&candidate).arg("--version").output().is_ok() {
+            return candidate;
         }
     }
 
+    #[cfg(target_os = "windows")]
+    return "py".to_string();
+    #[cfg(target_os = "macos")]
+    return "python3".to_string();
+    #[cfg(all(not(target_os = "windows"), not(target_os = "macos")))]
     "python3".to_string()
 }
 
