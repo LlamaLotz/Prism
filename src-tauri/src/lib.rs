@@ -1105,10 +1105,12 @@ fn run_ingestion_script(script_command: String, vault_path: String) -> Result<St
     }
 }
 
-// Helper to discover python executable
-fn find_python() -> String {
+// Helpers to discover a supported Python executable. The extractor itself
+// can repair an old ~/.prism/env, but it needs a supported system interpreter
+// to recreate that environment when Python 3.9 is all that is available.
+fn python_candidates() -> Vec<String> {
     #[cfg(target_os = "windows")]
-    let candidates = vec![
+    return vec![
         "%LOCALAPPDATA%\\Programs\\Python\\Python312\\python.exe".to_string(),
         "%ProgramFiles%\\Python312\\python.exe".to_string(),
         "python".to_string(),
@@ -1117,7 +1119,7 @@ fn find_python() -> String {
     ];
 
     #[cfg(target_os = "macos")]
-    let candidates = vec![
+    return vec![
         "/opt/homebrew/bin/python3.12".to_string(),
         "/opt/homebrew/opt/python@3.12/bin/python3.12".to_string(),
         "/usr/local/bin/python3.12".to_string(),
@@ -1129,28 +1131,79 @@ fn find_python() -> String {
     ];
 
     #[cfg(all(not(target_os = "windows"), not(target_os = "macos")))]
-    let candidates = vec!["python3".to_string(), "python".to_string()];
+    vec!["python3".to_string(), "python".to_string()]
+}
 
-    for candidate in candidates {
-        let candidate = if candidate.starts_with('%') {
-            let expanded = candidate
-                .replace("%LOCALAPPDATA%", &std::env::var("LOCALAPPDATA").unwrap_or_default())
-                .replace("%ProgramFiles%", &std::env::var("ProgramFiles").unwrap_or_default());
-            expanded
-        } else {
-            candidate
-        };
-        if std::process::Command::new(&candidate).arg("--version").output().is_ok() {
-            return candidate;
+fn expand_python_candidate(candidate: &str) -> String {
+    candidate
+        .replace("%LOCALAPPDATA%", &std::env::var("LOCALAPPDATA").unwrap_or_default())
+        .replace("%ProgramFiles%", &std::env::var("ProgramFiles").unwrap_or_default())
+}
+
+fn python_version(command: &str) -> Option<(u32, u32)> {
+    let mut cmd = std::process::Command::new(command);
+    #[cfg(target_os = "windows")]
+    if command == "py" {
+        cmd.args(["-3.12", "--version"]);
+    } else {
+        cmd.arg("--version");
+    }
+    #[cfg(not(target_os = "windows"))]
+    cmd.arg("--version");
+
+    let output = cmd.output().ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let text = format!(
+        "{} {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let mut parts = text.split_whitespace();
+    let _python_label = parts.find(|part| *part == "Python")?;
+    let mut pieces = parts.next()?.split('.');
+    let version = (pieces.next()?.parse().ok()?, pieces.next()?.parse().ok()?);
+    Some(version)
+}
+
+fn find_supported_python() -> Option<String> {
+    python_candidates().into_iter().find_map(|candidate| {
+        let expanded = expand_python_candidate(&candidate);
+        match python_version(&expanded) {
+            Some((major, minor)) if (major, minor) >= (3, 10) => Some(expanded),
+            _ => None,
+        }
+    })
+}
+
+fn find_python() -> String {
+    #[cfg(target_os = "windows")]
+    if python_version("py").is_some_and(|(major, minor)| (major, minor) >= (3, 10)) {
+        if let Ok(output) = std::process::Command::new("py")
+            .args(["-3.12", "-c", "import sys; print(sys.executable)"])
+            .output()
+        {
+            let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            if !path.is_empty() {
+                return path;
+            }
         }
     }
 
-    #[cfg(target_os = "windows")]
-    return "py".to_string();
-    #[cfg(target_os = "macos")]
-    return "python3".to_string();
-    #[cfg(all(not(target_os = "windows"), not(target_os = "macos")))]
-    "python3".to_string()
+    find_supported_python()
+        .or_else(|| {
+            python_candidates().into_iter().find_map(|candidate| {
+                let expanded = expand_python_candidate(&candidate);
+                python_version(&expanded).map(|_| expanded)
+            })
+        })
+        .unwrap_or_else(|| {
+            #[cfg(target_os = "windows")]
+            return "py".to_string();
+            #[cfg(not(target_os = "windows"))]
+            return "python3".to_string();
+        })
 }
 
 // Interpreter for the isolated ingestion venv (~/.prism/env). The extractor
@@ -1164,7 +1217,10 @@ fn find_prism_python(app: &tauri::AppHandle) -> String {
         let candidate = home.join(".prism").join("env").join("bin").join("python");
 
         if candidate.exists() {
-            return candidate.to_string_lossy().to_string();
+            let candidate = candidate.to_string_lossy().to_string();
+            if python_version(&candidate).is_some_and(|(major, minor)| (major, minor) >= (3, 10)) {
+                return candidate;
+            }
         }
     }
     find_python()
@@ -1218,6 +1274,26 @@ async fn run_builtin_extractor_async(
     let script_path = resolve_resource_file(&app, "Extractor Final/master_extractor.py");
     if !script_path.exists() {
         return Err(format!("Extractor script not found at path: {:?}", script_path));
+    }
+
+    let env_python = if cfg!(target_os = "windows") {
+        app.path().home_dir().ok().map(|home| home.join(".prism").join("env").join("Scripts").join("python.exe"))
+    } else {
+        app.path().home_dir().ok().map(|home| home.join(".prism").join("env").join("bin").join("python"))
+    };
+
+    // If no supported Python is available, install the platform prerequisites
+    // before launching the extractor. This is only reached on first setup (or
+    // after an old environment was removed), so normal ingestion is unchanged.
+    let needs_installer = env_python.as_ref().map_or(true, |path| {
+        !path.exists()
+            || python_version(&path.to_string_lossy()).map_or(true, |(major, minor)| (major, minor) < (3, 10))
+    }) && find_supported_python().is_none();
+    if needs_installer {
+        let installer_output = run_extractor_installer(app.clone())?;
+        for line in installer_output.lines() {
+            let _ = window.emit("ingestion-progress", format!("[Prism Installer] {line}"));
+        }
     }
 
     let python_cmd = find_prism_python(&app);

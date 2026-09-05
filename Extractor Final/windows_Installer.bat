@@ -119,4 +119,3 @@ echo.
 echo ====================================================
 echo Windows setup complete. The extractor will use Python 3.12 automatically.
 echo ====================================================
-pause
