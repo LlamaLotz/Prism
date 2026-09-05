@@ -22,6 +22,7 @@ import { ContextMenu } from './components/ContextMenu';
 import { useDialog } from './components/DialogProvider';
 import { TitleBar } from './components/TitleBar';
 import { LiquidGlass } from './components/LiquidGlass';
+import { createErrorDetails, createRawErrorDetails, errorDialogMessage, ErrorDetails } from './utils/errors';
 
 import { SplashScreen } from './components/SplashScreen';
 import { UpdateBanner } from './components/UpdateBanner';
@@ -383,7 +384,7 @@ export default function App() {
   // Related Notes panel knows embeddings now exist and refreshes itself.
   const [semanticTick, setSemanticTick] = useState(0);
   // Visible banner when the embedding model fails to load (e.g. OOM).
-  const [embeddingError, setEmbeddingError] = useState<string | null>(null);
+  const [embeddingError, setEmbeddingError] = useState<ErrorDetails | null>(null);
 
   const loadGraph = () => {
     tauriAPI
@@ -813,7 +814,7 @@ export default function App() {
           })
           .catch((e) => {
             console.error('Embedding backfill failed:', e);
-            setEmbeddingError(String(e));
+            setEmbeddingError(createErrorDetails(e, 'Semantic search is unavailable.'));
             backfillDoneRef.current = true;
             tryPlayVideo();
           });
@@ -986,14 +987,19 @@ export default function App() {
         updateProgress({ status: 'completed' });
         appLogger.info(`Ingestion completed: ${type}`);
       } else {
-        addLog({ level: 'error', message: 'FAILED: ' + (result.error || result.output) });
+        const details = createRawErrorDetails(
+          result.error || result.output,
+          'The extractor could not complete the import.'
+        );
+        addLog({ level: 'error', message: `${details.human}\nRaw error:\n${details.raw}` });
         updateProgress({ status: 'error' });
-        appLogger.error(`Ingestion failed: ${type}`, new Error(result.error || result.output));
+        appLogger.error(`Ingestion failed: ${type}`, details.raw);
       }
     } catch (err) {
-      addLog({ level: 'error', message: `Critical error: ${err}` });
+      const details = createErrorDetails(err, 'The extractor encountered an unexpected error.');
+      addLog({ level: 'error', message: `${details.human}\nRaw error:\n${details.raw}` });
       updateProgress({ status: 'error' });
-      appLogger.error(`Ingestion critical error: ${type}`, err);
+      appLogger.error(`Ingestion critical error: ${type}`, details.raw);
     } finally {
       setIsIngesting(false);
       // Small delay to allow OS filesystem to finalize writes before refreshing notes
@@ -1069,7 +1075,7 @@ export default function App() {
         if (layout === 'graph' || layout === 'topics') setLayout('split');
       }
     } else {
-      await alert(`Error creating note: ${result.error}`, { title: 'Could not create note' });
+      await alert(errorDialogMessage(createRawErrorDetails(result.error, 'Could not create the note.')), { title: 'Could not create note' });
       appLogger.error(`Failed to create note: ${formattedTitle}`, new Error(result.error));
     }
   };
@@ -1105,7 +1111,7 @@ export default function App() {
       relativePath,
     });
     if (!res.success) {
-      await alert(`Error creating folder: ${res.error ?? 'unknown error'}`, {
+      await alert(errorDialogMessage(createRawErrorDetails(res.error ?? 'unknown error', 'Could not create the folder.')), {
         title: 'Could not create folder',
       });
     } else {
@@ -1148,7 +1154,7 @@ export default function App() {
     if (!ok) return;
     const res = await tauriAPI.deleteFolder({ vaultPath: settings.vaultPath, relativePath: rel });
     if (!res.success) {
-      await alert(`Error deleting folder: ${res.error ?? 'unknown error'}`, {
+      await alert(errorDialogMessage(createRawErrorDetails(res.error ?? 'unknown error', 'Could not delete the folder.')), {
         title: 'Could not delete folder',
       });
     } else {
@@ -1177,7 +1183,7 @@ export default function App() {
       newRelativePath: newRel,
     });
     if (!res.success) {
-      await alert(`Error renaming folder: ${res.error ?? 'unknown error'}`, {
+      await alert(errorDialogMessage(createRawErrorDetails(res.error ?? 'unknown error', 'Could not rename the folder.')), {
         title: 'Could not rename folder',
       });
     } else {
@@ -1202,7 +1208,7 @@ export default function App() {
       await fetchNotes();
       appLogger.info(`Note deleted: ${note.title} (${note.path})`);
     } else {
-      await alert(`Error deleting note: ${result.error}`, { title: 'Could not delete note' });
+      await alert(errorDialogMessage(createRawErrorDetails(result.error ?? 'unknown error', 'Could not delete the note.')), { title: 'Could not delete note' });
       appLogger.error(`Failed to delete note: ${note.title}`, new Error(result.error));
     }
   };
@@ -1264,7 +1270,7 @@ export default function App() {
       }
       appLogger.info(`Note renamed: ${note.title} -> ${formattedNewTitle} (${newPath})`);
     } else {
-      await alert(`Error renaming note: ${result.error}`, { title: 'Could not rename note' });
+      await alert(errorDialogMessage(createRawErrorDetails(result.error ?? 'unknown error', 'Could not rename the note.')), { title: 'Could not rename note' });
       appLogger.error(`Failed to rename note: ${note.title}`, new Error(result.error));
     }
   };
@@ -1316,7 +1322,7 @@ export default function App() {
 
     const result = await tauriAPI.renameFile({ oldPath: note.path, newPath });
     if (!result.success) {
-      await alert(`Error moving note: ${result.error ?? 'unknown error'}`, {
+      await alert(errorDialogMessage(createRawErrorDetails(result.error ?? 'unknown error', 'Could not move the note.')), {
         title: 'Could not move note',
       });
       return;
@@ -1373,7 +1379,7 @@ export default function App() {
       newRelativePath,
     });
     if (!result.success) {
-      await alert(`Error moving folder: ${result.error ?? 'unknown error'}`, {
+      await alert(errorDialogMessage(createRawErrorDetails(result.error ?? 'unknown error', 'Could not move the folder.')), {
         title: 'Could not move folder',
       });
       return;
@@ -1464,7 +1470,7 @@ export default function App() {
             if (layout === 'graph' || layout === 'topics') setLayout('split');
           }
         } else {
-          await alert(`Error creating connected note: ${result.error}`, {
+          await alert(errorDialogMessage(createRawErrorDetails(result.error ?? 'unknown error', 'Could not create the connected note.')), {
             title: 'Could not create connected note',
           });
           appLogger.error(`Failed to create connected note: ${targetTitle}`, new Error(result.error));
@@ -1714,7 +1720,11 @@ export default function App() {
         <div className="fixed right-4 top-12 z-[90] flex max-w-[min(420px,calc(100vw-2rem))] items-start gap-3 border border-amber-400/30 bg-slate-950/95 px-4 py-3 text-xs text-slate-300 shadow-2xl backdrop-blur-md">
           <div className="min-w-0 flex-1">
             <div className="font-semibold text-amber-300">Semantic search unavailable</div>
-            <div className="mt-1 break-words text-slate-500">{embeddingError}</div>
+            <div className="mt-1 break-words text-slate-500">{embeddingError.human}</div>
+            <details className="mt-2 text-slate-500">
+              <summary className="cursor-pointer hover:text-slate-300">Raw error</summary>
+              <pre className="mt-1 max-h-28 overflow-auto whitespace-pre-wrap break-words font-mono text-[10px]">{embeddingError.raw}</pre>
+            </details>
             <p className="mt-2 text-slate-500">Related notes and block matching will work once the embedding model is available. This is a one-time cost on first launch.</p>
           </div>
           <button

@@ -109,7 +109,7 @@ export async function sendChatMessage(
     return stripThinking(response.choices[0]?.message?.content || 'No response from AI.');
   } catch (error: any) {
     console.error('AI chat error:', error);
-    throw new Error(error.message || 'An error occurred while calling AI.');
+    throw new Error(error.message || 'An error occurred while calling AI.', { cause: error });
   }
 }
 

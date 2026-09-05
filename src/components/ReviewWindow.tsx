@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { CheckCircle2, Circle, XCircle, Check, ArrowRight, FileText } from 'lucide-react';
 import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
 import { linkerService, LinkMention } from '../services/linkerService';
+import { createErrorDetails, createUserErrorDetails, ErrorDetails } from '../utils/errors';
 
 const REVIEW_STORAGE_KEY = 'prism_review_state';
 
@@ -29,20 +30,20 @@ export const ReviewWindow: React.FC = () => {
   const [approved, setApproved] = useState<Record<number, boolean>>({});
   const [isApplying, setIsApplying] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<ErrorDetails | null>(null);
 
   useEffect(() => {
     const raw = localStorage.getItem(REVIEW_STORAGE_KEY);
     if (!raw) {
-      setError('No pending link suggestions found. Run a scan in the editor first.');
+      setError(createUserErrorDetails('No pending link suggestions found. Run a scan in the editor first.'));
       return;
     }
     try {
       const parsed: ReviewState = JSON.parse(raw);
       setState(parsed);
       setApproved(Object.fromEntries(parsed.mentions.map((_, i) => [i, true])));
-    } catch {
-      setError('Failed to load pending suggestions.');
+    } catch (e) {
+      setError(createErrorDetails(e, 'Failed to load pending suggestions.'));
     }
   }, []);
 
@@ -50,7 +51,11 @@ export const ReviewWindow: React.FC = () => {
     return (
       <div className="h-screen bg-neutral-950 text-neutral-300 flex flex-col items-center justify-center gap-4 p-8">
         <XCircle className="w-10 h-10 text-rose-500" />
-        <p className="text-sm">{error}</p>
+        <p className="text-sm">{error.human}</p>
+        <details className="max-w-lg text-xs text-rose-400/80">
+          <summary className="cursor-pointer">Raw error</summary>
+          <pre className="mt-1 max-h-40 overflow-auto whitespace-pre-wrap break-words text-left font-mono">{error.raw}</pre>
+        </details>
         <button
           onClick={() => getCurrentWebviewWindow().close()}
           className="px-4 py-1.5 bg-neutral-800 hover:bg-neutral-700 text-neutral-200 text-xs font-semibold rounded-lg transition-colors"
@@ -82,7 +87,7 @@ export const ReviewWindow: React.FC = () => {
       setMessage(`Applied ${selected.length} link${selected.length === 1 ? '' : 's'} successfully.`);
       setTimeout(() => getCurrentWebviewWindow().close(), 1200);
     } catch (e) {
-      setError(String(e));
+      setError(createErrorDetails(e, 'Could not apply the selected links.'));
       setIsApplying(false);
     }
   };
@@ -164,7 +169,6 @@ export const ReviewWindow: React.FC = () => {
       <div className="px-6 py-3 border-t border-neutral-900 bg-neutral-950/60 flex items-center justify-between gap-3 shrink-0">
         <div className="min-w-0">
           {message && <p className="text-xs text-emerald-400">{message}</p>}
-          {error && <p className="text-xs text-rose-400 truncate">{error}</p>}
         </div>
         <div className="flex items-center gap-2 shrink-0">
           <button

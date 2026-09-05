@@ -3,6 +3,7 @@ import { Sparkles, Zap, Link2, RefreshCw, Info, Check, X, ExternalLink, EyeOff, 
 import { NoteFile, WikiLink } from '../types';
 import { LinkMention, BacklinkInfo, DeniedLink } from '../services/linkerService';
 import { SemanticMatch, BlockMatch } from '../services/semantic';
+import { ErrorDetails } from '../utils/errors';
 
 interface LinkHubProps {
   mentions: LinkMention[];
@@ -18,7 +19,7 @@ interface LinkHubProps {
   dictionary: [string, string][];
   allNotes: NoteFile[];
   isLoading: boolean;
-  error: string | null;
+  error: ErrorDetails | null;
   /** Persisted dismissals (denied suggestions) for the active note — owned by
    *  the Editor so the toolbar badge, approve flows and this panel agree. */
   deniedEntries: DeniedLink[];
@@ -508,9 +509,15 @@ export const LinkHub: React.FC<LinkHubProps> = ({
         </div>
 
         {error ? (
-          <div className="text-[11px] text-slate-500 flex items-center gap-1.5 py-1">
-            <Info className="w-3.5 h-3.5 text-slate-600 shrink-0" />
-            <span className="truncate">{error}</span>
+          <div className="text-[11px] text-slate-500 flex items-start gap-1.5 py-1">
+            <Info className="w-3.5 h-3.5 text-slate-600 shrink-0 mt-0.5" />
+            <div className="min-w-0">
+              <div>{error.human}</div>
+              <details className="mt-1 text-[10px] text-slate-600">
+                <summary className="cursor-pointer hover:text-slate-400">Raw error</summary>
+                <pre className="mt-1 max-h-24 overflow-auto whitespace-pre-wrap break-words font-mono">{error.raw}</pre>
+              </details>
+            </div>
           </div>
         ) : total === 0 ? (
           <div className="text-[11px] text-slate-500 flex items-center gap-1.5 py-1">

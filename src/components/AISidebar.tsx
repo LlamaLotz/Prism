@@ -7,6 +7,7 @@ import ReactMarkdown from 'react-markdown';
 import { NoteFile, OmniRouteConfig, tauriAPI } from '../types';
 import { summarizeNote, suggestConnections, suggestMetadata, sendChatMessage } from '../services/apiService';
 import { buildChatSystemPrompt } from '../services/systemMessages';
+import { createErrorDetails, createUserErrorDetails, ErrorDetails } from '../utils/errors';
 
 interface AISidebarProps {
   note: NoteFile | null;
@@ -33,7 +34,11 @@ export const AISidebar: React.FC<AISidebarProps> = ({
   const [isLoading, setIsLoading] = useState(false);
   const [isSearching, setIsSearching] = useState(false);
   const [searchMode, setSearchMode] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<ErrorDetails | null>(null);
+
+  const showError = (errorValue: unknown, fallback: string) => {
+    setError(createErrorDetails(errorValue, fallback));
+  };
 
   const chatEndRef = useRef<HTMLDivElement | null>(null);
 
@@ -48,7 +53,7 @@ export const AISidebar: React.FC<AISidebarProps> = ({
     const trimmed = text.trim();
     if (!trimmed || isLoading) return;
 
-    if (!isConfigured) {          setError('AI is not configured. Please enter your API Key and Base URL in Settings.');
+    if (!isConfigured) {          setError(createUserErrorDetails('AI is not configured. Please enter your API Key and Base URL in Settings.'));
       return;
     }
 
@@ -79,7 +84,7 @@ export const AISidebar: React.FC<AISidebarProps> = ({
       const response = await sendChatMessage(config, fullMessages);
       setMessages((prev) => [...prev, { role: 'assistant', content: response }]);
     } catch (err: any) {
-      setError(err.message || 'An error occurred.');
+      showError(err, 'An error occurred.');
     } finally {
       setIsLoading(false);
     }
@@ -103,7 +108,7 @@ export const AISidebar: React.FC<AISidebarProps> = ({
       ).join('\n\n');
       setMessages((prev) => [...prev, { role: 'assistant', content: formatted }]);
     } catch (err: any) {
-      setError(err.message || 'Search failed.');
+      showError(err, 'Search failed.');
     } finally {
       setIsSearching(false);
     }
@@ -121,7 +126,7 @@ export const AISidebar: React.FC<AISidebarProps> = ({
 
   const runQuickAction = async (action: 'summarize' | 'connect' | 'metadata') => {
     if (!note) return;
-    if (!isConfigured) {          setError('AI is not configured. Please enter your API Key and Base URL in Settings.');
+    if (!isConfigured) {          setError(createUserErrorDetails('AI is not configured. Please enter your API Key and Base URL in Settings.'));
       return;
     }
 
@@ -152,7 +157,7 @@ export const AISidebar: React.FC<AISidebarProps> = ({
 
       setMessages((prev) => [...prev, { role: 'assistant', content: response }]);
     } catch (err: any) {
-      setError(err.message || 'An error occurred.');
+      showError(err, 'An error occurred.');
     } finally {
       setIsLoading(false);
     }
@@ -291,7 +296,11 @@ export const AISidebar: React.FC<AISidebarProps> = ({
             <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
             <div className="space-y-1">
               <span className="font-bold leading-none block">Error</span>
-              <span>{error}</span>
+              <span>{error.human}</span>
+              <details className="pt-1 text-[10px] text-rose-400/70">
+                <summary className="cursor-pointer hover:text-rose-300">Raw error</summary>
+                <pre className="mt-1 max-h-28 overflow-auto whitespace-pre-wrap break-words font-mono">{error.raw}</pre>
+              </details>
             </div>
           </div>
         )}

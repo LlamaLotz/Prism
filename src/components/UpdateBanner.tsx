@@ -7,7 +7,7 @@ import {
   updateNotes,
   type UpdateStatus,
 } from '../services/updater';
-
+import { createErrorDetails } from '../utils/errors';
 export const UpdateBanner: React.FC = () => {
   const [status, setStatus] = useState<UpdateStatus>({ state: 'idle' });
   const [dismissed, setDismissed] = useState(false);
@@ -53,7 +53,8 @@ export const UpdateBanner: React.FC = () => {
       await tauriAPI.relaunchApp();
     } catch (error) {
       console.error('[updater] install failed:', error);
-      setStatus({ state: 'error', message: String(error) });
+      const details = createErrorDetails(error, 'The update could not be installed.');
+      setStatus({ state: 'error', message: `${details.human}\n\nRaw error:\n${details.raw}` });
     }
   };
 
@@ -61,7 +62,7 @@ export const UpdateBanner: React.FC = () => {
     return (
       <div className="fixed right-4 top-12 z-[90] flex max-w-[min(420px,calc(100vw-2rem))] items-start gap-3 border border-rose-400/30 bg-slate-950/95 px-4 py-3 text-xs text-slate-300 shadow-2xl backdrop-blur-md">
         <div className="min-w-0 flex-1">
-          <div className="font-semibold text-rose-300">Update check failed</div>
+          <div className="font-semibold text-rose-300">Update failed</div>
           <div className="mt-1 break-words text-slate-500">{status.message}</div>
         </div>
         <button

@@ -1,6 +1,10 @@
 import re
 
 # --- Functions being tested (copied from master_extractor.py) ---
+def _is_supported_python_version(version_info):
+    """Return whether a Python version can run the ingestion dependencies."""
+    return tuple(version_info[:2]) >= (3, 10)
+
 def sanitize_filename(name: str) -> str:
     """Removes invalid OS filename characters from string."""
     name = re.sub(r'[\\/*?:"<>|]', ' ', name)
@@ -38,6 +42,11 @@ def clean_vtt_text(vtt_text: str) -> str:
     return " ".join(clean_lines).strip()
 
 # --- Tests ---
+print("Testing Python version compatibility...")
+assert _is_supported_python_version((3, 9)) is False
+assert _is_supported_python_version((3, 10)) is True
+assert _is_supported_python_version((3, 12)) is True
+
 print("Testing sanitize_filename...")
 test_names = ["Invalid/Filename:*", "Normal File Name", "  Spaces  Test  "]
 for name in test_names:

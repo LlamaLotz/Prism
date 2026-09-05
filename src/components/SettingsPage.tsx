@@ -41,6 +41,7 @@ import {
   isValidKeyForProvider,
 } from '../services/apiProviders';
 import { APP_ICON_GROUPS, getAppIcon } from '../services/appIcon';
+import { createErrorDetails } from '../utils/errors';
 
 interface SettingsPageProps {
   isOpen: boolean;
@@ -839,7 +840,8 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
       setUpdateStatus(update ? { state: 'available', update } : { state: 'up-to-date' });
     } catch (error) {
       console.warn('[updater] update check failed:', error);
-      setUpdateStatus({ state: 'error', message: String(error) });
+      const details = createErrorDetails(error, 'The update operation failed.');
+      setUpdateStatus({ state: 'error', message: `${details.human}\n\nRaw error:\n${details.raw}` });
     }
   };
 
@@ -857,7 +859,8 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
       await tauriAPI.relaunchApp();
     } catch (error) {
       console.error('[updater] install failed:', error);
-      setUpdateStatus({ state: 'error', message: String(error) });
+      const details = createErrorDetails(error, 'The update operation failed.');
+      setUpdateStatus({ state: 'error', message: `${details.human}\n\nRaw error:\n${details.raw}` });
     }
   };
 
@@ -1775,8 +1778,8 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                       )}
 
                       {updateStatus.state === 'error' && (
-                        <div className="max-w-[260px] text-right text-[11px] leading-relaxed text-rose-400 break-words">
-                          Update check failed: {updateStatus.message}
+                        <div className="max-w-[260px] text-right text-[11px] leading-relaxed text-rose-400 break-words whitespace-pre-wrap">
+                          {updateStatus.message}
                         </div>
                       )}
 

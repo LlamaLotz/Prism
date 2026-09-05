@@ -1,13 +1,14 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { X, RotateCcw, History as HistoryIcon } from 'lucide-react';
 import { ReconstructedVersion } from '../types';
+import { ErrorDetails } from '../utils/errors';
 
 interface VersionHistoryRulerProps {
   noteTitle: string;
   /** Versions oldest → newest; versions[0] is the original base snapshot. */
   versions: ReconstructedVersion[];
   loading: boolean;
-  error: string | null;
+  error: ErrorDetails | null;
   restoring: boolean;
   onRestore: (version: ReconstructedVersion) => void;
   onClose: () => void;
@@ -334,7 +335,13 @@ export const VersionHistoryRuler: React.FC<VersionHistoryRulerProps> = ({
         {loading ? (
           <div className="py-10 text-center text-xs text-slate-500">Loading versions…</div>
         ) : error ? (
-          <div className="py-10 text-center text-xs text-red-400">Failed to load version history: {error}</div>
+          <div className="py-10 text-center text-xs text-red-400">
+            <div>{error.human}</div>
+            <details className="mt-2 text-left text-slate-500 max-w-lg mx-auto">
+              <summary className="cursor-pointer text-center">Raw error</summary>
+              <pre className="mt-1 max-h-28 overflow-auto whitespace-pre-wrap break-words font-mono">{error.raw}</pre>
+            </details>
+          </div>
         ) : versions.length === 0 ? (
           <div className="py-10 text-center text-xs text-slate-500 px-6">
             No saved versions yet. Versions are snapshotted on explicit save (Ctrl/Cmd+S), when you switch notes,

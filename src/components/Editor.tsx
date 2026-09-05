@@ -26,6 +26,7 @@ import { syntaxHighlighting, defaultHighlightStyle } from '@codemirror/language'
 import { oneDark } from '@codemirror/theme-one-dark';
 import { appLogger } from '../services/appLogger';
 import { useDialog } from './DialogProvider';
+import { createErrorDetails, createRawErrorDetails, ErrorDetails } from '../utils/errors';
 import {
   extractKeywords,
   findKeywordRanges,
@@ -382,7 +383,7 @@ export const Editor: React.FC<EditorProps> = ({
   const [relatedMatches, setRelatedMatches] = useState<SemanticMatch[]>([]);
   const [blockMatches, setBlockMatches] = useState<BlockMatch[]>([]);
   const [semanticLoading, setSemanticLoading] = useState(false);
-  const [linkError, setLinkError] = useState<string | null>(null);
+  const [linkError, setLinkError] = useState<ErrorDetails | null>(null);
   // Persisted dismissals (denied suggestions) for the active note. Lifted here
   // so the toolbar badge, LinkHub filtering and the approve/deny flows all see
   // the same set — dismissing every suggestion hides the Review button.
@@ -420,7 +421,7 @@ export const Editor: React.FC<EditorProps> = ({
 
   const [historyVersions, setHistoryVersions] = useState<ReconstructedVersion[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
-  const [historyError, setHistoryError] = useState<string | null>(null);
+  const [historyError, setHistoryError] = useState<ErrorDetails | null>(null);
   const [restoringVersion, setRestoringVersion] = useState(false);
   const [copiedPath, setCopiedPath] = useState(false);
   // Extraction metadata from the sidecar JSON the extractor writes into the
@@ -935,12 +936,13 @@ export const Editor: React.FC<EditorProps> = ({
           } catch (e2) {
             console.error('Semantic search failed after embedding:', e2);
             appLogger.error(`Semantic search failed after embedding for ${note.path}`, e2);
-            setLinkError('Semantic index unavailable.');
+            setLinkError(createRawErrorDetails(e2, 'Semantic index unavailable.'));
           }
         } else {
           console.error('Semantic search failed:', relatedRes.reason);
           appLogger.error(`Semantic search failed for ${note.path}`, relatedRes.reason);
-          setLinkError(reason);
+          const reasonDetails = createErrorDetails(relatedRes.reason, 'Semantic search failed.');
+          setLinkError(reasonDetails);
         }
       }
 
@@ -1642,9 +1644,8 @@ export const Editor: React.FC<EditorProps> = ({
       const versions = await tauriAPI.getNoteVersionHistory(note.path);
       setHistoryVersions(versions);
     } catch (e) {
-      console.error('Failed to load version history:', e);
       appLogger.error(`Failed to load version history for ${note.path}`, e);
-      setHistoryError(String(e));
+      setHistoryError(createErrorDetails(e, 'Could not load version history.'));
     } finally {
       setHistoryLoading(false);
     }
@@ -1679,9 +1680,8 @@ export const Editor: React.FC<EditorProps> = ({
       setShowHistory(false);
       flashJumpStatus('Version restored');
     } catch (e) {
-      console.error('Failed to restore version:', e);
       appLogger.error(`Failed to restore version for ${note.path}`, e);
-      setHistoryError(String(e));
+      setHistoryError(createErrorDetails(e, 'Could not restore this version.'));
     } finally {
       setRestoringVersion(false);
     }

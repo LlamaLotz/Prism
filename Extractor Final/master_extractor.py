@@ -1,6 +1,7 @@
 import os
 import sys
 import subprocess
+import shutil
 from pathlib import Path
 
 # ---------------------------------------------------------------------------
@@ -38,6 +39,12 @@ os.environ.setdefault("MKL_NUM_THREADS", "1")
 # flags.
 
 PRISM_ENV_DIR = Path.home() / ".prism" / "env"
+MIN_SUPPORTED_PYTHON = (3, 10)
+
+
+def _is_supported_python_version(version_info):
+    """Return whether a Python version can run the ingestion dependencies."""
+    return tuple(version_info[:2]) >= MIN_SUPPORTED_PYTHON
 
 
 def _env_python_pip():
@@ -48,13 +55,58 @@ def _env_python_pip():
     return str(env_dir / "bin" / "python"), str(env_dir / "bin" / "pip")
 
 
-def get_prism_env():
+def _is_supported_python(python_bin):
+    """Return whether an interpreter supports the current ingestion stack."""
+    try:
+        result = subprocess.run(
+            [python_bin, "-c", "import sys; print(f'{sys.version_info[0]}.{sys.version_info[1]}')"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        major, minor = (int(part) for part in result.stdout.strip().split(".", 1))
+        return _is_supported_python_version((major, minor))
+    except (OSError, ValueError):
+        return False
+
+
+def _find_compatible_base_python():
+    """Find a system Python capable of creating a supported venv."""
+    candidates = []
+    if sys.version_info[:2] >= MIN_SUPPORTED_PYTHON:
+        candidates.append(sys.executable)
+    if sys.platform == "darwin":
+        candidates.extend(f"python3.{minor}" for minor in (12, 11, 10))
+    elif sys.platform == "win32":
+        candidates.extend(("python.exe", "python3.exe"))
+    else:
+        candidates.extend(("python3", "python"))
+
+    seen = set()
+    for candidate in candidates:
+        resolved = candidate if Path(candidate).is_file() else shutil.which(candidate)
+        if not resolved:
+            continue
+        resolved = str(Path(resolved).resolve())
+        if resolved in seen:
+            continue
+        seen.add(resolved)
+        if _is_supported_python(resolved):
+            return resolved
+    return None
+
+
+def get_prism_env(python_creator=None):
     """Create (if missing) and return (python_bin, pip_bin) for the isolated
     ~/.prism/env virtualenv."""
     env_dir = PRISM_ENV_DIR
-    if not env_dir.exists():
+    env_python, _env_pip = _env_python_pip()
+    if not Path(env_python).exists():
+        if env_dir.exists():
+            shutil.rmtree(env_dir)
+        creator = python_creator or sys.executable
         print(f"[Prism Ingestion] Creating isolated virtual environment at {env_dir}...")
-        subprocess.run([sys.executable, "-m", "venv", str(env_dir)], check=True)
+        subprocess.run([creator, "-m", "venv", str(env_dir)], check=True)
     return _env_python_pip()
 
 
@@ -103,17 +155,32 @@ REQUIRED_PACKAGES = [
 
 
 def bootstrap_isolated_environment():
-    """Ensure ~/.prism/env exists and this script is running inside it.
+    """Ensure ~/.prism/env uses Python 3.10+ and run the extractor inside it.
 
-    First run: create the venv, install the ingestion stack into it, then
-    re-exec this script under the venv interpreter (before any third-party
-    imports). Subsequent runs are a no-op.
+    Crawl4AI's current releases use the ``X | None`` annotation syntax, which
+    Python 3.9 cannot evaluate. Recreate stale venvs created by older Prism
+    releases before importing any third-party package.
     """
-    if is_prism_env_active():
+    env_python, _env_pip = _env_python_pip()
+    env_is_compatible = Path(env_python).exists() and _is_supported_python(env_python)
+
+    if env_is_compatible and is_prism_env_active():
         return
 
     try:
-        python_bin, _pip_bin = get_prism_env()
+        if not env_is_compatible:
+            base_python = _find_compatible_base_python()
+            if not base_python:
+                raise RuntimeError(
+                    "Prism ingestion requires Python 3.10 or newer. "
+                    "Install Python 3.12 with the macOS installer and try again."
+                )
+            if PRISM_ENV_DIR.exists():
+                print("[Prism Ingestion] Replacing the existing Python <3.10 environment...")
+                shutil.rmtree(PRISM_ENV_DIR)
+            python_bin, _pip_bin = get_prism_env(base_python)
+        else:
+            python_bin, _pip_bin = get_prism_env()
 
         print("[Prism Ingestion] Installing/upgrading ingestion packages "
               "(first run can take several minutes)...")
@@ -135,6 +202,15 @@ def bootstrap_isolated_environment():
     except Exception as e:
         print(f"[Prism Ingestion ERROR] Failed to set up isolated environment: {e}")
         print("Falling back to the system interpreter (some imports may fail).\n")
+
+    # Never continue with Python 3.9: current Crawl4AI releases use syntax
+    # that Python 3.9 cannot evaluate, which would otherwise fail much later
+    # during the first third-party import with an opaque TypeError.
+    if not _is_supported_python_version(sys.version_info):
+        raise RuntimeError(
+            "Prism ingestion requires Python 3.10 or newer. "
+            "Install Python 3.12 with the macOS installer and try again."
+        )
 
 
 # Self-Healing Environment: Check and auto-install core dependencies before importing them
