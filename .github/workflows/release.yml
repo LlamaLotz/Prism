@@ -38,9 +38,10 @@ jobs:
           export VERSION="${GITHUB_REF_NAME#v}"
           echo "Syncing all manifests to version: $VERSION"
 
-          # Guard: tag must be a semantic version
-          if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+ ]]; then
-            echo "::error::Tag '$GITHUB_REF_NAME' is not a semantic version (got '$VERSION')"
+          # Guard: MSI and macOS bundles require a stable numeric semver.
+          # In particular, MSI rejects alphabetic prereleases such as 1.0.5-a.
+          if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Tag '$GITHUB_REF_NAME' must be a stable semver like v1.0.5; alphabetic prereleases are not supported by the MSI bundle."
             exit 1
           fi
 
@@ -89,8 +90,7 @@ jobs:
         with:
           tagName: ${{ github.ref_name }}
           releaseName: "Prism ${{ github.ref_name }}"
-          uploadUpdaterJson: true
-          uploadUpdaterSignatures: true
+          includeUpdaterJson: true
           updaterJsonPreferNsis: true
           releaseBody: "See the assets below to download Prism for your operating system."
           releaseDraft: false
