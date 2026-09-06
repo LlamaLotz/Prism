@@ -1,7 +1,7 @@
 #[cfg(feature = "online")]
 use crate::common::load_tokenizer_hf_hub;
 use crate::{
-    common::{Tokenizer, TokenizerFiles, DEFAULT_CACHE_DIR},
+    common::{Tokenizer, DEFAULT_CACHE_DIR},
     models::sparse::{models_list, SparseModel},
     ModelInfo, SparseEmbedding,
 };
@@ -47,15 +47,6 @@ impl Default for SparseInitOptions {
             show_download_progress: true,
         }
     }
-}
-
-/// Struct for "bring your own" embedding models
-///
-/// The onnx_file and tokenizer_files are expecting the files' bytes
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct UserDefinedSparseModel {
-    pub onnx_file: Vec<u8>,
-    pub tokenizer_files: TokenizerFiles,
 }
 
 /// Rust representation of the SparseTextEmbedding model

@@ -1328,40 +1328,6 @@ pub fn get_block_texts(
     Ok(out)
 }
 
-/// Exhaustive cosine-similarity scan over all stored embeddings.
-/// Used as a correctness reference / fallback; the HNSW graph in
-/// `engine::embeddings` provides the fast path for production queries.
-pub fn get_semantic_related_notes(
-    conn: &Connection,
-    target_vector: &[f32],
-    top_k: usize,
-) -> Result<Vec<SemanticMatch>, String> {
-    let all = load_all_embeddings(conn)?;
-
-    let mut scored: Vec<(String, f32)> = all
-        .iter()
-        .map(|(note_id, vector)| {
-            (
-                note_id.clone(),
-                crate::engine::embeddings::cosine_similarity(vector, target_vector),
-            )
-        })
-        .collect();
-
-    scored.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
-    scored.truncate(top_k);
-
-    Ok(scored
-        .into_iter()
-        .map(|(note_id, score)| SemanticMatch {
-            note_id,
-            score,
-            matched_text: None,
-            matched_block_id: None,
-        })
-        .collect())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
