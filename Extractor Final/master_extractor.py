@@ -683,6 +683,9 @@ def get_docling(enable_ocr=False):
         return CONVERTER_NO_OCR
 
 
+EXTRACTOR_VERSION = "2026.09.05-pdf-text-v2"
+
+
 def _extract_pymupdf_text_layer(pdf_path: str) -> dict[int, str]:
     """Extract selectable PDF text with PyMuPDF."""
     try:
@@ -694,6 +697,20 @@ def _extract_pymupdf_text_layer(pdf_path: str) -> dict[int, str]:
     with pymupdf.open(pdf_path) as document:
         for page_number, page in enumerate(document, start=1):
             text = (page.get_text("text") or "").strip()
+            if not text:
+                blocks = page.get_text("blocks") or []
+                text = "\n".join(
+                    str(block[4]).strip()
+                    for block in blocks
+                    if len(block) > 4 and str(block[4]).strip()
+                ).strip()
+            if not text:
+                words = page.get_text("words") or []
+                text = " ".join(
+                    str(word[4]).strip()
+                    for word in words
+                    if len(word) > 4 and str(word[4]).strip()
+                ).strip()
             if text:
                 extracted[page_number] = text
     return extracted
@@ -1297,7 +1314,13 @@ def process_local_file(file_path: str, item_raw_folder: Path, main_extractions_f
             print("OCR disabled. Extracting the PDF's selectable text layer directly...")
             content = _extract_pdf_text_layer(reader, str(path))
             if not content.strip():
-                print("WARNING: No selectable text was found in this PDF.")
+                diagnostic = (
+                    "No selectable text could be decoded from this PDF with PyMuPDF, "
+                    "pypdf, or PDFium. If text is visible/selectable in Preview, "
+                    "rebuild and reinstall Prism so the packaged extractor is current."
+                )
+                print(f"ERROR: {diagnostic}")
+                content = f"[PDF extraction produced no text] {diagnostic}"
         elif total_pages > 100:
             print(f"Large PDF Detected ({total_pages} pages). Processing in 50-page chunks in parallel with process timeout safety...")
             chunk_size = 50
@@ -1432,6 +1455,8 @@ def open_file_picker() -> list[str]:
 def run_prism():
     global logger
     logger = setup_logging()
+    print(f"Extractor version: {EXTRACTOR_VERSION}")
+    print(f"Extractor path: {Path(__file__).resolve()}")
     
     # Parse Command Line Arguments first (For automation / Prism App button integration)
     parser = argparse.ArgumentParser(description="Prism Master Extractor Pipeline")
