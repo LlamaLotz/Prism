@@ -1727,7 +1727,7 @@ pub fn run() {
                     }
                 });
             }
-            // Build the native application menu bar (File / Edit / View / Help).
+            // Build the native application menu bar (File / Edit / View).
             // On macOS this renders in the system menu bar even with decorations off;
             // on Windows it provides keyboard-shortcut handling.
             let menu = menu::build_app_menu(app.handle())?;

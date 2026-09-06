@@ -85,20 +85,6 @@ pub fn build_app_menu(app: &AppHandle) -> Result<Menu<tauri::Wry>, Box<dyn std::
         )
         .build()?;
 
-    // ── Help ──────────────────────────────────────────────────────────
-    let help_menu = SubmenuBuilder::new(app, "Help")
-        .item(
-            &MenuItemBuilder::new("Prism Documentation")
-                .id("help_docs")
-                .build(app)?,
-        )
-        .item(
-            &MenuItemBuilder::new("Join our Discord")
-                .id("help_discord")
-                .build(app)?,
-        )
-        .build()?;
-
     // ── macOS app-name menu (Prism) ───────────────────────────────────
     #[cfg(target_os = "macos")]
     let app_menu = SubmenuBuilder::new(app, "Prism")
@@ -151,7 +137,6 @@ pub fn build_app_menu(app: &AppHandle) -> Result<Menu<tauri::Wry>, Box<dyn std::
     menu.append(&file_menu)?;
     menu.append(&edit_menu)?;
     menu.append(&view_menu)?;
-    menu.append(&help_menu)?;
 
     Ok(menu)
 }
@@ -221,18 +206,6 @@ pub fn setup_menu_handler(app: &App) {
             "view_sidebar" => {
                 if let Some(win) = handle.get_webview_window("main") {
                     let _ = win.emit("menu://toggle-sidebar", ());
-                }
-            }
-
-            // ── Help menu ─────────────────────────────────────────────
-            "help_docs" => {
-                if let Some(win) = handle.get_webview_window("main") {
-                    let _ = win.emit("menu://open-url", "https://docs.prismapp.io");
-                }
-            }
-            "help_discord" => {
-                if let Some(win) = handle.get_webview_window("main") {
-                    let _ = win.emit("menu://open-url", "https://discord.gg/prism");
                 }
             }
 
