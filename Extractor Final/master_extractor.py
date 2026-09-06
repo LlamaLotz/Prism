@@ -167,6 +167,7 @@ REQUIRED_PACKAGES = [
     "tqdm",
     "pypdf",
     "pypdfium2",
+    "PyMuPDF",
     "crawl4ai",
     "pandas",
     "numpy<2",
@@ -442,6 +443,7 @@ def auto_heal_environment():
         "tqdm": "tqdm",
         "pypdf": "pypdf",
         "pypdfium2": "pypdfium2",
+        "pymupdf": "PyMuPDF",
         "crawl4ai": "crawl4ai",
         "faster_whisper": "faster-whisper",
         "docling": "docling",
@@ -681,6 +683,22 @@ def get_docling(enable_ocr=False):
         return CONVERTER_NO_OCR
 
 
+def _extract_pymupdf_text_layer(pdf_path: str) -> dict[int, str]:
+    """Extract selectable PDF text with PyMuPDF."""
+    try:
+        import pymupdf
+    except ImportError:
+        import fitz as pymupdf
+
+    extracted: dict[int, str] = {}
+    with pymupdf.open(pdf_path) as document:
+        for page_number, page in enumerate(document, start=1):
+            text = (page.get_text("text") or "").strip()
+            if text:
+                extracted[page_number] = text
+    return extracted
+
+
 def _extract_pdfium_text_layer(pdf_path: str) -> dict[int, str]:
     """Extract PDF text with PDFium when pypdf cannot decode a text layer."""
     import pypdfium2
@@ -706,7 +724,18 @@ def _extract_pdfium_text_layer(pdf_path: str) -> dict[int, str]:
 def _extract_pdf_text_layer(reader: PdfReader, pdf_path: str | None = None) -> str:
     """Extract selectable PDF text without layout/OCR image placeholders."""
     page_text_by_number: dict[int, str] = {}
+    if pdf_path:
+        try:
+            page_text_by_number.update(_extract_pymupdf_text_layer(pdf_path))
+            print(f"PyMuPDF extracted text from {len(page_text_by_number)} pages.")
+        except Exception as exc:
+            print(f"WARNING: PyMuPDF text extraction failed: {exc}")
+
+    # Fill pages PyMuPDF could not decode with pypdf, then PDFium as a final
+    # native-engine fallback. This preserves text from mixed-content PDFs.
     for page_number, page in enumerate(reader.pages, start=1):
+        if page_number in page_text_by_number:
+            continue
         try:
             page_text = (page.extract_text() or "").strip()
         except Exception as exc:
@@ -715,9 +744,6 @@ def _extract_pdf_text_layer(reader: PdfReader, pdf_path: str | None = None) -> s
         if page_text:
             page_text_by_number[page_number] = page_text
 
-    # Embedded font maps can make pypdf return no text even when the PDF has a
-    # selectable text layer. PDFium uses the same native engine as Preview and
-    # is a stronger fallback for those files.
     if pdf_path and len(page_text_by_number) < len(reader.pages):
         try:
             pdfium_text = _extract_pdfium_text_layer(pdf_path)
