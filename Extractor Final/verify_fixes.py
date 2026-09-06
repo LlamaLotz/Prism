@@ -73,6 +73,12 @@ assert any(
     for node in ast.walk(_picker)
 )
 
+print("Testing OCR-off PDF text-layer routing...")
+assert "def _extract_pdf_text_layer(reader: PdfReader) -> str:" in _extractor_source
+assert "if ocr_preference.lower() in [\"off\", \"n\", \"no\"]:" in _extractor_source
+assert "if ocr_preference.lower() in [\"on\", \"o\"]:" in _extractor_source
+assert "Extracting the PDF's selectable text layer directly..." in _extractor_source
+
 print("Testing Python version compatibility...")
 assert _is_supported_python_version((3, 9)) is False
 assert _is_supported_python_version((3, 10)) is True

@@ -679,8 +679,28 @@ def get_docling(enable_ocr=False):
         return CONVERTER_NO_OCR
 
 
+def _extract_pdf_text_layer(reader: PdfReader) -> str:
+    """Extract selectable PDF text without layout/OCR image placeholders."""
+    pages = []
+    for page_number, page in enumerate(reader.pages, start=1):
+        try:
+            page_text = (page.extract_text() or "").strip()
+        except Exception as exc:
+            print(f"WARNING: Could not extract text from PDF page {page_number}: {exc}")
+            page_text = ""
+        if page_text:
+            pages.append(f"### Page {page_number}\n\n{page_text}")
+    return "\n\n---\n\n".join(pages)
+
+
 # Worker function for process pool execution
 def _docling_worker(pdf_path: str, ocr_preference: str = "adaptive") -> str:
+    # Explicit OCR-off mode should preserve the PDF text layer directly. The
+    # Docling layout exporter may emit an image placeholder for a page even
+    # when that page contains selectable text.
+    if ocr_preference.lower() in ["off", "n", "no"]:
+        return _extract_pdf_text_layer(PdfReader(pdf_path))
+
     # Pass 1: Try without OCR unless force-on
     docling_no_ocr = get_docling(enable_ocr=False)
     
@@ -1202,7 +1222,13 @@ def process_local_file(file_path: str, item_raw_folder: Path, main_extractions_f
         reader = PdfReader(str(path))
         total_pages = len(reader.pages)
 
-        if total_pages > 100:
+        ocr_disabled = ocr_preference.lower() in ["off", "n", "no"]
+        if ocr_disabled:
+            print("OCR disabled. Extracting the PDF's selectable text layer directly...")
+            content = _extract_pdf_text_layer(reader)
+            if not content.strip():
+                print("WARNING: No selectable text was found in this PDF.")
+        elif total_pages > 100:
             print(f"Large PDF Detected ({total_pages} pages). Processing in 50-page chunks in parallel with process timeout safety...")
             chunk_size = 50
             DOWNLOADS_DIR.mkdir(exist_ok=True)
@@ -1262,7 +1288,7 @@ def process_local_file(file_path: str, item_raw_folder: Path, main_extractions_f
             full_markdown = [results_dict[start] for start in sorted(results_dict.keys())]
             content = "\n\n---\n\n".join(full_markdown)
             gc.collect()
-        else:
+        elif total_pages <= 100:
             with tqdm(total=total_pages, unit="page", desc="[Docling PDF Parsing]", leave=False) as pbar:
                 content = _docling_worker(str(path), ocr_preference=ocr_preference)
                 pbar.update(total_pages)

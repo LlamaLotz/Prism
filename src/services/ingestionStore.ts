@@ -149,7 +149,13 @@ export const IngestionProvider: React.FC<{ children: ReactNode }> = ({ children 
       else disposeProgress = progressUnlisten;
 
       const errorUnlisten = await listen<string>('ingestion-error', (event) => {
-        addLog({ level: 'error', message: String(event.payload) });
+        const message = String(event.payload).trim();
+        if (!message) return;
+        // tqdm, Docling, and model loaders commonly write progress bars to
+        // stderr. Treat the line like normal extractor output so it does not
+        // appear as a false error; genuine exceptions still match "error" or
+        // "fail" in detectLevel and remain errors.
+        addLog({ level: detectLevel(message), message });
       });
       if (disposed) errorUnlisten();
       else disposeError = errorUnlisten;
