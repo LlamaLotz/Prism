@@ -504,8 +504,6 @@ import argparse
 import logging
 from datetime import datetime
 from pathlib import Path
-import tkinter as tk
-from tkinter import filedialog
 import yt_dlp
 
 # Lazy-load docling to prevent crashes during auto-healing
@@ -1302,7 +1300,16 @@ def process_local_file(file_path: str, item_raw_folder: Path, main_extractions_f
 
 
 def open_file_picker() -> list[str]:
-    """Opens system file explorer modal."""
+    """Opens system file explorer modal when Tk is available."""
+    try:
+        import tkinter as tk
+        from tkinter import filedialog
+    except ImportError as exc:
+        raise RuntimeError(
+            "The interactive file picker requires Tk. "
+            "Use CLI ingestion with --files/--urls, or install a Python build with Tk support."
+        ) from exc
+
     root = tk.Tk()
     root.withdraw()
     root.attributes("-topmost", True)

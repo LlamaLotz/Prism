@@ -1,4 +1,6 @@
+import ast
 import re
+from pathlib import Path
 
 # --- Functions being tested (copied from master_extractor.py) ---
 def _is_supported_python_version(version_info):
@@ -52,6 +54,25 @@ def clean_vtt_text(vtt_text: str) -> str:
     return " ".join(clean_lines).strip()
 
 # --- Tests ---
+print("Testing headless extractor startup...")
+_extractor_source = Path(__file__).with_name("master_extractor.py").read_text(encoding="utf-8")
+_extractor_tree = ast.parse(_extractor_source)
+_top_level_tkinter_imports = [
+    node for node in _extractor_tree.body
+    if isinstance(node, (ast.Import, ast.ImportFrom))
+    and "tkinter" in ast.unparse(node)
+]
+assert not _top_level_tkinter_imports
+_picker = next(
+    node for node in _extractor_tree.body
+    if isinstance(node, ast.FunctionDef) and node.name == "open_file_picker"
+)
+assert any(
+    isinstance(node, (ast.Import, ast.ImportFrom))
+    and "tkinter" in ast.unparse(node)
+    for node in ast.walk(_picker)
+)
+
 print("Testing Python version compatibility...")
 assert _is_supported_python_version((3, 9)) is False
 assert _is_supported_python_version((3, 10)) is True
