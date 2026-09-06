@@ -1902,6 +1902,31 @@ button[role="tab"][aria-selected="true"] {
   border-radius: 1px !important;
 }
 
+/* AI sidebar: use theme tokens instead of dark-only utility colors in light mode,
+   and keep the prompt controls inside the resizable panel. */
+.mode-light .ai-integration-warning {
+  background: color-mix(in srgb, var(--color-brand-500) 10%, var(--color-panel)) !important;
+  border-color: color-mix(in srgb, var(--color-brand-700) 28%, var(--color-border)) !important;
+}
+.mode-light .ai-integration-title,
+.mode-light .ai-integration-copy,
+.mode-light .ai-integration-action {
+  color: var(--color-text-body) !important;
+}
+.mode-light .ai-integration-title {
+  color: var(--color-text-hi) !important;
+}
+.mode-light .ai-integration-action:hover {
+  color: var(--color-brand-700) !important;
+}
+.ai-sidebar,
+.ai-sidebar form {
+  min-width: 0;
+}
+.ai-sidebar form > input {
+  min-width: 0;
+}
+
 /* Background environments (viewport-level canvases behind the app) */
 .prism-bg-environment {
   position: fixed;

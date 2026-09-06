@@ -164,7 +164,7 @@ export const AISidebar: React.FC<AISidebarProps> = ({
   };
 
   return (
-    <div className="w-80 border-l border-[var(--color-border)] bg-panel flex flex-col h-full select-none rounded-l-2xl">
+    <div className="ai-sidebar w-full min-w-0 box-border border-l border-[var(--color-border)] bg-panel flex flex-col h-full select-none rounded-l-2xl">
       {/* Header */}
       <div className="p-4 border-b border-[var(--color-border)] flex items-center justify-between bg-panel">
         <div className="flex items-center gap-2">
@@ -182,16 +182,16 @@ export const AISidebar: React.FC<AISidebarProps> = ({
 
       {/* Connection warning */}
       {!isConfigured && (
-        <div className="m-3 p-3 bg-brand-950/20 border border-brand-900/50 rounded-xl flex items-start gap-2.5">
+        <div className="ai-integration-warning m-3 p-3 bg-brand-950/20 border border-brand-900/50 rounded-xl flex items-start gap-2.5">
           <AlertTriangle className="w-4 h-4 text-brand-400 shrink-0 mt-0.5" />
           <div className="space-y-1.5">
-            <h4 className="text-[11px] font-semibold text-brand-200 leading-none">AI Integration Offline</h4>
-            <p className="text-[10px] text-slate-400 leading-relaxed">
+            <h4 className="ai-integration-title text-[11px] font-semibold text-brand-200 leading-none">AI Integration Offline</h4>
+            <p className="ai-integration-copy text-[10px] text-slate-400 leading-relaxed">
               API keys or endpoints are missing. Paste your credentials to enable chat & note analysis.
             </p>
             <button
               onClick={onOpenSettings}
-              className="text-[10px] font-bold text-brand-400 hover:text-brand-300 flex items-center gap-0.5"
+              className="ai-integration-action text-[10px] font-bold text-brand-400 hover:text-brand-300 flex items-center gap-0.5"
             >
               Configure Now →
             </button>
@@ -314,7 +314,7 @@ export const AISidebar: React.FC<AISidebarProps> = ({
           e.preventDefault();
           handleSubmit();
         }}
-        className="p-3 border-t border-slate-900 bg-panel flex gap-2"
+        className="w-full min-w-0 box-border p-3 border-t border-slate-900 bg-panel flex items-center gap-2"
       >
         <button
           type="button"
@@ -333,12 +333,12 @@ export const AISidebar: React.FC<AISidebarProps> = ({
           value={inputValue}
           onChange={(e) => setInputValue(e.target.value)}
           placeholder={searchMode ? 'Search the web...' : (note ? 'Chat with active note context...' : 'Ask Prism AI anything...')}
-          className="flex-1 bg-slate-900/60 border border-border focus:border-slate-700 text-xs rounded-xl px-3.5 py-2 text-slate-200 focus:outline-none transition-colors"
+          className="min-w-0 flex-1 bg-slate-900/60 border border-border focus:border-slate-700 text-xs rounded-xl px-3.5 py-2 text-slate-200 focus:outline-none transition-colors"
         />
         <button
           type="submit"
           disabled={!inputValue.trim() || isLoading || isSearching}
-          className={`${searchMode ? 'bg-brand-600 hover:bg-brand-500 border-brand-400/20 shadow-[0_0_10px_var(--color-brand-400)]' : 'bg-brand-600 hover:bg-brand-500 border-brand-500/20'} disabled:opacity-30 disabled:pointer-events-none text-white px-3.5 rounded-xl transition-all flex items-center justify-center border`}
+          className={`${searchMode ? 'bg-brand-600 hover:bg-brand-500 border-brand-400/20 shadow-[0_0_10px_var(--color-brand-400)]' : 'bg-brand-600 hover:bg-brand-500 border-brand-500/20'} disabled:opacity-30 disabled:pointer-events-none text-white w-9 h-8 shrink-0 p-0 rounded-xl transition-all flex items-center justify-center border`}
         >
           {(isLoading || isSearching) ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
         </button>
