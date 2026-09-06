@@ -11,6 +11,7 @@ jobs:
       contents: write
     strategy:
       fail-fast: false
+      max-parallel: 1
       matrix:
         platform: [macos-latest, windows-latest]
 
@@ -82,7 +83,7 @@ jobs:
           echo "--- package.json ---"
           node -p "require('./package.json').version"
       - name: Build and Package with Tauri Action
-        uses: tauri-apps/tauri-action@v0
+        uses: tauri-apps/tauri-action@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
@@ -90,9 +91,10 @@ jobs:
         with:
           tagName: ${{ github.ref_name }}
           releaseName: "Prism ${{ github.ref_name }}"
-          includeUpdaterJson: true
+          uploadUpdaterJson: true
           updaterJsonPreferNsis: true
           releaseBody: "See the assets below to download Prism for your operating system."
           releaseDraft: false
           prerelease: false
+          retryAttempts: 3
           args: ${{ matrix.platform == 'macos-latest' && '--target universal-apple-darwin -- --bin app' || '-- --bin app' }}
