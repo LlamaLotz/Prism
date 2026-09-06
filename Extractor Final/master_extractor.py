@@ -166,6 +166,7 @@ REQUIRED_PACKAGES = [
     "beautifulsoup4",
     "tqdm",
     "pypdf",
+    "pypdfium2",
     "crawl4ai",
     "pandas",
     "numpy<2",
@@ -440,6 +441,7 @@ def auto_heal_environment():
         "yt_dlp": "yt-dlp",
         "tqdm": "tqdm",
         "pypdf": "pypdf",
+        "pypdfium2": "pypdfium2",
         "crawl4ai": "crawl4ai",
         "faster_whisper": "faster-whisper",
         "docling": "docling",
@@ -679,17 +681,59 @@ def get_docling(enable_ocr=False):
         return CONVERTER_NO_OCR
 
 
-def _extract_pdf_text_layer(reader: PdfReader) -> str:
+def _extract_pdfium_text_layer(pdf_path: str) -> dict[int, str]:
+    """Extract PDF text with PDFium when pypdf cannot decode a text layer."""
+    import pypdfium2
+
+    extracted: dict[int, str] = {}
+    document = pypdfium2.PdfDocument(pdf_path)
+    try:
+        for page_number in range(len(document)):
+            page = document[page_number]
+            text_page = page.get_textpage()
+            try:
+                text = (text_page.get_text_range() or "").strip()
+            finally:
+                text_page.close()
+                page.close()
+            if text:
+                extracted[page_number + 1] = text
+    finally:
+        document.close()
+    return extracted
+
+
+def _extract_pdf_text_layer(reader: PdfReader, pdf_path: str | None = None) -> str:
     """Extract selectable PDF text without layout/OCR image placeholders."""
-    pages = []
+    page_text_by_number: dict[int, str] = {}
     for page_number, page in enumerate(reader.pages, start=1):
         try:
             page_text = (page.extract_text() or "").strip()
         except Exception as exc:
-            print(f"WARNING: Could not extract text from PDF page {page_number}: {exc}")
+            print(f"WARNING: Could not extract text from PDF page {page_number} with pypdf: {exc}")
             page_text = ""
         if page_text:
-            pages.append(f"### Page {page_number}\n\n{page_text}")
+            page_text_by_number[page_number] = page_text
+
+    # Embedded font maps can make pypdf return no text even when the PDF has a
+    # selectable text layer. PDFium uses the same native engine as Preview and
+    # is a stronger fallback for those files.
+    if pdf_path and len(page_text_by_number) < len(reader.pages):
+        try:
+            pdfium_text = _extract_pdfium_text_layer(pdf_path)
+            for page_number, page_text in pdfium_text.items():
+                page_text_by_number.setdefault(page_number, page_text)
+        except Exception as exc:
+            print(f"WARNING: PDFium text fallback failed: {exc}")
+
+    pages = [
+        f"### Page {page_number}\n\n{page_text_by_number[page_number]}"
+        for page_number in sorted(page_text_by_number)
+    ]
+    print(
+        f"Selectable text extraction recovered {len(page_text_by_number)}/{len(reader.pages)} "
+        f"pages ({sum(len(text) for text in page_text_by_number.values())} characters)."
+    )
     return "\n\n---\n\n".join(pages)
 
 
@@ -699,7 +743,7 @@ def _docling_worker(pdf_path: str, ocr_preference: str = "adaptive") -> str:
     # Docling layout exporter may emit an image placeholder for a page even
     # when that page contains selectable text.
     if ocr_preference.lower() in ["off", "n", "no"]:
-        return _extract_pdf_text_layer(PdfReader(pdf_path))
+        return _extract_pdf_text_layer(PdfReader(pdf_path), pdf_path)
 
     # Pass 1: Try without OCR unless force-on
     docling_no_ocr = get_docling(enable_ocr=False)
@@ -1225,7 +1269,7 @@ def process_local_file(file_path: str, item_raw_folder: Path, main_extractions_f
         ocr_disabled = ocr_preference.lower() in ["off", "n", "no"]
         if ocr_disabled:
             print("OCR disabled. Extracting the PDF's selectable text layer directly...")
-            content = _extract_pdf_text_layer(reader)
+            content = _extract_pdf_text_layer(reader, str(path))
             if not content.strip():
                 print("WARNING: No selectable text was found in this PDF.")
         elif total_pages > 100:

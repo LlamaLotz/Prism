@@ -74,10 +74,13 @@ assert any(
 )
 
 print("Testing OCR-off PDF text-layer routing...")
-assert "def _extract_pdf_text_layer(reader: PdfReader) -> str:" in _extractor_source
+assert "def _extract_pdfium_text_layer(pdf_path: str) -> dict[int, str]:" in _extractor_source
+assert "def _extract_pdf_text_layer(reader: PdfReader, pdf_path: str | None = None) -> str:" in _extractor_source
+assert "pypdfium2" in _extractor_source
 assert "if ocr_preference.lower() in [\"off\", \"n\", \"no\"]:" in _extractor_source
 assert "if ocr_preference.lower() in [\"on\", \"o\"]:" in _extractor_source
 assert "Extracting the PDF's selectable text layer directly..." in _extractor_source
+assert "Selectable text extraction recovered" in _extractor_source
 
 print("Testing Python version compatibility...")
 assert _is_supported_python_version((3, 9)) is False
