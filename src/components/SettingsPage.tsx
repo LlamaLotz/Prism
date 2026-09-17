@@ -1289,6 +1289,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                         { value: 'editor', label: 'Editor' },
                         { value: 'split', label: 'Split' },
                         { value: 'topics', label: 'Topics' },
+                        { value: 'notebook', label: 'Notebook' },
                       ]}
                       value={draft.appearance.startupView}
                       onChange={(v) =>

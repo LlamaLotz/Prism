@@ -34,7 +34,7 @@ pub fn start_vault_watcher(
             // rewrites) so they never trigger a re-indexing loop. The mask is
             // cleared shortly after by `suppress_self_write`.
             if let Some(path) = event.paths.first() {
-                if is_self_write(path) {
+                if is_self_write(path) || crate::engine::indexer::is_hidden(path) {
                     return;
                 }
             }

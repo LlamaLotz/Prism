@@ -1,4 +1,10 @@
 node_modules
+src-tauri/notebook-runtime/*
+!src-tauri/notebook-runtime/README.md
+notebook/**/__pycache__/
+test-results/
+playwright-report/
+scripts/__pycache__/
 .freebuff
 graphify-out
 

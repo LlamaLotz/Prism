@@ -1,5 +1,8 @@
 import { invoke } from '@tauri-apps/api/core';
 
+export type AppPage = 'editor' | 'graph' | 'split' | 'topics' | 'notebook';
+export const APP_PAGES: AppPage[] = ['editor', 'graph', 'split', 'topics', 'notebook'];
+
 export interface NoteFile {
   path: string;
   relativePath: string;
@@ -88,6 +91,11 @@ export interface ReconstructedVersion {
 }
 
 export interface AppSettings {
+  notebook: {
+    embedByDefault: boolean;
+    sourcePanelWidth: number;
+    notesPanelWidth: number;
+  };
   vaultPath: string;
   ingestionScript: string;
   omniRoute: OmniRouteConfig & {
@@ -99,7 +107,7 @@ export interface AppSettings {
     themeStyle: 'industrial' | 'glass' | 'gloss';
     /** Color scheme: 'dark' or 'light'. */
     themeMode: 'dark' | 'light';
-    startupView: 'graph' | 'editor' | 'split' | 'topics';
+    startupView: AppPage;
     defaultGraphMode: '2d' | '3d';
     backgroundPattern: 'grid' | 'mesh' | 'solid';
     aiPanelOpenOnStart: boolean;

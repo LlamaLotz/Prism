@@ -133,7 +133,7 @@ fn is_markdown(path: &Path) -> bool {
 /// paths are held — no file contents are buffered here.
 fn collect_markdown_paths(vault_path: &Path) -> Vec<PathBuf> {
     let mut paths: Vec<PathBuf> = Vec::new();
-    for entry in WalkDir::new(vault_path).into_iter().filter_map(Result::ok) {
+    for entry in WalkDir::new(vault_path).into_iter().filter_entry(|e| e.depth() == 0 || !is_hidden(e.path())).filter_map(Result::ok) {
         let path = entry.path().to_path_buf();
         if !path.is_file() || is_hidden(&path) || !is_markdown(&path) {
             continue;
@@ -150,7 +150,7 @@ fn collect_markdown_paths(vault_path: &Path) -> Vec<PathBuf> {
 /// real folder tree even when a folder has no notes yet.
 fn collect_folder_paths(vault_path: &Path) -> Vec<String> {
     let mut folders: Vec<String> = Vec::new();
-    for entry in WalkDir::new(vault_path).into_iter().filter_map(Result::ok) {
+    for entry in WalkDir::new(vault_path).into_iter().filter_entry(|e| e.depth() == 0 || !is_hidden(e.path())).filter_map(Result::ok) {
         let path = entry.path();
         if !path.is_dir() || is_hidden(path) {
             continue;

@@ -95,6 +95,8 @@ pub struct SystemConfig {
 #[derive(Serialize, Deserialize, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct RuntimeConfig {
+    #[serde(default)]
+    pub notebook: NotebookConfig,
     pub vault_path: String,
     pub ingestion_script: String,
     pub omni_route: OmniRouteConfig,
@@ -181,9 +183,22 @@ impl Default for SystemConfig {
     }
 }
 
+#[derive(Serialize, Deserialize, Clone, Debug)]
+#[serde(rename_all = "camelCase", default)]
+pub struct NotebookConfig {
+    pub embed_by_default: bool,
+    pub source_panel_width: u32,
+    pub notes_panel_width: u32,
+}
+
+impl Default for NotebookConfig {
+    fn default() -> Self { Self { embed_by_default: false, source_panel_width: 260, notes_panel_width: 260 } }
+}
+
 impl Default for RuntimeConfig {
     fn default() -> Self {
         Self {
+            notebook: NotebookConfig::default(),
             vault_path: String::new(),
             ingestion_script: "python \"/Users/Shiver/Documents/Prism/Extractor Final/master_extractor.py\" --vault {vault_path}".to_string(),
             omni_route: OmniRouteConfig::default(),

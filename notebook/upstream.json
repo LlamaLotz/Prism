@@ -1,0 +1,7 @@
+{
+  "repository": "https://github.com/lfnovo/open-notebook",
+  "revision": "3127f14ea9dbb519f0e4ddc64a0742ca644ba6ef",
+  "python": "3.12.12",
+  "surrealdb": "2.3.10",
+  "imageioFfmpeg": "0.6.0"
+}

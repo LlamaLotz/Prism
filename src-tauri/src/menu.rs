@@ -46,6 +46,8 @@ pub fn build_app_menu(app: &AppHandle) -> Result<Menu<tauri::Wry>, Box<dyn std::
 
     // ── View ──────────────────────────────────────────────────────────
     let view_menu = SubmenuBuilder::new(app, "View")
+        .item(&MenuItemBuilder::new("Notebook").id("view_notebook").accelerator("CmdOrCtrl+5").build(app)?)
+        .item(&MenuItemBuilder::new("Split View").id("view_split").accelerator("CmdOrCtrl+4").build(app)?)
         .item(
             &MenuItemBuilder::new("Note Editor")
                 .id("view_editor")
@@ -178,6 +180,11 @@ pub fn setup_menu_handler(app: &App) {
             }
 
             // ── View menu ─────────────────────────────────────────────
+            "view_notebook" | "view_split" => {
+                if let Some(win) = handle.get_webview_window("main") {
+                    let _ = win.emit("menu://set-layout", if id == "view_notebook" { "notebook" } else { "split" });
+                }
+            }
             "view_editor" => {
                 if let Some(win) = handle.get_webview_window("main") {
                     let _ = win.emit("menu://set-layout", "editor");

@@ -1,0 +1,58 @@
+name: Notebook runtime validation
+
+on:
+  workflow_call:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'notebook/**'
+      - 'scripts/*notebook*'
+      - 'src-tauri/src/notebook.rs'
+      - '.github/workflows/notebook-runtime.yml'
+
+jobs:
+  runtime:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15-intel
+            target: x86_64-apple-darwin
+          - runner: macos-15
+            target: aarch64-apple-darwin
+          - runner: windows-latest
+            target: x86_64-pc-windows-msvc
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install build-only packager
+        run: python -m pip install uv==0.10.12
+      - name: Build pinned runtime
+        run: python scripts/build-notebook-runtime.py
+      - name: Exercise packaged backend and media pipeline
+        run: python scripts/test-notebook-runtime.py src-tauri/notebook-runtime/${{ matrix.target }}
+      - name: Verify relocated runtime
+        shell: python
+        run: |
+          import pathlib, shutil, subprocess, sys, tempfile
+          source = pathlib.Path('src-tauri/notebook-runtime/${{ matrix.target }}').resolve()
+          with tempfile.TemporaryDirectory(prefix='Prism Runtime ') as temp:
+              relocated = pathlib.Path(temp) / source.name
+              shutil.move(str(source), relocated)
+              try:
+                  subprocess.run([sys.executable, 'scripts/test-notebook-runtime.py', str(relocated)], check=True)
+              finally:
+                  shutil.move(str(relocated), source)
+      - name: Archive runtime preserving executable bits and symlinks
+        shell: python
+        run: |
+          import shutil
+          shutil.make_archive('notebook-${{ matrix.target }}', 'gztar', 'src-tauri/notebook-runtime', '${{ matrix.target }}')
+      - uses: actions/upload-artifact@v4
+        with:
+          name: notebook-${{ matrix.target }}
+          path: notebook-${{ matrix.target }}.tar.gz
+          retention-days: 7

@@ -6,7 +6,10 @@ on:
       - 'v*'
 
 jobs:
+  notebook-runtime:
+    uses: ./.github/workflows/notebook-runtime.yml
   release:
+    needs: notebook-runtime
     permissions:
       contents: write
     strategy:
@@ -31,6 +34,24 @@ jobs:
 
       - name: Install Frontend Dependencies
         run: npm ci
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: notebook-*
+          path: notebook-artifacts
+          merge-multiple: true
+      - name: Install validated Notebook resource payloads
+        shell: python
+        run: |
+          import pathlib, platform, tarfile
+          for archive in pathlib.Path('notebook-artifacts').glob('*.tar.gz'):
+              if ('windows' in archive.name) != (platform.system() == 'Windows'):
+                  continue
+              with tarfile.open(archive) as payload:
+                  payload.extractall('src-tauri/notebook-runtime', filter='data')
 
       - name: Sync version across package.json, tauri.conf.json, and Cargo.toml
         shell: bash

@@ -28,7 +28,11 @@ tauri-plugin-log = "2"
 # HTTP clients succeed — routing requests through reqwest here bypasses it.
 tauri-plugin-http = "2"
 scraper = "0.22"
-reqwest = { version = "0.12", features = ["rustls-tls"] }
+reqwest = { version = "0.12", features = ["rustls-tls", "json", "multipart", "stream"] }
+keyring = { version = "3", features = ["apple-native", "windows-native"] }
+uuid = { version = "1", features = ["v4"] }
+libc = "0.2"
+fs2 = "0.4"
 urlencoding = "2"
 rfd = "0.15"
 walkdir = "2"
@@ -70,4 +74,3 @@ windows-core = "0.61.2"
 
 [target.'cfg(any(target_os = "macos", windows, target_os = "linux"))'.dependencies]
 tauri-plugin-updater = "^2"
-

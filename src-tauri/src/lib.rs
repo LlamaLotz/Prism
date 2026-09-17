@@ -15,6 +15,7 @@ mod engine;
 pub mod linker;
 pub mod menu;
 mod watcher;
+mod notebook;
 
 use linker::{LinkerEngine, NoteLinker, LinkMention};
 use std::sync::{Arc, Mutex};
@@ -1616,7 +1617,8 @@ fn purge_expired_history(
 /// process so anything initialized at startup (watcher, DB caches, etc.) is
 /// rebuilt. The new process is detached so it survives the exit of this one.
 #[tauri::command]
-fn relaunch_app(app: tauri::AppHandle) -> Result<(), String> {
+async fn relaunch_app(app: tauri::AppHandle, notebook_state: tauri::State<'_, notebook::NotebookState>) -> Result<(), String> {
+    notebook::shutdown(&notebook_state).await;
     let exe = std::env::current_exe()
         .map_err(|e| format!("Failed to resolve executable: {e}"))?;
     std::process::Command::new(exe)
@@ -1684,6 +1686,7 @@ async fn web_search(query: String) -> Result<Vec<WebSearchResult>, String> {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .manage(notebook::NotebookState::default())
         // Rust-backed fetch (reqwest) so the AI Co-Pilot's OpenAI SDK calls
         // don't depend on the webview's network stack (see Cargo.toml note).
         .plugin(tauri_plugin_http::init())
@@ -1744,6 +1747,14 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            notebook::notebook_start,
+            notebook::notebook_stop,
+            notebook::notebook_status,
+            notebook::notebook_request,
+            notebook::notebook_add_source,
+            notebook::notebook_media,
+            notebook::notebook_export,
+            notebook::notebook_read_vault_note,
             init_linker,
             get_vault_dictionary,
             get_topic_groups,
@@ -1794,6 +1805,11 @@ pub fn run() {
             relaunch_app,
             web_search
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app, event| {
+            if matches!(event, tauri::RunEvent::Exit) {
+                tauri::async_runtime::block_on(notebook::shutdown(&app.state::<notebook::NotebookState>()));
+            }
+        });
 }

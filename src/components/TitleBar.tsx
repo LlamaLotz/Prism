@@ -1,11 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { getCurrentWindow } from '@tauri-apps/api/window';
-import { Minus, Square, Copy, X, FileText, SplitSquareVertical, Network, Tags, Sparkles } from 'lucide-react';
+import { Minus, Square, Copy, X, FileText, SplitSquareVertical, Network, Tags, Sparkles, BookOpen } from 'lucide-react';
 import { getAppIcon } from '../services/appIcon';
 
 const isMacOS = navigator.userAgent.includes('Mac');
 
-type Layout = 'editor' | 'graph' | 'split' | 'topics';
+import type { AppPage as Layout } from '../types';
 
 interface TitleBarProps {
   appIcon?: string;
@@ -97,6 +97,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
       if (k === '1') { e.preventDefault(); onLayoutChange('editor'); }
       if (k === '2') { e.preventDefault(); onLayoutChange('graph'); }
       if (k === '3') { e.preventDefault(); onLayoutChange('topics'); }
+      if (k === '5') { e.preventDefault(); onLayoutChange('notebook'); }
       if (k === '4') { e.preventDefault(); onLayoutChange('split'); }
       if (k === 'a' && e.shiftKey) { e.preventDefault(); onToggleAI(); }
       if (k === 's' && e.shiftKey) { e.preventDefault(); onToggleSidebar(); }
@@ -144,6 +145,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
         { label: 'Note Editor', shortcut: 'Ctrl+1', action: () => { onLayoutChange('editor'); closeMenu(); }, disabled: layout === 'editor' },
         { label: 'Graph', shortcut: 'Ctrl+2', action: () => { onLayoutChange('graph'); closeMenu(); }, disabled: layout === 'graph' },
         { label: 'Tags', shortcut: 'Ctrl+3', action: () => { onLayoutChange('topics'); closeMenu(); }, disabled: layout === 'topics' },
+        { label: 'Notebook', shortcut: 'Ctrl+5', action: () => { onLayoutChange('notebook'); closeMenu(); }, disabled: layout === 'notebook' },
         { label: 'Split View', shortcut: 'Ctrl+4', action: () => { onLayoutChange('split'); closeMenu(); }, disabled: layout === 'split' },
         { divider: true, label: '' },
         { label: 'Ingestion Logs', action: () => { onToggleIngestionLogs(); closeMenu(); } },
@@ -266,6 +268,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
         {tabBtn('split', SplitSquareVertical, 'Split View')}
         {tabBtn('graph', Network, 'Graph Network')}
         {tabBtn('topics', Tags, 'Topic Groups')}
+        {tabBtn('notebook', BookOpen, 'Notebook')}
       </div>
 
       {/* ── Spacer (drag region) ── */}

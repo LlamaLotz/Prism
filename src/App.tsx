@@ -1,4 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { NotebookPage } from './components/notebook/NotebookPage';
+import { APP_PAGES, type AppPage } from './types';
 import { Sidebar } from './components/Sidebar';
 import { Editor } from './components/Editor';
 import { ErrorBoundary } from './components/ErrorBoundary';
@@ -104,6 +106,7 @@ function graphSignature(g: { nodes: GraphNode[]; links: GraphLink[] }): string {
 }
 
 const DEFAULT_SETTINGS: AppSettings = {
+  notebook: { embedByDefault: false, sourcePanelWidth: 260, notesPanelWidth: 260 },
   vaultPath: '',
   ingestionScript: 'python "/Users/Shiver/Documents/Prism/Extractor Final/master_extractor.py" --vault {vault_path}',
   omniRoute: {
@@ -280,9 +283,11 @@ export default function App() {
   // Layout views: 'editor' | 'graph' | 'split' | 'topics'. Startup lands on
   // the graph view (3D by default) with the AI panel minimized — the toolbar
   // toggles both.
-  const [layout, setLayout] = useState<'editor' | 'graph' | 'split' | 'topics'>(
+  const [layout, setLayout] = useState<AppPage>(
     DEFAULT_SETTINGS.appearance.startupView
   );
+  const [notebookVisited, setNotebookVisited] = useState(false);
+  useEffect(() => { if (layout === 'notebook') setNotebookVisited(true); }, [layout]);
   const [showAICoPilot, setShowAICoPilot] = useState(DEFAULT_SETTINGS.appearance.aiPanelOpenOnStart);
   // Requested block scroll (blockId or 1-based line + timestamp), passed to the Editor.
   const [scrollRequest, setScrollRequest] = useState<{ blockId?: string; line?: number; ts: number } | null>(null);
@@ -588,8 +593,8 @@ export default function App() {
 
     unlisteners.push(
       listen<string>('menu://set-layout', (event) => {
-        const view = event.payload as 'editor' | 'graph' | 'topics';
-        setLayout(view);
+        const view = event.payload as AppPage;
+        if (APP_PAGES.includes(view)) setLayout(view);
       })
     );
 
@@ -1072,7 +1077,7 @@ export default function App() {
       if (newNote) {
         handleSelectNote(newNote);
         // Switch to editor mode to start editing immediately
-        if (layout === 'graph' || layout === 'topics') setLayout('split');
+        if (layout === 'graph' || layout === 'topics' || layout === 'notebook') setLayout('split');
       }
     } else {
       await alert(errorDialogMessage(createRawErrorDetails(result.error, 'Could not create the note.')), { title: 'Could not create note' });
@@ -1433,7 +1438,7 @@ export default function App() {
 
     if (matched) {
       setActiveNote(matched);
-      if (layout === 'graph' || layout === 'topics') setLayout('split');
+      if (layout === 'graph' || layout === 'topics' || layout === 'notebook') setLayout('split');
       if (blockId || line) {
         setScrollRequest({ blockId, line, ts: Date.now() });
         console.log('[nav] scrollRequest set', { blockId, line, note: matched.title });
@@ -1467,7 +1472,7 @@ export default function App() {
           const newNote = sorted.find((n) => n.path === result.fullPath);
           if (newNote) {
             setActiveNote(newNote);
-            if (layout === 'graph' || layout === 'topics') setLayout('split');
+            if (layout === 'graph' || layout === 'topics' || layout === 'notebook') setLayout('split');
           }
         } else {
           await alert(errorDialogMessage(createRawErrorDetails(result.error ?? 'unknown error', 'Could not create the connected note.')), {
@@ -1508,7 +1513,7 @@ export default function App() {
             themeMode={settings.appearance.themeMode}
             layout={layout}
             onLayoutChange={setLayout}
-            showAI={showAICoPilot}
+            showAI={showAICoPilot && layout !== 'notebook'}
             onToggleAI={() => setShowAICoPilot(!showAICoPilot)}
             onNewNote={handleNewNote}
             onNewFolder={handleNewFolder}
@@ -1622,6 +1627,13 @@ export default function App() {
             />
           )}
 
+          {(notebookVisited || layout === 'notebook') && (
+            <div className="flex-1 min-w-0 h-full" style={{ display: layout === 'notebook' ? undefined : 'none' }}>
+              <ErrorBoundary fallbackTitle="Notebook encountered an error">
+                <NotebookPage key={settings.vaultPath} active={layout === 'notebook'} vaultPath={settings.vaultPath} vaultNotes={notes} settings={settings} onSelectVault={handleSelectVault} onVaultExport={async () => { await fetchNotes(); await loadGraph(); }} />
+              </ErrorBoundary>
+            </div>
+          )}
           {/* Vault-wide @topic groups Pane */}
           {layout === 'topics' && <TopicsView onWikiLinkClick={handleWikiLinkClick} />}
 
@@ -1630,7 +1642,7 @@ export default function App() {
       </LiquidGlass>
 
       {/* AI Co-Pilot chat bar right sidebar (separate floating card) */}
-      {showAICoPilot && (
+      {showAICoPilot && layout !== 'notebook' && (
         <LiquidGlass className="relative shrink-0 h-full ai-panel overflow-hidden" style={{ width: aiWidth }}>
 
           <ResizeHandle
