@@ -59,17 +59,14 @@ export class NotebookClient {
     this.assertActive();
     return new Blob([bytes], { type });
   }
+  async download(path: string, filename: string): Promise<boolean> {
+    this.assertActive();
+    return invoke<boolean>('notebook_download', { workspaceId: this.workspaceId, path: `/api${path}`, filename });
+  }
 }
 
 export function recordId(id: string): string {
   // SurrealDB record IDs returned by this pinned API contain no path separators.
   if (!/^[a-zA-Z0-9_:\-]+$/.test(id)) throw new Error('Invalid Notebook record identifier');
   return id;
-}
-
-export function downloadBlob(blob: Blob, name: string) {
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement('a');
-  anchor.href = url; anchor.download = name; anchor.click();
-  setTimeout(() => URL.revokeObjectURL(url), 30000);
 }

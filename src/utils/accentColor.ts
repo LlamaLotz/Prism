@@ -161,6 +161,12 @@ export function applyAccentColor(hex: string, opts?: { hoverGlow?: string }): vo
   const glow = opts?.hoverGlow ? normalizeAccent(opts.hoverGlow) : accent;
 
   root.setProperty('--color-brand-500', accent);
+  // Solid accent buttons need a foreground derived from the selected color.
+  // Choosing the better of black/white guarantees at least 4.5:1 contrast.
+  const rgb = hexToRgb(accent);
+  const linear = (v: number) => { const c = v / 255; return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4; };
+  const luminance = 0.2126 * linear(rgb.r) + 0.7152 * linear(rgb.g) + 0.0722 * linear(rgb.b);
+  root.setProperty('--color-brand-contrast', luminance > 0.179 ? '#000000' : '#ffffff');
   root.setProperty('--accent-color', accent);
   root.setProperty('--color-brand-400', `color-mix(in srgb, ${accent} 85%, white)`);
   root.setProperty('--color-brand-300', `color-mix(in srgb, ${accent} 70%, white)`);

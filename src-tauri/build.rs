@@ -6,6 +6,7 @@ fn main() {
     let target = std::env::var("TARGET").expect("Cargo target");
     let manifest = std::path::Path::new("notebook-runtime").join(&target).join("manifest.json");
     assert!(manifest.is_file(), "Build and validate the bundled Notebook runtime before packaging Prism (scripts/build-notebook-runtime.py)");
+    assert!(manifest.with_file_name("smoke-tested.json").is_file(), "Notebook runtime smoke tests must pass before release packaging");
   }
   tauri_build::build()
 }

@@ -4,6 +4,7 @@ import { createRoot } from 'react-dom/client';
 import { NotebookPage } from '../../src/components/notebook/NotebookPage';
 import { DialogProvider } from '../../src/components/DialogProvider';
 import { TitleBar } from '../../src/components/TitleBar';
+import { LiquidGlass } from '../../src/components/LiquidGlass';
 import type { AppPage, AppSettings } from '../../src/types';
 import '../../src/index.css';
 
@@ -64,7 +65,7 @@ function Harness() {
   return <div className="bg-base text-slate-100 h-screen flex flex-col">
     <TitleBar layout={page} onLayoutChange={setPage} onNewNote={() => {}} onNewFolder={() => {}} onOpenPrism={() => {}} onIngestContent={() => {}} onSettings={() => {}} onReload={() => {}} onToggleIngestionLogs={() => {}} onToggleSidebar={() => {}} sidebarVisible showAI={false} onToggleAI={() => {}}/>
     <div className="nb-toolbar"><button onClick={() => setVault(v => v === '/vault-a' ? '/vault-b' : '/vault-a')}>Switch test vault</button><span>{vault}</span></div>
-    <div className="flex-1 min-h-0"><NotebookPage key={vault} active={page === 'notebook'} vaultPath={vault} vaultNotes={[{ path: '/vault-a/Study.md', relativePath: 'Study.md', title: 'Study', name: 'Study.md', updatedAt: 0 }]} settings={settings} onSelectVault={() => {}} onVaultExport={async () => {}}/>{page !== 'notebook' && <p>Other Prism page</p>}</div>
+    <LiquidGlass className="flex-1 min-h-0"><NotebookPage key={vault} active={page === 'notebook'} vaultPath={vault} vaultNotes={[{ path: '/vault-a/Study.md', relativePath: 'Study.md', title: 'Study', name: 'Study.md', updatedAt: 0 }]} settings={settings} onSelectVault={() => {}} onVaultExport={async () => {}}/>{page !== 'notebook' && <p>Other Prism page</p>}</LiquidGlass>
   </div>;
 }
 createRoot(document.getElementById('root')!).render(<StrictMode><DialogProvider><Harness/></DialogProvider></StrictMode>);

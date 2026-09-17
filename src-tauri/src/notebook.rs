@@ -162,6 +162,7 @@ async fn stop_locked(state: &NotebookState) {
     if let Some(runtime) = runtime {
         let c = &runtime.connection;
         c.accepting.store(false, Ordering::SeqCst);
+        let _ = c.client.post(format!("{}/api/prism/drain", c.base_url)).bearer_auth(&c.password).timeout(Duration::from_secs(2)).send().await;
         // No new IPC requests can be leased once the runtime is removed. Allow
         // existing requests/jobs to finish; keep the old vault DB alive meanwhile.
         let deadline = Instant::now() + Duration::from_secs(20);
@@ -353,6 +354,27 @@ pub async fn notebook_media(state: State<'_, NotebookState>, workspace_id: Strin
     if !response.status().is_success() { return Err(format!("Media unavailable ({})", response.status())); }
     let bytes = response.bytes().await.map_err(|_| "Media download interrupted".to_string())?;
     Ok(tauri::ipc::Response::new(bytes.to_vec()))
+}
+
+#[tauri::command]
+pub async fn notebook_download(state: State<'_, NotebookState>, workspace_id: String, path: String, filename: String) -> Result<bool, String> {
+    api_path(&path)?;
+    if !(path.ends_with("/audio") || path.ends_with("/download")) { return Err("Invalid media request".into()); }
+    let lease = lease(&state, &workspace_id).await?;
+    let c = &lease.0;
+    let suggested = filename.chars().filter(|ch| !ch.is_control() && !"/\\:*?\"<>|".contains(*ch)).take(180).collect::<String>();
+    let Some(destination) = rfd::AsyncFileDialog::new().set_file_name(&suggested).save_file().await else { return Ok(false); };
+    if !c.accepting.load(Ordering::SeqCst) { return Err("Notebook workspace changed".into()); }
+    let mut response = c.client.get(format!("{}{path}", c.base_url)).bearer_auth(&c.password).send().await.map_err(|_| "Download failed".to_string())?;
+    if !response.status().is_success() { return Err(format!("Download unavailable ({})", response.status())); }
+    let parent = destination.path().parent().ok_or("Invalid destination")?;
+    let mut file = tempfile::NamedTempFile::new_in(parent).map_err(|e| e.to_string())?;
+    while let Some(chunk) = response.chunk().await.map_err(|_| "Download interrupted".to_string())? {
+        file.write_all(&chunk).map_err(|e| e.to_string())?;
+    }
+    file.as_file().sync_all().map_err(|e| e.to_string())?;
+    file.persist(destination.path()).map_err(|e| e.to_string())?;
+    Ok(true)
 }
 
 #[tauri::command]

@@ -18,11 +18,10 @@ os.environ["IMAGEIO_FFMPEG_EXE"] = str(runtime / "bin" / ("ffmpeg.exe" if os.nam
 
 if sys.argv[1] == "api":
     import uvicorn
-    uvicorn.run("api.main:app", host="127.0.0.1", port=int(sys.argv[2]), access_log=False, log_level="warning")
+    uvicorn.run("prism_api:app", host="127.0.0.1", port=int(sys.argv[2]), access_log=False, log_level="warning")
 elif sys.argv[1] == "worker":
-    from importlib.metadata import entry_points
-    entry = next(e for e in entry_points(group="console_scripts") if e.name == "surreal-commands-worker")
-    sys.argv = ["surreal-commands-worker", "--import-modules", "commands", "--max-tasks", "2"]
-    entry.load()()
+    import asyncio
+    from prism_worker import run
+    asyncio.run(run())
 else:
     raise SystemExit("Expected api or worker")

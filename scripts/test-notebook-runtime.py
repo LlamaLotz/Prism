@@ -65,7 +65,7 @@ def main():
         env = {**os.environ, "PRISM_NOTEBOOK_DATA": str(temp / "data"), "SURREAL_URL": f"ws://127.0.0.1:{db_port}/rpc", "SURREAL_USER": "prism", "SURREAL_PASS": password, "SURREAL_PASSWORD": password, "SURREAL_NAMESPACE": "open_notebook", "SURREAL_DATABASE": "open_notebook", "OPEN_NOTEBOOK_PASSWORD": password, "OPEN_NOTEBOOK_ENCRYPTION_KEY": secrets.token_hex(32), "PYTHONNOUSERSITE": "1", "CORS_ORIGINS": "tauri://localhost"}
         opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 
-        def request(path, body=None, method=None, authenticated=True, raw=None, content_type=None):
+        def request(path, body=None, method=None, authenticated=True, raw=None, content_type=None, as_text=False):
             headers = {"Authorization": f"Bearer {password}"} if authenticated else {}
             if body is not None:
                 raw = json.dumps(body).encode()
@@ -75,7 +75,7 @@ def main():
             r = urllib.request.Request(f"http://127.0.0.1:{api_port}{path}", data=raw, headers=headers, method=method)
             with opener.open(r, timeout=30) as response:
                 data = response.read()
-                return json.loads(data) if data else None
+                return data.decode() if as_text else json.loads(data) if data else None
 
         def wait(url):
             deadline = time.monotonic() + 120
@@ -139,6 +139,10 @@ def main():
                 context = request('/api/chat/context', {'notebook_id': notebook['id'], 'context_config': {'sources': {source['id']: 'full content'}, 'notes': {}}})
                 chat = request('/api/chat/execute', {'session_id': session['id'], 'message': 'What is this source about?', 'context': context['context']})
                 assert any('runtime test response' in m['content'] for m in chat['messages'])
+                source_session = request(f"/api/sources/{source['id']}/chat/sessions", {'source_id': source['id'], 'title': 'Source smoke'})
+                streamed = request(f"/api/sources/{source['id']}/chat/sessions/{source_session['id']}/messages", {'message': 'Summarize this source'}, as_text=True)
+                assert 'runtime test response' in streamed and '"type": "error"' not in streamed
+                assert request('/api/search', {'query': 'runtime', 'type': 'text', 'notebook_id': notebook['id']})['total_count'] > 0
                 transform = request('/api/transformations', {'name': 'smoke-transform', 'title': 'Smoke', 'description': 'Smoke', 'prompt': 'Summarize the input', 'apply_default': False})
                 transformed = request('/api/transformations/execute', {'transformation_id': transform['id'], 'input_text': 'Source material'})
                 assert transformed['output']
@@ -159,10 +163,21 @@ def main():
                 audio_request = urllib.request.Request(f"http://127.0.0.1:{api_port}/api/podcasts/episodes/{episode['id']}/audio", headers={'Authorization': f'Bearer {password}'})
                 with opener.open(audio_request, timeout=10) as response:
                     assert len(response.read()) > 100
+                jobs = request('/api/commands/jobs')
+                assert jobs and any(j['command_name'] == 'generate_podcast' for j in jobs), 'Job list must query the real queue'
+                assert request('/api/commands/jobs?status_filter=failed') == []
+                request('/api/prism/drain', {}, method='POST')
+                children[-1].wait(timeout=20)
+                # Queued work remains cancelable after the worker drains.
+                queued = request('/api/embed', {'item_id': source['id'], 'item_type': 'source', 'async_processing': True})
+                cancelled = request(f"/api/commands/jobs/{queued['command_id']}", method='DELETE')
+                assert cancelled['cancelled']
+                assert request('/api/commands/jobs?status_filter=canceled')
                 schema = request("/openapi.json")
                 (root / "openapi.json").write_text(json.dumps(schema, indent=2) + "\n")
                 request(f"/api/notebooks/{notebook['id']}", method="DELETE")
-                print("PASS: packaged database, API, authentication, migrations, worker ingestion, notes, chat, transformations, and podcast audio (local provider fixture)")
+                (root / 'smoke-tested.json').write_text(json.dumps({'revision': manifest['revision'], 'target': manifest['target'], 'provider': 'local deterministic fixture', 'checks': ['startup', 'authentication', 'ingestion', 'notes', 'chat', 'transformations', 'podcast-audio', 'jobs', 'drain', 'cancellation']}, indent=2) + '\n')
+                print("PASS: packaged database, API, authentication, migrations, worker ingestion, notes, chat, transformations, podcast audio, job status, drain and cancellation (local provider fixture)")
             except Exception:
                 log.flush()
                 log.seek(0)
@@ -170,6 +185,8 @@ def main():
                 raise
             finally:
                 for child in reversed(children):
+                    if child.poll() is not None:
+                        continue
                     child.terminate()
                     try:
                         child.wait(timeout=5)

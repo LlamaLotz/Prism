@@ -1753,6 +1753,7 @@ pub fn run() {
             notebook::notebook_request,
             notebook::notebook_add_source,
             notebook::notebook_media,
+            notebook::notebook_download,
             notebook::notebook_export,
             notebook::notebook_read_vault_note,
             init_linker,

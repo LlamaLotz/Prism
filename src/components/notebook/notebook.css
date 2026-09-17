@@ -1,21 +1,33 @@
-.notebook-page { container-type: inline-size; min-width: 0; height: 100%; display: flex; flex-direction: column; color: var(--color-slate-100); }
+.notebook-page { --nb-muted: #b5bdca; --nb-link: color-mix(in srgb, var(--color-brand-500) 30%, white); --nb-control-border: #64748b; container-type: inline-size; min-width: 0; height: 100%; display: flex; flex-direction: column; color: var(--color-text-hi); background: var(--color-base); font-size: .875rem; color-scheme: dark; }
+.mode-light .notebook-page { --nb-muted: #475569; --nb-link: color-mix(in srgb, var(--color-brand-500) 35%, black); --nb-control-border: #778496; color-scheme: light; }
+.theme-gloss.mode-light .notebook-page { --color-panel: rgba(255,255,255,.72); --color-surface: #e4e8ed; --color-surface-hover: #dbe2ea; --color-border: rgba(15,23,42,.2); }
+.theme-gloss.mode-dark .notebook-page { --color-panel: rgba(255,255,255,.04); --color-surface-hover: #2d333c; --color-border: #3b424b; }
+.theme-gloss .notebook-page .nb-card, .theme-gloss .notebook-page .nb-source { border-radius: 16px !important; }
+.theme-gloss .notebook-page .nb-input { border-radius: 12px !important; }
+.theme-gloss .notebook-page .nb-button:not(.primary) { background: var(--color-panel) !important; border-color: var(--color-border) !important; }
 .notebook-page button, .notebook-page input, .notebook-page textarea, .notebook-page select { font: inherit; }
 .notebook-page button { cursor: pointer; }
-.notebook-page button:disabled { cursor: default; opacity: .45; }
+.notebook-page button:disabled { cursor: default; opacity: 1; color: var(--nb-muted); background: var(--color-surface); border-color: var(--color-border); }
 .notebook-page :focus-visible { outline: 2px solid var(--color-brand-400); outline-offset: 2px; }
 .nb-toolbar { display: flex; align-items: center; gap: .5rem; padding: .75rem; border-bottom: 1px solid var(--color-border); flex-wrap: wrap; }
 .nb-button { display: inline-flex; align-items: center; justify-content: center; gap: .4rem; padding: .45rem .7rem; border: 1px solid var(--color-border); border-radius: .4rem; background: var(--color-panel); font-size: .8rem !important; }
-.nb-button:hover, .nb-button[aria-pressed=true] { background: var(--color-surface-hover); color: var(--color-brand-400); }
-.nb-button.primary { background: var(--color-brand-600); color: white; border-color: transparent; }
-.nb-input { width: 100%; padding: .55rem .65rem; border: 1px solid var(--color-border); border-radius: .4rem; background: var(--color-base); color: var(--color-slate-100); min-width: 0; user-select: text; }
-.nb-input::placeholder { color: var(--color-slate-500); }
-.nb-label { display: grid; gap: .4rem; font-size: .8rem; color: var(--color-slate-400); }
+.nb-button:not(:disabled):hover, .nb-button[aria-pressed=true] { background: var(--color-surface-hover); color: var(--nb-link); }
+.nb-button[aria-pressed=true] { box-shadow: inset 0 -2px var(--nb-link); font-weight: 600; }
+/* Prism's global active-pill rule assumes an accent-filled background. These
+   tabs use a neutral surface, so retain their theme-aware text contrast. */
+.notebook-page .nb-button[aria-pressed=true] { color: var(--nb-link) !important; background: var(--color-surface-hover) !important; box-shadow: inset 0 -2px var(--nb-link) !important; }
+.nb-button.primary:not(:disabled) { background: var(--color-brand-500); color: var(--color-brand-contrast, #000000); border-color: transparent; font-weight: 600; }
+.nb-input { width: 100%; padding: .55rem .65rem; border: 1px solid var(--nb-control-border); border-radius: .4rem; background: var(--color-panel); color: var(--color-text-hi); min-width: 0; user-select: text; }
+.nb-input::placeholder { color: var(--nb-muted); opacity: 1; }
+.nb-label { display: grid; gap: .4rem; font-size: .8125rem; color: var(--nb-muted); }
+.nb-label > label { font-weight: 500; }
+.notebook-page input[type=checkbox] { accent-color: var(--nb-link); width: 1rem; height: 1rem; margin-right: .45rem; vertical-align: middle; }
 .nb-tabs { display: flex; flex-wrap: wrap; gap: .35rem; }
 .nb-scroll { overflow: auto; min-height: 0; padding: 1rem; }
 .nb-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 1rem; }
 .nb-card { border: 1px solid var(--color-border); background: var(--color-panel); border-radius: .65rem; padding: 1rem; min-width: 0; }
 .nb-stack { display: grid; gap: .8rem; align-content: start; }
-.nb-muted { color: var(--color-slate-400); font-size: .8rem; }
+.nb-muted { color: var(--nb-muted); font-size: .8125rem; }
 .nb-error { padding: .7rem 1rem; color: var(--color-slate-100); border: 1px solid #ef444480; background: #ef444415; display: flex; align-items: center; justify-content: space-between; gap: 1rem; font-size: .85rem; }
 .nb-workspace { display: flex; flex: 1; min-height: 0; }
 .nb-pane { display: flex; flex-direction: column; min-height: 0; min-width: 0; overflow: hidden; border-right: 1px solid var(--color-border); }
@@ -26,7 +38,16 @@
 .nb-message { user-select: text; overflow-wrap: anywhere; line-height: 1.65; font-size: .9rem; }
 .nb-message p { margin: .45rem 0; }
 .nb-message pre { overflow: auto; background: var(--color-base); padding: .6rem; }
-.nb-message a { color: var(--color-brand-400); text-decoration: underline; }
+.nb-message a, .nb-citation { color: var(--nb-link); text-decoration: underline; text-underline-offset: 3px; }
+.nb-citation { display: inline; padding: 0 .1rem; border: 0; background: transparent; }
+.nb-source button { border: 0; background: transparent; padding: .1rem 0; font-weight: 500; }
+.nb-source button:hover { box-shadow: none !important; }
+.nb-source select { font-size: .75rem !important; }
+.nb-source .nb-muted { margin: .3rem 0; }
+.nb-resize { flex: 0 0 4px; position: relative; }
+.nb-resize > * { height: 100%; }
+.nb-error span { overflow-wrap: anywhere; min-width: 0; }
+.nb-toolbar h1, .nb-toolbar h2 { font-family: var(--font-sans); }
 .nb-message ul, .nb-message ol { padding-left: 1.4rem; list-style: revert; }
 .nb-compose { margin-top: auto; padding: .8rem; display: grid; gap: .5rem; border-top: 1px solid var(--color-border); }
 .nb-mobile-tabs { display: none; }

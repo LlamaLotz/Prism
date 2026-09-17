@@ -93,7 +93,7 @@ def main():
         (dest / "bin" / binary).chmod(0o755)
     ffmpeg = next(p for p in (dest / "lib/imageio_ffmpeg/binaries").iterdir() if p.name.startswith("ffmpeg-"))
     shutil.copy2(ffmpeg, dest / "bin" / ("ffmpeg.exe" if os.name == "nt" else "ffmpeg"))
-    shutil.copy2(ROOT / "notebook/launcher.py", dest / "launcher.py")
+    run(__import__('sys').executable, ROOT / "scripts/patch-notebook-runtime.py", dest)
     env = {**os.environ, "PYTHONPATH": str(dest / "lib"), "TIKTOKEN_CACHE_DIR": str(dest / "tiktoken-cache")}
     run(python, "-c", "import tiktoken; tiktoken.get_encoding('o200k_base'); tiktoken.get_encoding('cl100k_base')", env=env)
     manifest = {**PIN, "target": triple, "pythonExecutable": str(python.relative_to(dest)).replace('\\', '/'), "surrealExecutable": f"bin/{binary}"}

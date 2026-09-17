@@ -242,6 +242,16 @@ mod tests {
     use super::*;
 
     #[test]
+    fn settings_before_notebook_gain_safe_defaults() {
+        let mut json = serde_json::to_value(RuntimeConfig::default()).unwrap();
+        json.as_object_mut().unwrap().remove("notebook");
+        let restored: RuntimeConfig = serde_json::from_value(json).unwrap();
+        assert!(!restored.notebook.embed_by_default);
+        assert_eq!(restored.notebook.source_panel_width, 260);
+        assert_eq!(restored.appearance.startup_view, "graph");
+    }
+
+    #[test]
     fn runtime_config_roundtrips_camel_case() {
         let cfg = RuntimeConfig::default();
         let json = serde_json::to_string(&cfg).unwrap();

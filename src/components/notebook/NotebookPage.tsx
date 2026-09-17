@@ -1,7 +1,7 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useId, useRef, useState } from 'react';
 import ReactMarkdown, { defaultUrlTransform } from 'react-markdown';
 import { BookOpen, Plus, ArrowLeft, Upload, RefreshCw, Send, X, Settings2, Search, Headphones, Wand2, FolderOpen } from 'lucide-react';
-import { NotebookClient, notebookRuntime, recordId, downloadBlob } from '../../services/notebook';
+import { NotebookClient, notebookRuntime, recordId } from '../../services/notebook';
 import type { AppSettings, NoteFile } from '../../types';
 import type { NotebookResponse, SourceListResponse, SourceResponse, NoteResponse, ChatSessionResponse, ChatSessionWithMessagesResponse, ChatMessage, BuildContextResponse, SourceInsightResponse, TransformationResponse, SearchResponse, ModelResponse } from '../../types/notebook-api';
 import { useDialog } from '../DialogProvider';
@@ -10,12 +10,15 @@ import { NotebookManage } from './NotebookManage';
 import './notebook.css';
 
 export const Button = ({ children, className = '', ...props }: React.ButtonHTMLAttributes<HTMLButtonElement>) => <button type="button" className={`nb-button ${className}`} {...props}>{children}</button>;
-export const Field = ({ label, children }: { label: string; children: React.ReactNode }) => <label className="nb-label">{label}{children}</label>;
+export function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  const id = useId();
+  return <div className="nb-label"><label htmlFor={id}>{label}</label>{React.isValidElement<{ id?: string }>(children) ? React.cloneElement(children, { id }) : children}</div>;
+}
 
 export function NotebookMarkdown({ text, onReference }: { text: string; onReference: (id: string) => void }) {
   const linked = text.replace(/\[\[?((?:source|note|source_insight|insight):[a-zA-Z0-9_-]+)\]?\]/g, (_, id) => `[${id}](prism:${id})`);
   return <div className="nb-message"><ReactMarkdown urlTransform={url => url.startsWith('prism:') ? url : defaultUrlTransform(url)} components={{ a: ({ href, children }) => href?.startsWith('prism:')
-    ? <button className="text-brand-400 underline" onClick={() => onReference(href.slice(6))}>{children}</button>
+    ? <button className="nb-citation" onClick={() => onReference(href.slice(6))}>{children}</button>
     : <a href={href} target="_blank" rel="noreferrer">{children}</a> }}>{linked}</ReactMarkdown></div>;
 }
 
@@ -93,9 +96,15 @@ function NotebookWorkspace({ client, vaultPath, vaultNotes, settings, onVaultExp
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [mobilePane, setMobilePane] = useState('chat');
-  const [sourceWidth, setSourceWidth] = useState(settings.notebook.sourcePanelWidth);
-  const [noteWidth, setNoteWidth] = useState(settings.notebook.notesPanelWidth);
+  const [sourceWidth, setSourceWidth] = useState(() => Math.min(480, Math.max(200, Number(localStorage.getItem('prism_notebook_source_width')) || settings.notebook.sourcePanelWidth)));
+  const [noteWidth, setNoteWidth] = useState(() => Math.min(480, Math.max(200, Number(localStorage.getItem('prism_notebook_note_width')) || settings.notebook.notesPanelWidth)));
+  useEffect(() => { localStorage.setItem('prism_notebook_source_width', String(sourceWidth)); }, [sourceWidth]);
+  useEffect(() => { localStorage.setItem('prism_notebook_note_width', String(noteWidth)); }, [noteWidth]);
   const [showImport, setShowImport] = useState(false);
+  const [sourceForm, setSourceForm] = useState<'link' | 'text' | null>(null);
+  const [sourceText, setSourceText] = useState('');
+  const [sourceTitle, setSourceTitle] = useState('');
+  const [embedSources, setEmbedSources] = useState(settings.notebook.embedByDefault);
   const [importPaths, setImportPaths] = useState<string[]>([]);
   const [importSearch, setImportSearch] = useState('');
   const [search, setSearch] = useState('');
@@ -176,17 +185,14 @@ function NotebookWorkspace({ client, vaultPath, vaultNotes, settings, onVaultExp
     else { const insight = await client.request<SourceInsightResponse>(`/insights/${recordId(id)}`); await openSource(insight.source_id); }
   });
 
-  const addSource = (type: 'upload' | 'text' | 'link') => void run(async () => {
+  const addSource = (type: 'upload' | 'text' | 'link') => {
+    if (type !== 'upload') { setSourceForm(type); setSourceText(''); setSourceTitle(''); return; }
+    void run(async () => {
     if (!selected) return;
-    const fields: Record<string, string> = { type, notebook_id: selected, embed: String(settings.notebook.embedByDefault), async_processing: 'true' };
-    if (type !== 'upload') {
-      const content = await dialogs.prompt(type === 'link' ? 'Web page or video URL' : 'Paste the source text', { title: 'Add source' });
-      if (!content?.trim()) return;
-      fields[type === 'link' ? 'url' : 'content'] = content;
-      if (type === 'text') { const title = await dialogs.prompt('Source title', { initialValue: 'Text source' }); if (title === null) return; fields.title = title; }
-    }
-    await client.source(fields, type === 'upload'); await refreshNotebook();
-  });
+    const fields: Record<string, string> = { type, notebook_id: selected, embed: String(embedSources), async_processing: 'true' };
+    await client.source(fields, true); await refreshNotebook();
+    });
+  };
   const importNotes = () => void run(async () => {
     if (!selected) return;
     const id = selected;
@@ -198,7 +204,7 @@ function NotebookWorkspace({ client, vaultPath, vaultNotes, settings, onVaultExp
       const old = imports[path];
       if (old && !(await dialogs.confirm(`Replace the previously imported snapshot of ${path}? Existing references to the old source will no longer resolve.`, { title: 'Reimport source', confirmLabel: 'Replace' }))) continue;
       const text = await client.readVaultNote(path);
-      const result = await client.source({ type: 'text', notebook_id: id, title: path, content: `Original Prism note: ${path}\n\n${text}`, embed: String(settings.notebook.embedByDefault), async_processing: 'true' });
+      const result = await client.source({ type: 'text', notebook_id: id, title: path, content: `Original Prism note: ${path}\n\n${text}`, embed: String(embedSources), async_processing: 'false' });
       if (result) {
         // Commit the new mapping before deleting the old snapshot, so a failed
         // deletion cannot lose the successfully imported replacement.
@@ -268,10 +274,16 @@ function NotebookWorkspace({ client, vaultPath, vaultNotes, settings, onVaultExp
           <div className="nb-toolbar"><h2 className="font-semibold flex-1 text-sm">Sources</h2><Button disabled={busy} onClick={() => addSource('upload')} aria-label="Upload source"><Upload size={14}/></Button></div>
           <div className="nb-scroll nb-stack">
             <div className="nb-tabs"><Button disabled={busy} onClick={() => addSource('link')}>URL</Button><Button disabled={busy} onClick={() => addSource('text')}>Text</Button><Button onClick={() => setShowImport(v => !v)}>From vault</Button></div>
+            <label className="nb-muted"><input type="checkbox" checked={embedSources} onChange={e => setEmbedSources(e.target.checked)}/>Embed new sources for semantic search</label>
+            {sourceForm && <form className="nb-card nb-stack" onSubmit={e => { e.preventDefault(); void run(async () => {
+              if (!selected || !sourceText.trim()) return;
+              await client.source({ type: sourceForm, notebook_id: selected, title: sourceTitle || (sourceForm === 'text' ? 'Text source' : sourceText), [sourceForm === 'text' ? 'content' : 'url']: sourceText, embed: String(embedSources), async_processing: 'true' });
+              setSourceForm(null); setSourceText(''); await refreshNotebook();
+            }); }}><Field label="Source title"><input className="nb-input" value={sourceTitle} onChange={e => setSourceTitle(e.target.value)}/></Field><Field label={sourceForm === 'text' ? 'Source text' : 'Web page or video URL'}>{sourceForm === 'text' ? <textarea className="nb-input" rows={6} required value={sourceText} onChange={e => setSourceText(e.target.value)}/> : <input className="nb-input" type="url" required value={sourceText} onChange={e => setSourceText(e.target.value)}/>}</Field><div className="nb-tabs"><Button type="submit" disabled={busy || !sourceText.trim()}>Add source</Button><Button disabled={busy} onClick={() => setSourceForm(null)}>Cancel</Button></div></form>}
             {showImport && <div className="nb-card nb-stack"><input className="nb-input" placeholder="Find a vault note…" aria-label="Filter vault notes" value={importSearch} onChange={e => setImportSearch(e.target.value)}/><div className="max-h-48 overflow-auto nb-stack">{vaultNotes.filter(n => n.relativePath.toLowerCase().includes(importSearch.toLowerCase())).map(n => <label key={n.relativePath} className="nb-muted"><input type="checkbox" checked={importPaths.includes(n.relativePath)} onChange={e => setImportPaths(p => e.target.checked ? [...p, n.relativePath] : p.filter(x => x !== n.relativePath))}/>{n.relativePath}</label>)}</div><Button disabled={busy || !importPaths.length} onClick={importNotes}>Import {importPaths.length || ''} selected</Button></div>}
             {!sources.length && <p className="nb-muted">Add a document, web page, video, recording, or vault note.</p>}
             <div className="nb-source-list">{sources.map(s => <div key={s.id} className="nb-source" aria-current={preview?.id === s.id}><div className="min-w-0 flex-1"><button className="text-left text-sm w-full truncate" onClick={() => void run(() => openSource(s.id))}>{s.title || 'Untitled source'}</button><p className="nb-muted">{s.status || (s.embedded ? 'Indexed' : 'Ready')}</p><select className="nb-input mt-1 text-xs" aria-label={`Chat context for ${s.title}`} value={sourceContext[s.id] ?? 'full content'} onChange={e => setSourceContext(c => ({ ...c, [s.id]: e.target.value }))}><option>full content</option><option>insights</option><option>not in context</option></select></div></div>)}</div>
-            {preview && <article className="nb-stack border-t border-slate-800 pt-3"><h3 className="font-semibold text-sm">{preview.title}</h3><div className="nb-tabs"><Button disabled={busy} onClick={() => { setChatSource(preview.id); setMobilePane('chat'); }}>Chat with source</Button><Button disabled={busy} onClick={() => void run(async () => { await client.request(`/sources/${recordId(preview.id)}/retry`, 'POST'); await refreshNotebook(); })}>Retry processing</Button><Button disabled={busy} onClick={() => void run(async () => { await client.request('/embed', 'POST', { item_id: preview.id, item_type: 'source', async_processing: true }); setNotice('Embedding queued.'); })}>Embed</Button><Button disabled={busy} onClick={() => void run(async () => { const title = await dialogs.prompt('Source title', { initialValue: preview.title ?? '' }); if (title === null) return; await client.request(`/sources/${recordId(preview.id)}`, 'PUT', { title }); await refreshNotebook(); await openSource(preview.id); })}>Rename</Button>{preview.file_available && <Button onClick={() => void run(async () => downloadBlob(await client.media(`/sources/${recordId(preview.id)}/download`, 'application/octet-stream'), preview.title || 'source'))}>Download</Button>}<Button disabled={busy} onClick={() => void run(async () => { if (!(await dialogs.confirm('Delete this source and its insights? Other notebooks using it are also affected.', { danger: true }))) return; await client.request(`/sources/${recordId(preview.id)}`, 'DELETE'); setPreview(null); await refreshNotebook(); })}>Delete</Button></div>
+            {preview && <article className="nb-stack border-t border-slate-800 pt-3"><h3 className="font-semibold text-sm">{preview.title}</h3><div className="nb-tabs"><Button disabled={busy} onClick={() => { setChatSource(preview.id); setMobilePane('chat'); }}>Chat with source</Button><Button disabled={busy} onClick={() => void run(async () => { await client.request(`/sources/${recordId(preview.id)}/retry`, 'POST'); await refreshNotebook(); })}>Retry processing</Button><Button disabled={busy} onClick={() => void run(async () => { await client.request('/embed', 'POST', { item_id: preview.id, item_type: 'source', async_processing: true }); setNotice('Embedding queued.'); })}>Embed</Button><Button disabled={busy} onClick={() => void run(async () => { const title = await dialogs.prompt('Source title', { initialValue: preview.title ?? '' }); if (title === null) return; await client.request(`/sources/${recordId(preview.id)}`, 'PUT', { title }); await refreshNotebook(); await openSource(preview.id); })}>Rename</Button>{preview.file_available && <Button onClick={() => void run(async () => { await client.download(`/sources/${recordId(preview.id)}/download`, preview.title || 'source'); })}>Download</Button>}<Button disabled={busy} onClick={() => void run(async () => { if (!(await dialogs.confirm('Delete this source and its insights? Other notebooks using it are also affected.', { danger: true }))) return; await client.request(`/sources/${recordId(preview.id)}`, 'DELETE'); setPreview(null); await refreshNotebook(); })}>Delete</Button></div>
               {preview.asset?.url && <a className="nb-muted underline" href={/^https?:\/\//.test(preview.asset.url) ? preview.asset.url : undefined} target="_blank" rel="noreferrer">Original source</a>}
               <details><summary className="nb-muted cursor-pointer">Extracted text</summary><NotebookMarkdown text={preview.full_text || 'Source is still processing or has no extracted text.'} onReference={openReference}/></details>
               <Field label="Generate an insight"><select className="nb-input" value={transformation} onChange={e => setTransformation(e.target.value)}><option value="">Choose a transformation</option>{transformations.map(t => <option value={t.id} key={t.id}>{t.title}</option>)}</select></Field><Button disabled={busy || !transformation} onClick={() => void run(async () => { await client.request(`/sources/${recordId(preview.id)}/insights`, 'POST', { transformation_id: transformation, model_id: model || null }); setNotice('Insight generation queued. Use Refresh insights to retrieve the result.'); })}>Generate insight</Button><Button onClick={() => void run(() => openSource(preview.id))}>Refresh insights</Button>
