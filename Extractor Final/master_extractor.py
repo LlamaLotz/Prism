@@ -935,58 +935,93 @@ def select_best_extract_locally(native_sub: str, whisper_sub: str) -> tuple[str,
 # 4. EXTRACTION MODULES WITH PROGRESS BARS
 # ==========================================
 
-def process_web_url(url: str, item_raw_folder: Path, main_extractions_folder: Path):
+def _install_playwright_chromium():
+    """Install the browser used by the active Prism Python environment.
+
+    Crawl4AI installs the Python Playwright package, but it does not always
+    download Playwright's separately managed browser binaries. This is safe to
+    run only after a launch failure and keeps the repair tied to the interpreter
+    that is actually running this extractor.
+    """
+    print("[Crawl4AI] Chromium browser is missing. Installing it now...")
+    result = subprocess.run(
+        [sys.executable, "-m", "playwright", "install", "chromium"],
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(
+            "Playwright could not install Chromium. "
+            "Run `python -m playwright install chromium` and try again."
+        )
+
+
+def process_web_url(url: str, item_raw_folder: Path, main_extractions_folder: Path) -> bool:
     """Crawls a web page using Crawl4AI and converts it to clean markdown."""
     print(f"Web URL detected. Routing to Crawl4AI pipeline: {url}")
-    
+
+    import asyncio
+
+    async def crawl():
+        config = CrawlerRunConfig(
+            cache_mode=CacheMode.BYPASS,
+            word_count_threshold=10,
+            remove_overlay_elements=True,
+        )
+        async with AsyncWebCrawler() as crawler:
+            result = await crawler.arun(url=url, config=config)
+            if not result.success:
+                raise ValueError(f"Crawl failed: {result.error_message}")
+            page_title = result.metadata.get("title", "Web Page")
+            return result.markdown, page_title
+
     try:
         with tqdm(total=1, desc="[Crawl4AI Web Scraping]", leave=False) as pbar:
-            import asyncio
-            
-            async def crawl():
-                config = CrawlerRunConfig(
-                    cache_mode=CacheMode.BYPASS,
-                    word_count_threshold=10,
-                    remove_overlay_elements=True,
-                )
-                async with AsyncWebCrawler() as crawler:
-                    result = await crawler.arun(url=url, config=config)
-                    if not result.success:
-                        raise ValueError(f"Crawl failed: {result.error_message}")
-                    page_title = result.metadata.get("title", "Web Page")
-                    return result.markdown, page_title
-
-            content, title = asyncio.run(crawl())
+            try:
+                content, title = asyncio.run(crawl())
+            except Exception as first_error:
+                # A missing Playwright executable is repairable. Install once,
+                # then retry the crawl before falling back to plain HTTP.
+                if "Executable doesn't exist" not in str(first_error):
+                    raise
+                print(f"WARNING: Crawl4AI browser launch failed: {first_error}")
+                _install_playwright_chromium()
+                content, title = asyncio.run(crawl())
             pbar.update(1)
-            
-        if not content:
+
+        if not content or not content.strip():
             raise ValueError("Crawl4AI returned empty content.")
 
-        # Save raw to item folder
         raw_out_file = item_raw_folder / "crawl4ai_raw.md"
         safe_write_file(raw_out_file, f"# Raw Web Crawl: {url}\n\n{content}")
 
         sanitized_title = sanitize_filename(title)
         master_out_file = main_extractions_folder / f"{sanitized_title}.md"
         safe_write_file(master_out_file, f"# {title}\n\n**Source URL:** {url}\n\n---\n\n{content}")
-            
         print(f"Successfully crawled and saved: {title}")
+        return True
 
     except Exception as e:
         print(f"ERROR: Crawl4AI failed for {url}: {e}")
-        # Fallback to simple urllib request if Crawl4AI fails
         try:
             print("Falling back to simple text extraction...")
-            req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+            req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
             with urllib.request.urlopen(req) as response:
-                html = response.read().decode('utf-8', errors='ignore')
-                text = re.sub(r'<[^>]*>', '', html)
-                content = " ".join(text.split())
-                
-                master_out_file = main_extractions_folder / f"fallback_{int(time.time())}.md"
-                safe_write_file(master_out_file, f"# Fallback Web Extract\n\n**Source:** {url}\n\n---\n\n{content}")
+                html = response.read().decode("utf-8", errors="ignore")
+            # Remove non-content elements before stripping tags. A response
+            # containing only scripts/styles is not a valid extracted note.
+            html = re.sub(r"<(script|style|noscript)[^>]*>.*?</(?:script|style|noscript)>", " ", html, flags=re.IGNORECASE | re.DOTALL)
+            text = re.sub(r"<[^>]*>", " ", html)
+            content = " ".join(text.split())
+            if len(content) < 80:
+                raise ValueError("Fallback returned too little readable text.")
+            master_out_file = main_extractions_folder / f"fallback_{int(time.time())}.md"
+            safe_write_file(master_out_file, f"# Fallback Web Extract\n\n**Source:** {url}\n\n---\n\n{content}")
+            print(f"Fallback web extraction saved: {master_out_file}")
+            return True
         except Exception as e2:
             print(f"CRITICAL: Fallback also failed: {e2}")
+            return False
 
 
 def transcribe_audio_whisper(audio_path: str) -> str:
@@ -1555,6 +1590,7 @@ def run_prism():
     logger.info(f"\nProcessing {total_items} item(s)...")
 
     # Overall Batch Progress Bar
+    failed_items = 0
     with tqdm(total=total_items, desc="[Batch Progress]", unit="item") as batch_pbar:
         for idx, (source, ocr_mode) in enumerate(sources, start=1):
             item_start_time = time.time()
@@ -1570,9 +1606,14 @@ def run_prism():
 
             # Route Logic
             if source.startswith("http://") or source.startswith("https://"):
-                process_youtube_url(source, item_raw_folder, main_extractions_folder, preferred_method=args.yt_method if args.yt_method else "auto")
+                item_succeeded = process_youtube_url(source, item_raw_folder, main_extractions_folder, preferred_method=args.yt_method if args.yt_method else "auto")
             else:
                 process_local_file(source, item_raw_folder, main_extractions_folder, ocr_preference=ocr_mode)
+                item_succeeded = True
+
+            if item_succeeded is False:
+                failed_items += 1
+                logger.error(f"Item #{idx} failed: no usable extraction was produced.")
 
             item_elapsed = time.time() - item_start_time
             logger.info(f"\nItem #{idx} Finished in {item_elapsed:.2f}s")
@@ -1583,11 +1624,16 @@ def run_prism():
 
     total_elapsed = time.time() - total_batch_start
     logger.info("\n" + "="*50)
-    logger.info(f"ALL {total_items} ITEM(S) COMPLETED SUCCESSFULLY!")
+    if failed_items:
+        logger.error(f"{failed_items} OF {total_items} ITEM(S) FAILED.")
+    else:
+        logger.info(f"ALL {total_items} ITEM(S) COMPLETED SUCCESSFULLY!")
     logger.info(f"Total Execution Time: {total_elapsed:.2f}s")
     logger.info(f"Clean Notes Folder: {main_extractions_folder.absolute()}")
     logger.info(f"Raw Services Folder: {raw_service_folder.absolute()}")
     logger.info("="*50)
+    if failed_items:
+        raise SystemExit(1)
 
 
 if __name__ == "__main__":
