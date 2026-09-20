@@ -209,7 +209,7 @@ jobs:
             const tauri = JSON.parse(fs.readFileSync(path, "utf8"));
             tauri.bundle.macOS = tauri.bundle.macOS || {};
             tauri.bundle.macOS.frameworks = ["./onnxruntime/libonnxruntime.1.18.1.dylib"];
-            fs.writeFileSync(path, JSON.stringify(tauri, null, 2) + "\\n");
+            fs.writeFileSync(path, JSON.stringify(tauri, null, 2));
           '
           echo "ORT_LIB_LOCATION=$lib_root" >> "$GITHUB_ENV"
           echo 'ORT_LIB_PROFILE=lib' >> "$GITHUB_ENV"
