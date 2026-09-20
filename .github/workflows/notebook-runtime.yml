@@ -57,11 +57,13 @@ jobs:
                   subprocess.run([sys.executable, 'scripts/test-notebook-runtime.py', str(relocated)], check=True)
               finally:
                   shutil.move(str(relocated), source)
-      - name: Archive runtime preserving executable bits and symlinks
+      - name: Archive runtime as a self-contained payload
         shell: python
         run: |
-          import shutil
-          shutil.make_archive('notebook-${{ matrix.target }}', 'gztar', 'src-tauri/notebook-runtime', '${{ matrix.target }}')
+          import pathlib, tarfile
+          source = pathlib.Path('src-tauri/notebook-runtime/${{ matrix.target }}')
+          with tarfile.open('notebook-${{ matrix.target }}.tar.gz', 'w:gz', dereference=True) as archive:
+              archive.add(source, arcname=source.name)
       - uses: actions/upload-artifact@v4
         with:
           name: notebook-${{ matrix.target }}

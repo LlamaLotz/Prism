@@ -1,15 +1,55 @@
 name: "Release Prism Desktop App"
 
+concurrency:
+  group: prism-release-main
+  cancel-in-progress: false
+
 on:
   push:
+    branches:
+      - main
     tags:
       - 'v*'
 
 jobs:
+  version:
+    needs: notebook-runtime
+    if: github.ref_type == 'branch' && github.ref_name == 'main' && needs.notebook-runtime.result == 'success'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      tag: ${{ steps.next-version.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Create next patch tag
+        id: next-version
+        shell: bash
+        run: |
+          latest="$(git tag --list 'v*' --sort=-version:refname | head -n 1)"
+          if [ -z "$latest" ]; then
+            latest="v$(node -p \"require('./package.json').version\")"
+          fi
+          version="${latest#v}"
+          if [[ "$version" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
+            next="${BASH_REMATCH[1]}.${BASH_REMATCH[2]}.$((BASH_REMATCH[3] + 1))"
+          else
+            echo "::error::Latest tag '$latest' is not a stable semantic version"
+            exit 1
+          fi
+          tag="v$next"
+          echo "Creating release tag $tag"
+          git tag "$tag"
+          git push origin "$tag"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
   notebook-runtime:
     uses: ./.github/workflows/notebook-runtime.yml
   release:
-    needs: notebook-runtime
+    needs: [version, notebook-runtime]
+    if: always() && needs.notebook-runtime.result == 'success' && (needs.version.result == 'success' || needs.version.result == 'skipped')
     permissions:
       contents: write
     strategy:
@@ -55,9 +95,11 @@ jobs:
 
       - name: Sync version across package.json, tauri.conf.json, and Cargo.toml
         shell: bash
+        env:
+          RELEASE_TAG: ${{ needs.version.outputs.tag || github.ref_name }}
         run: |
-          # Strip 'v' prefix from tag (e.g. v1.0.1 -> 1.0.1) and export for node
-          export VERSION="${GITHUB_REF_NAME#v}"
+          # Strip 'v' prefix from the release tag and export for node.
+          export VERSION="${RELEASE_TAG#v}"
           echo "Syncing all manifests to version: $VERSION"
 
           # Guard: MSI and macOS bundles require a stable numeric semver.
@@ -110,8 +152,8 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
-          tagName: ${{ github.ref_name }}
-          releaseName: "Prism ${{ github.ref_name }}"
+          tagName: ${{ needs.version.outputs.tag || github.ref_name }}
+          releaseName: "Prism ${{ needs.version.outputs.tag || github.ref_name }}"
           uploadUpdaterJson: true
           updaterJsonPreferNsis: true
           releaseBody: "See the assets below to download Prism for your operating system."
