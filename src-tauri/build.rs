@@ -8,5 +8,11 @@ fn main() {
     assert!(manifest.is_file(), "Build and validate the bundled Notebook runtime before packaging Prism (scripts/build-notebook-runtime.py)");
     assert!(manifest.with_file_name("smoke-tested.json").is_file(), "Notebook runtime smoke tests must pass before release packaging");
   }
+  // ort links against ONNX Runtime using @rpath. Tauri places bundled
+  // dynamic libraries in Contents/Frameworks, so make that directory part
+  // of the executable's runtime search path on macOS.
+  #[cfg(target_os = "macos")]
+  println!("cargo:rustc-link-arg-bin=app=-Wl,-rpath,@loader_path/../Frameworks");
+
   tauri_build::build()
 }

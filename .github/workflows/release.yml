@@ -190,6 +190,27 @@ jobs:
           fi
           lib_dir="$(dirname "$lib_file")"
           lib_root="$(dirname "$lib_dir")"
+          # Tauri signs and embeds files listed under bundle.macOS.frameworks.
+          # Keep this generated binary out of git while making it available
+          # at the stable path used by tauri.conf.json.
+          runtime_lib="$(find "$lib_dir" -name 'libonnxruntime.1.18.1.dylib' -print -quit)"
+          if [ -z "$runtime_lib" ]; then
+            echo 'Versioned ONNX Runtime dylib was not found' >&2
+            exit 1
+          fi
+          mkdir -p src-tauri/onnxruntime
+          cp -L "$runtime_lib" src-tauri/onnxruntime/libonnxruntime.1.18.1.dylib
+          # Add the generated dylib only for this release build. Keeping it
+          # out of the checked-in config lets local builds use their normal
+          # ORT installation without requiring a downloaded binary.
+          node -e '
+            const fs = require("fs");
+            const path = "src-tauri/tauri.conf.json";
+            const tauri = JSON.parse(fs.readFileSync(path, "utf8"));
+            tauri.bundle.macOS = tauri.bundle.macOS || {};
+            tauri.bundle.macOS.frameworks = ["./onnxruntime/libonnxruntime.1.18.1.dylib"];
+            fs.writeFileSync(path, JSON.stringify(tauri, null, 2) + "\\n");
+          '
           echo "ORT_LIB_LOCATION=$lib_root" >> "$GITHUB_ENV"
           echo 'ORT_LIB_PROFILE=lib' >> "$GITHUB_ENV"
 

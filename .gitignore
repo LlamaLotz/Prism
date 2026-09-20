@@ -1,6 +1,8 @@
 node_modules
 src-tauri/notebook-runtime/*
 !src-tauri/notebook-runtime/README.md
+# Downloaded macOS ONNX Runtime dylib used only during release packaging.
+src-tauri/onnxruntime/
 notebook/**/__pycache__/
 test-results/
 playwright-report/
