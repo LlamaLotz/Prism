@@ -67,7 +67,8 @@ def main():
         run(args.uv, "pip", "install", "--python", python, "--target", dest / "lib", f"imageio-ffmpeg=={PIN['imageioFfmpeg']}")
         arch = {"x86_64": "amd64", "aarch64": "arm64"}[machine]
         os_label = "windows" if os.name == "nt" else "darwin"
-        suffix = "zip" if os.name == "nt" else "tgz"
+        # SurrealDB publishes Windows as a standalone .exe, not a zip archive.
+        suffix = "exe" if os.name == "nt" else "tgz"
         asset = f"surreal-v{PIN['surrealdb']}.{os_label}-{arch}.{suffix}"
         archive = tmp / asset
         url = f"https://github.com/surrealdb/surrealdb/releases/download/v{PIN['surrealdb']}/{asset}"
@@ -81,7 +82,9 @@ def main():
             raise RuntimeError("SurrealDB release digest missing or invalid")
         binary = "surreal.exe" if os.name == "nt" else "surreal"
         (dest / "bin").mkdir(exist_ok=True)
-        if suffix == "zip":
+        if suffix == "exe":
+            shutil.copy2(archive, dest / "bin" / binary)
+        elif suffix == "zip":
             with zipfile.ZipFile(archive) as z:
                 member = next(n for n in z.namelist() if Path(n).name == binary)
                 (dest / "bin" / binary).write_bytes(z.read(member))
