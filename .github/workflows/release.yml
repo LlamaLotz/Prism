@@ -26,24 +26,29 @@ jobs:
           fetch-depth: 0
       - name: Create next patch tag
         id: next-version
-        shell: bash
+        shell: python
         run: |
-          latest="$(git tag --list 'v*' --sort=-version:refname | head -n 1)"
-          if [ -z "$latest" ]; then
-            latest="v$(node -p \"require('./package.json').version\")"
-          fi
-          version="${latest#v}"
-          if [[ "$version" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
-            next="${BASH_REMATCH[1]}.${BASH_REMATCH[2]}.$((BASH_REMATCH[3] + 1))"
-          else
-            echo "::error::Latest tag '$latest' is not a stable semantic version"
-            exit 1
-          fi
-          tag="v$next"
-          echo "Creating release tag $tag"
-          git tag "$tag"
-          git push origin "$tag"
-          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          import json
+          import os
+          import re
+          import subprocess
+
+          tags = subprocess.check_output(
+              ["git", "tag", "--list", "v*", "--sort=-version:refname"],
+              text=True,
+          ).splitlines()
+          latest = tags[0] if tags else f"v{json.loads(open('package.json').read())['version']}"
+          match = re.fullmatch(r"v([0-9]+)\.([0-9]+)\.([0-9]+)", latest)
+          if not match:
+              raise SystemExit(f"Latest tag '{latest}' is not a stable semantic version")
+
+          major, minor, patch = (int(value) for value in match.groups())
+          tag = f"v{major}.{minor}.{patch + 1}"
+          print(f"Creating release tag {tag}")
+          subprocess.run(["git", "tag", tag], check=True)
+          subprocess.run(["git", "push", "origin", tag], check=True)
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+              output.write(f"tag={tag}\n")
 
   notebook-runtime:
     uses: ./.github/workflows/notebook-runtime.yml
@@ -145,6 +150,19 @@ jobs:
           node -p "JSON.parse(require('fs').readFileSync('src-tauri/tauri.conf.json','utf8')).version"
           echo "--- package.json ---"
           node -p "require('./package.json').version"
+
+      - name: Install ONNX Runtime for Windows
+        if: matrix.platform == 'windows-latest'
+        shell: pwsh
+        run: |
+          $archive = Join-Path $env:RUNNER_TEMP 'onnxruntime-win-x64-1.18.1.zip'
+          $destination = Join-Path $env:RUNNER_TEMP 'onnxruntime-win-x64-1.18.1'
+          Invoke-WebRequest `
+            -Uri 'https://github.com/microsoft/onnxruntime/releases/download/v1.18.1/onnxruntime-win-x64-1.18.1.zip' `
+            -OutFile $archive
+          Expand-Archive -Path $archive -DestinationPath $destination -Force
+          "ORT_LIB_LOCATION=$destination\\lib" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
       - name: Build and Package with Tauri Action
         uses: tauri-apps/tauri-action@v1
         env:

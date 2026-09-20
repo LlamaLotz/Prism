@@ -79,8 +79,10 @@ version = "0.5.1"
 [features]
 default = [
     "ort-download-binaries",
+    "ort-copy-dylibs",
     "online",
 ]
 online = ["hf-hub/online"]
 ort-download-binaries = ["ort/download-binaries"]
+ort-copy-dylibs = ["ort/copy-dylibs"]
 ort-load-dynamic = ["ort/load-dynamic"]
