@@ -3,5 +3,10 @@
   "revision": "3127f14ea9dbb519f0e4ddc64a0742ca644ba6ef",
   "python": "3.12.12",
   "surrealdb": "2.3.10",
+  "surrealdbDigests": {
+    "darwin-amd64": "sha256:3b235838d31668f7d9d303684067cadc92411a028105e3f3da6c61c41dc7e402",
+    "darwin-arm64": "sha256:291daeebc15a98a9957182fc2e373aaabc700261d07cddf1bfe9de533342f9d4",
+    "windows-amd64": "sha256:9f80f5b4c361b5274e17574822bddc7408f3a9c7b0d6a83a88a4c81f582ea9db"
+  },
   "imageioFfmpeg": "0.6.0"
 }

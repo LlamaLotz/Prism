@@ -73,13 +73,12 @@ def main():
         archive = tmp / asset
         url = f"https://github.com/surrealdb/surrealdb/releases/download/v{PIN['surrealdb']}/{asset}"
         download(url, archive)
-        # Verify against the release asset digest served by GitHub over HTTPS.
-        release = tmp / "release.json"
-        download(f"https://api.github.com/repos/surrealdb/surrealdb/releases/tags/v{PIN['surrealdb']}", release)
-        metadata = next(a for a in json.loads(release.read_text())["assets"] if a["name"] == asset)
-        digest = metadata.get("digest")
-        if not digest or digest != "sha256:" + hashlib.sha256(archive.read_bytes()).hexdigest():
-            raise RuntimeError("SurrealDB release digest missing or invalid")
+        # Verify against a repository-pinned digest so parallel CI jobs do not
+        # depend on GitHub's unauthenticated Releases API rate limit.
+        expected_digest = PIN["surrealdbDigests"].get(f"{os_label}-{arch}")
+        actual_digest = "sha256:" + hashlib.sha256(archive.read_bytes()).hexdigest()
+        if not expected_digest or expected_digest != actual_digest:
+            raise RuntimeError(f"SurrealDB release digest mismatch for {asset}")
         binary = "surreal.exe" if os.name == "nt" else "surreal"
         (dest / "bin").mkdir(exist_ok=True)
         if suffix == "exe":
