@@ -78,7 +78,6 @@ version = "0.5.1"
 
 [features]
 default = [
-    "ort-download-binaries",
     "ort-copy-dylibs",
     "online",
 ]

@@ -161,7 +161,37 @@ jobs:
             -Uri 'https://github.com/microsoft/onnxruntime/releases/download/v1.18.1/onnxruntime-win-x64-1.18.1.zip' `
             -OutFile $archive
           Expand-Archive -Path $archive -DestinationPath $destination -Force
-          "ORT_LIB_LOCATION=$destination\\lib" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          $importLibrary = Get-ChildItem -Path $destination -File -Recurse -Filter onnxruntime.lib | Select-Object -First 1
+          if (-not $importLibrary) {
+            Get-ChildItem -Path $destination -Recurse | Select-Object -ExpandProperty FullName
+            throw 'ONNX Runtime import library was not found'
+          }
+          $libDirectory = $importLibrary.DirectoryName
+          "ORT_LIB_LOCATION=$libDirectory" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          # The library directory itself contains the import library and DLL.
+          # A dot profile also enables ort-sys's copy-dylibs path for the DLL.
+          "ORT_LIB_PROFILE=." | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Install ONNX Runtime for macOS
+        if: matrix.platform == 'macos-latest'
+        shell: bash
+        run: |
+          archive="$RUNNER_TEMP/onnxruntime-osx-universal2-1.18.1.tgz"
+          destination="$RUNNER_TEMP/onnxruntime-osx-universal2-1.18.1"
+          curl --fail --location --retry 3 \
+            'https://github.com/microsoft/onnxruntime/releases/download/v1.18.1/onnxruntime-osx-universal2-1.18.1.tgz' \
+            --output "$archive"
+          mkdir -p "$destination"
+          tar -xzf "$archive" -C "$destination"
+          lib_file="$(find "$destination" -path '*/lib/libonnxruntime.dylib' -print -quit)"
+          if [ -z "$lib_file" ]; then
+            echo 'ONNX Runtime universal2 library was not found' >&2
+            exit 1
+          fi
+          lib_dir="$(dirname "$lib_file")"
+          lib_root="$(dirname "$lib_dir")"
+          echo "ORT_LIB_LOCATION=$lib_root" >> "$GITHUB_ENV"
+          echo 'ORT_LIB_PROFILE=lib' >> "$GITHUB_ENV"
 
       - name: Build and Package with Tauri Action
         uses: tauri-apps/tauri-action@v1
