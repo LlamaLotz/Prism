@@ -98,6 +98,27 @@ fn spawn(mut command: Command) -> Result<Child, String> {
     command.spawn().map_err(|e| format!("Could not start the bundled Notebook service: {e}"))
 }
 
+/// Rewrites a canonical path into the plain native form before it is handed to
+/// a bundled child process. `fs::canonicalize` returns verbatim paths
+/// (`\\?\C:\...`) on Windows, and the bundled SurrealDB datastore silently
+/// fails to initialize on them: it creates the database directory but writes no
+/// data, so Notebook can never open its database. Process arguments and the
+/// `PRISM_NOTEBOOK_DATA` environment variable therefore use this form, while
+/// every `std::fs` operation keeps using the canonical path.
+fn native_path(path: &Path) -> PathBuf {
+    #[cfg(windows)]
+    {
+        let text = path.to_string_lossy();
+        if let Some(rest) = text.strip_prefix(r"\\?\UNC\") {
+            return PathBuf::from(format!(r"\\{rest}"));
+        }
+        if let Some(rest) = text.strip_prefix(r"\\?\") {
+            return PathBuf::from(rest);
+        }
+    }
+    path.to_path_buf()
+}
+
 fn unused_port() -> Result<u16, String> {
     let socket = TcpListener::bind("127.0.0.1:0").map_err(|e| e.to_string())?;
     Ok(socket.local_addr().map_err(|e| e.to_string())?.port())
@@ -234,7 +255,7 @@ pub async fn notebook_start(app: tauri::AppHandle, state: State<'_, NotebookStat
     let identity_file = workspace.join("workspace-id");
     let identity = if identity_file.exists() { fs::read_to_string(&identity_file).map_err(|e| e.to_string())? }
         else { let id = Uuid::new_v4().to_string(); fs::write(&identity_file, &id).map_err(|e| e.to_string())?; id };
-    let data = workspace.join("data");
+    let data = native_path(&workspace).join("data");
     let existing = data.join("surreal.db").exists();
     let secret = credential(&identity, "encryption", !existing)?;
     let database_password = credential(&identity, "database", !existing)?;
@@ -249,7 +270,7 @@ pub async fn notebook_start(app: tauri::AppHandle, state: State<'_, NotebookStat
     if changing {
         let backup = workspace.join("backups").join(Uuid::new_v4().to_string());
         copy_tree(&data, &backup)?;
-        fs::write(&migration_pending, backup.to_string_lossy().as_bytes()).map_err(|e| e.to_string())?;
+        fs::write(&migration_pending, native_path(&backup).to_string_lossy().as_bytes()).map_err(|e| e.to_string())?;
     }
     fs::create_dir_all(&data).map_err(|e| e.to_string())?;
     let db_port = unused_port()?;
@@ -412,6 +433,19 @@ pub async fn notebook_read_vault_note(state: State<'_, NotebookState>, workspace
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    // A verbatim Windows path must never reach a bundled child process: the
+    // SurrealDB datastore cannot initialize on a `\\?\...` path, which leaves
+    // an empty database directory and blocks every Notebook startup.
+    fn child_process_paths_are_never_verbatim() {
+        assert_eq!(native_path(Path::new("/vault/.prism/notebook")), PathBuf::from("/vault/.prism/notebook"));
+        #[cfg(windows)]
+        {
+            assert_eq!(native_path(Path::new(r"\\?\C:\vault\.prism\notebook")), PathBuf::from(r"C:\vault\.prism\notebook"));
+            assert_eq!(native_path(Path::new(r"\\?\UNC\server\share\vault")), PathBuf::from(r"\\server\share\vault"));
+        }
+    }
+
     #[test]
     fn paths_cannot_escape_private_backend() {
         for bad in ["https://example.com", "//example.com/api", "/api/../health", "/api/%2e%2e/health", "/api/a\\b", "/api/a#b"] { assert!(api_path(bad).is_err(), "{bad}"); }

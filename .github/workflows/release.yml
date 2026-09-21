@@ -172,6 +172,43 @@ jobs:
           # A dot profile also enables ort-sys's copy-dylibs path for the DLL.
           "ORT_LIB_PROFILE=." | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
+      - name: Install ONNX Runtime for macOS
+        if: matrix.platform == 'macos-latest'
+        shell: bash
+        run: |
+          work="$RUNNER_TEMP/onnxruntime-macos"
+          mkdir -p "$work" src-tauri/onnxruntime
+          for arch in arm64 x86_64; do
+            curl --fail --location --retry 3 \
+              "https://github.com/microsoft/onnxruntime/releases/download/v1.18.1/onnxruntime-osx-$arch-1.18.1.tgz" \
+              --output "$work/$arch.tgz"
+            mkdir -p "$work/$arch"
+            tar -xzf "$work/$arch.tgz" -C "$work/$arch"
+          done
+
+          arm_lib="$(find "$work/arm64" -name 'libonnxruntime.1.18.1.dylib' -print -quit)"
+          x64_lib="$(find "$work/x86_64" -name 'libonnxruntime.1.18.1.dylib' -print -quit)"
+          if [ -z "$arm_lib" ] || [ -z "$x64_lib" ]; then
+            echo 'ONNX Runtime dylib not found in the downloaded macOS packages' >&2
+            exit 1
+          fi
+
+          # Fatten the dylib with lipo ourselves rather than shipping Microsoft's
+          # prebuilt universal2 artifact: lipo's output is page aligned, while the
+          # prebuilt fat binary can fail codesign with "slice is not page aligned".
+          # tauri.macos.conf.json copies this file into Prism.app/Contents/MacOS,
+          # which is exactly where ort's `load-dynamic` lookup resolves
+          # `libonnxruntime.dylib` relative to the executable.
+          lipo -create "$arm_lib" "$x64_lib" -output src-tauri/onnxruntime/libonnxruntime.dylib
+          lipo -info src-tauri/onnxruntime/libonnxruntime.dylib
+
+          # ort-sys only reaches its parcel.pyke.io download when neither
+          # pkg-config nor ORT_LIB_LOCATION is set, and the artifact it wants for
+          # aarch64-apple-darwin 404s. Pointing it at a local install keeps the
+          # build off that CDN; with load-dynamic enabled it does not link.
+          echo "ORT_LIB_LOCATION=$work/arm64" >> "$GITHUB_ENV"
+          echo 'ORT_LIB_PROFILE=lib' >> "$GITHUB_ENV"
+
       - name: Build and Package with Tauri Action
         uses: tauri-apps/tauri-action@v1
         env:
@@ -188,3 +225,20 @@ jobs:
           prerelease: false
           retryAttempts: 3
           args: ${{ matrix.platform == 'macos-latest' && '--target universal-apple-darwin -- --bin app' || '-- --bin app' }}
+
+      - name: Verify the bundled ONNX Runtime
+        if: matrix.platform == 'macos-latest'
+        shell: bash
+        run: |
+          # `load-dynamic` resolves the dylib next to the executable at runtime,
+          # so a missing file here means the shipped app would panic the first
+          # time it touches embeddings instead of failing the build.
+          app="$(find src-tauri/target -maxdepth 8 -name 'Prism.app' -type d | head -1)"
+          if [ -z "$app" ]; then
+            echo 'Prism.app not found - cannot verify the ONNX Runtime bundle' >&2
+            exit 1
+          fi
+          test -f "$app/Contents/MacOS/libonnxruntime.dylib" || {
+            echo "libonnxruntime.dylib missing from $app/Contents/MacOS" >&2
+            exit 1
+          }
