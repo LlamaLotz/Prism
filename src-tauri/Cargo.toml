@@ -43,9 +43,6 @@ memmap2 = "0.9"
 tempfile = "3.10"
 notify = "6.1"
 tokio = { version = "1", features = ["time", "sync", "macros"] }
-fastembed = "3.4"
-hnsw_rs = "0.3"
-rayon = "1.10"
 # Prism patch: vendored fastembed with the ONNX intra-op thread pool capped
 # at 2 threads. Stock fastembed spins up one thread per logical CPU, so the
 # embedding job that runs on every note save saturates all cores (~96% CPU
@@ -55,6 +52,9 @@ rayon = "1.10"
 # `Location` redirect headers (HF/CloudFront) are resolved against the
 # endpoint instead of failing with `RelativeUrlWithoutBase`. See
 # vendor/hf-hub/src/api/sync.rs.
+fastembed = { path = "vendor/fastembed", features = ["ort-download-binaries", "ort-copy-dylibs", "ort-load-dynamic", "online"] }
+hnsw_rs = "0.3"
+rayon = "1.10"
 [patch.crates-io]
 fastembed = { path = "vendor/fastembed" }
 hf-hub = { path = "vendor/hf-hub" }
