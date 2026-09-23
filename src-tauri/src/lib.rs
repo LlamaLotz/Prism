@@ -1694,6 +1694,8 @@ pub fn run() {
             knowledge::get_knowledge_blocks,
             knowledge::search::search_knowledge,
             knowledge::search::get_relations,
+            knowledge::retrieval::plan_retrieval,
+            knowledge::retrieval::get_context,
             knowledge::jobs::list_knowledge_jobs,
             knowledge::jobs::cancel_knowledge_job,
             knowledge::models::execute_model,

@@ -3,6 +3,7 @@ pub mod blocks;
 pub mod gateway;
 pub mod jobs;
 pub mod models;
+pub mod retrieval;
 pub mod schema;
 pub mod search;
 use rusqlite::{params, Connection, OptionalExtension};

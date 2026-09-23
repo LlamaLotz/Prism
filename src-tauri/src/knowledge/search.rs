@@ -32,14 +32,14 @@ pub struct SearchPage {
     pub degraded: Option<String>,
     pub next_offset: Option<usize>,
 }
-fn fts_query(text: &str) -> String {
+pub(crate) fn fts_query(text: &str) -> String {
     text.split_whitespace()
         .take(32)
         .map(|s| format!("\"{}\"", s.replace('"', "\"\"")))
         .collect::<Vec<_>>()
         .join(" AND ")
 }
-fn eligible(
+pub(crate) fn eligible(
     c: &Connection,
     path: &str,
     vault: &str,

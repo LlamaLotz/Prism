@@ -5,8 +5,9 @@ import {
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import { NoteFile, OmniRouteConfig, tauriAPI } from '../types';
-import { summarizeNote, suggestConnections, suggestMetadata, sendChatMessage } from '../services/apiService';
+import { summarizeNote, suggestConnections, suggestMetadata, sendChatMessage, sendChatMessageWithRetrieval } from '../services/apiService';
 import { buildChatSystemPrompt } from '../services/systemMessages';
+import type { Citation, RetrievedBlock } from '../services/knowledge';
 import { createErrorDetails, createUserErrorDetails, ErrorDetails } from '../utils/errors';
 
 interface AISidebarProps {
@@ -20,6 +21,9 @@ interface AISidebarProps {
 interface ChatMessage {
   role: 'user' | 'assistant';
   content: string;
+  citations?: Citation[];
+  degraded?: string | null;
+  retrievedBlocks?: RetrievedBlock[];
 }
 
 export const AISidebar: React.FC<AISidebarProps> = ({
@@ -81,8 +85,10 @@ export const AISidebar: React.FC<AISidebarProps> = ({
       // Add current message
       fullMessages.push({ role: 'user', content: trimmed });
 
-      const response = await sendChatMessage(config, fullMessages);
-      setMessages((prev) => [...prev, { role: 'assistant', content: response }]);
+      // Retrieval-augmented: vault-aware context (active note + linked + backlinks + semantic + tags) is injected server-side.
+      const activeForRetrieval = note ? { title: note.title, path: note.path, content: note.content } : null;
+      const { text: response, retrieval } = await sendChatMessageWithRetrieval(config, fullMessages, activeForRetrieval);
+      setMessages((prev) => [...prev, { role: 'assistant', content: response, citations: retrieval?.citations ?? undefined, degraded: retrieval?.degraded ?? null, retrievedBlocks: retrieval?.blocks ?? undefined }]);
     } catch (err: any) {
       showError(err, 'An error occurred.');
     } finally {
@@ -274,6 +280,23 @@ export const AISidebar: React.FC<AISidebarProps> = ({
                    {!isUser && <ReactMarkdown>{msg.content}</ReactMarkdown>}
                    {isUser && msg.content}
                  </div>
+                 {!isUser && msg.degraded && (
+                   <div className="mt-1 text-[10px] text-amber-400/80 bg-amber-950/20 border border-amber-900/40 rounded-lg px-2 py-1 max-w-full">{msg.degraded}</div>
+                 )}
+                 {!isUser && msg.citations && msg.citations.length > 0 && (
+                   <div className="mt-1.5 flex flex-wrap gap-1 max-w-full">
+                     {msg.citations.slice(0, 6).map((c, ci) => {
+                       const label = c.blockId ? `${c.title}#${c.blockId.slice(0, 6)}` : c.title || c.path.split('/').pop() || c.path;
+                       const hover = c.anchor ? `${c.path}#^${c.anchor}` : c.blockId ? `${c.path}#${c.blockId}` : c.path;
+                       return (
+                         <span key={ci} title={hover} onClick={() => msg.retrievedBlocks?.[ci] && onInsertText(`[[${c.path}]]`)} className="inline-flex items-center gap-1 text-[10px] font-medium px-2 py-0.5 rounded-full bg-slate-800 border border-slate-700 text-slate-300 hover:bg-slate-700 cursor-pointer transition-colors">
+                           <FileText className="w-3 h-3 shrink-0" />
+                           <span className="truncate max-w-[18ch]">{label}</span>
+                         </span>
+                       );
+                     })}
+                   </div>
+                 )}
               </div>
             );
           })
