@@ -42,18 +42,31 @@ def install():
     socket.socket.connect_ex = connect_ex
 
     import subprocess
+
     original_popen = subprocess.Popen
-    def popen(args, *positional, **kwargs):
-        if kwargs.get("shell") or isinstance(args, (str, bytes)):
-            raise PermissionError("Notebook shell execution is disabled")
-        name = os.path.basename(str(args[0])).lower().removesuffix(".exe")
-        if name.startswith("ffmpeg") or name == "ffprobe":
-            # A playlist may contain remote URLs even when its own path is local.
-            args = [args[0], "-protocol_whitelist", "file,pipe,fd", *args[1:]]
-        elif name not in ("uname", "tesseract", "pdftotext", "pdftoppm"):
-            raise PermissionError(f"Notebook subprocess is not approved: {name}")
-        return original_popen(args, *positional, **kwargs)
-    subprocess.Popen = popen
+
+    # On Windows, asyncio.windows_utils defines `class Popen(subprocess.Popen):` at
+    # import time. Replacing Popen with a plain function breaks that subclassing
+    # (`TypeError: function() argument 'code' must be code, not str`) and kills
+    # every import that transitively pulls in asyncio (uvicorn/anyio/httpcore).
+    # Keep Popen a real type by subclassing the original.
+    class GuardedPopen(original_popen):  # type: ignore[valid-type, misc]
+        def __init__(self, args, *positional, **kwargs):
+            if kwargs.get("shell") or isinstance(args, (str, bytes)):
+                raise PermissionError("Notebook shell execution is disabled")
+            try:
+                first = args[0] if isinstance(args, (list, tuple)) else args
+            except Exception:
+                first = ""
+            name = os.path.basename(str(first)).lower().removesuffix(".exe") if first else ""
+            if name.startswith("ffmpeg") or name == "ffprobe":
+                # A playlist may contain remote URLs even when its own path is local.
+                args = [first, "-protocol_whitelist", "file,pipe,fd", *list(args)[1:]]  # type: ignore[arg-type]
+            elif name not in ("uname", "tesseract", "pdftotext", "pdftoppm"):
+                raise PermissionError(f"Notebook subprocess is not approved: {name}")
+            super().__init__(args, *positional, **kwargs)
+
+    subprocess.Popen = GuardedPopen  # type: ignore[assignment]
 
     import httpx
     sync_send = httpx.Client.send
