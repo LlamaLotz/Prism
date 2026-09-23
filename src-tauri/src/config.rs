@@ -20,6 +20,8 @@ pub struct OmniRouteConfig {
     /// Provider id from the frontend API provider registry.
     pub provider: String,
     pub api_key: String,
+    #[serde(default)]
+    pub credential_ref: String,
     pub base_url: String,
     pub model: String,
     pub temperature: f32,
@@ -96,6 +98,8 @@ pub struct SystemConfig {
 #[serde(rename_all = "camelCase")]
 pub struct RuntimeConfig {
     #[serde(default)]
+    pub models: crate::knowledge::models::ModelSettings,
+    #[serde(default)]
     pub notebook: NotebookConfig,
     pub vault_path: String,
     pub ingestion_script: String,
@@ -111,6 +115,7 @@ impl Default for OmniRouteConfig {
         Self {
             provider: String::new(),
             api_key: String::new(),
+            credential_ref: String::new(),
             base_url: "https://api.omniroute.ai/v1".to_string(),
             model: "gpt-4o".to_string(),
             temperature: 0.7,
@@ -198,6 +203,7 @@ impl Default for NotebookConfig {
 impl Default for RuntimeConfig {
     fn default() -> Self {
         Self {
+            models: Default::default(),
             notebook: NotebookConfig::default(),
             vault_path: String::new(),
             ingestion_script: "python \"/Users/Shiver/Documents/Prism/Extractor Final/master_extractor.py\" --vault {vault_path}".to_string(),
@@ -232,9 +238,22 @@ pub fn save_runtime_config(app: &tauri::AppHandle, config: &RuntimeConfig) -> Re
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     }
+    let mut config = config.clone();
+    if config.omni_route.api_key.is_empty() && config.omni_route.credential_ref.is_empty() {
+        if let Some(previous) = load_runtime_config(app) {
+            if previous.omni_route.provider == config.omni_route.provider && previous.omni_route.base_url == config.omni_route.base_url { config.omni_route.credential_ref = previous.omni_route.credential_ref; }
+        }
+    }
+    migrate_key(&mut config.omni_route)?;
+    for provider in &mut config.models.providers { migrate_key(&mut provider.config)?; }
     let raw =
-        serde_json::to_string_pretty(config).map_err(|e| format!("Failed to serialize config: {e}"))?;
-    std::fs::write(&path, raw).map_err(|e| format!("Failed to write config: {e}"))
+        serde_json::to_string_pretty(&config).map_err(|e| format!("Failed to serialize config: {e}"))?;
+    use std::io::Write;
+    let mut temporary = tempfile::NamedTempFile::new_in(path.parent().ok_or("Settings directory missing")?).map_err(|e|e.to_string())?;
+    temporary.write_all(raw.as_bytes()).map_err(|e|e.to_string())?;
+    temporary.as_file().sync_all().map_err(|e|e.to_string())?;
+    temporary.persist(&path).map_err(|e|format!("Failed to replace settings: {e}"))?;
+    Ok(())
 }
 
 #[cfg(test)]
@@ -285,4 +304,21 @@ mod tests {
         assert_eq!(back.linking.embedding_threads, 1);
         assert_eq!(back.system.version_retention_days, 0);
     }
+}
+
+
+pub fn provider_key(config: &OmniRouteConfig) -> Result<String, String> {
+    if !config.credential_ref.is_empty() {
+        keyring::Entry::new("com.prism.app.models", &config.credential_ref).map_err(|_| "Credential store unavailable")?
+            .get_password().map_err(|_| "Provider credential unavailable; unlock the credential store or configure the provider again".into())
+    } else { Ok(config.api_key.clone()) }
+}
+
+fn migrate_key(config:&mut OmniRouteConfig)->Result<(),String>{
+ if config.api_key.is_empty(){return Ok(());}
+ let reference=uuid::Uuid::new_v4().to_string();
+ let entry=keyring::Entry::new("com.prism.app.models",&reference).map_err(|_|"Credential store unavailable")?;
+ entry.set_password(&config.api_key).map_err(|_|"Cannot save provider credential")?;
+ if entry.get_password().map_err(|_|"Cannot verify provider credential")?!=config.api_key{return Err("Credential verification failed".into());}
+ config.credential_ref=reference;config.api_key.clear();Ok(())
 }

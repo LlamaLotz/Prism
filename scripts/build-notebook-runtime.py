@@ -98,7 +98,7 @@ def main():
     run(__import__('sys').executable, ROOT / "scripts/patch-notebook-runtime.py", dest)
     env = {**os.environ, "PYTHONPATH": str(dest / "lib"), "TIKTOKEN_CACHE_DIR": str(dest / "tiktoken-cache")}
     run(python, "-c", "import tiktoken; tiktoken.get_encoding('o200k_base'); tiktoken.get_encoding('cl100k_base')", env=env)
-    manifest = {**PIN, "target": triple, "pythonExecutable": str(python.relative_to(dest)).replace('\\', '/'), "surrealExecutable": f"bin/{binary}"}
+    manifest = {**PIN, "knowledgeGateway": 1, "target": triple, "pythonExecutable": str(python.relative_to(dest)).replace('\\', '/'), "surrealExecutable": f"bin/{binary}"}
     (dest / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
     print(f"Runtime ready: {dest}")
 

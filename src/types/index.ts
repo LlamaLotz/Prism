@@ -60,6 +60,7 @@ export interface OmniRouteConfig {
   /** Provider id from the API provider registry (see apiProviders.ts). */
   provider: string;
   apiKey: string;
+  credentialRef?: string;
   baseUrl: string;
   model: string;
   /** Chat sampling temperature (0..2) sent with every AI request. */
@@ -91,6 +92,7 @@ export interface ReconstructedVersion {
 }
 
 export interface AppSettings {
+  models?: { privacy: 'strict_local' | 'ask_before_cloud' | 'hybrid' | 'cloud_allowed'; idleSeconds: number; routes: Record<string, string>; providers?: Array<{ id: string; name: string; config: OmniRouteConfig; capabilities: string[] }> };
   notebook: {
     embedByDefault: boolean;
     sourcePanelWidth: number;

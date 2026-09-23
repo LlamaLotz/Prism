@@ -9,6 +9,7 @@ use windows_core::Interface;
 #[cfg(target_os = "windows")]
 use std::os::windows::process::CommandExt;
 
+mod knowledge;
 mod config;
 mod db;
 mod engine;
@@ -39,12 +40,12 @@ pub struct AppState {
     /// Cached embedding-engine initialization result. Both success and failure
     /// are memoized so a broken model isn't re-initialized (and doesn't
     /// re-attempt network downloads) on every scan.
-    pub embeddings: Mutex<Option<Result<Arc<EmbeddingEngine>, String>>>,
+    pub embeddings: Arc<Mutex<Option<Result<Arc<EmbeddingEngine>, String>>>>,
     /// Serializes all ONNX inference (backfill + per-save embeds). fastembed's
     /// onnxruntime fans out across every core per session, so two concurrent
     /// sessions double the all-core spike; this lock guarantees exactly one
     /// inference job at a time.
-    pub embed_lock: Mutex<()>,
+    pub embed_lock: Arc<Mutex<()>>,
     /// Cached Aho-Corasick automaton (NoteLinker), rebuilt only when the vault
     /// dictionary changes instead of on every scan (per-keystroke-pause scans
     /// rebuild it today, which is pure CPU waste).
@@ -113,7 +114,7 @@ fn init_linker(
 #[tauri::command]
 fn get_vault_dictionary(app_handle: tauri::AppHandle) -> Result<Vec<(String, String)>, String> {
     let conn = db::init_db(&app_handle)?;
-    db::get_vault_dictionary(&conn)
+    knowledge::dictionary(&conn, &knowledge::current(&app_handle)?.vault_id)
 }
 
 #[tauri::command]
@@ -121,7 +122,10 @@ fn get_topic_groups(
     app_handle: tauri::AppHandle,
 ) -> Result<Vec<(String, Vec<(String, String)>)>, String> {
     let conn = db::init_db(&app_handle)?;
-    db::get_topic_groups(&conn)
+    let scope=knowledge::current(&app_handle)?;
+    let mut groups=db::get_topic_groups(&conn)?;
+    for (_,notes) in &mut groups {notes.retain(|(path,_)|Path::new(path).starts_with(&scope.root));}
+    groups.retain(|(_,notes)|!notes.is_empty());Ok(groups)
 }
 
 /// Model repo + files required by `fastembed` for `bge-base-en-v1.5`
@@ -260,7 +264,8 @@ fn get_embedding_engine(
 
     // Runtime-tunable embedding parameters (similarity threshold, threads,
     // batch size) come from the persisted config.
-    let runtime_config = config::load_runtime_config(app_handle).unwrap_or_default();
+    let mut runtime_config = config::load_runtime_config(app_handle).unwrap_or_default();
+    runtime_config.vault_path = knowledge::current(app_handle)?.root.to_string_lossy().to_string();
     let result = verify_model_cache(&cache_dir)
         .and_then(|_| EmbeddingEngine::new(&conn, cache_dir, &runtime_config).map_err(sanitize_embedding_error))
         .map(Arc::new);
@@ -294,16 +299,25 @@ pub fn embed_guard(state: &AppState) -> std::sync::MutexGuard<'_, ()> {
 
 /// Generates and stores a semantic embedding for a note (fire-and-forget on save).
 #[tauri::command]
-async fn generate_and_store_embedding(
-    state: tauri::State<'_, AppState>,
-    app_handle: tauri::AppHandle,
-    note_id: String,
-    content: String,
-) -> Result<(), String> {
-    let _lock = embed_guard(&state);
-    let engine = get_embedding_engine(&state, &app_handle)?;
-    let conn = db::init_db(&app_handle)?;
-    engine.generate_and_store(&conn, &note_id, &content)
+async fn generate_and_store_embedding(app_handle: tauri::AppHandle, note_id: String, content: String) -> Result<(), String> {
+    schedule_embedding(app_handle, note_id, content, false).await
+}
+async fn schedule_embedding(app: tauri::AppHandle, note_id: String, content: String, blocks: bool) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let key = format!("embed:{blocks}:{note_id}:{}", knowledge::blocks::hash(&content));
+        knowledge::jobs::run(&app, "EMBED", 10, &key, serde_json::json!({"path": note_id, "blocks": blocks}), |job| {
+            job.check()?;
+            let path = fs::canonicalize(&note_id).map_err(|e| e.to_string())?;
+            if !path.starts_with(&job.scope.root) { return Err("Note is outside the active vault".into()); }
+            if fs::read_to_string(&path).map_err(|e|e.to_string())? != content {return Err("Note changed before embedding".into());}
+            let state = app.state::<AppState>();
+            let engine = get_embedding_engine(&state, &app)?;
+            let conn = db::init_db(&app)?;
+            if blocks { engine.generate_and_store_blocks(&conn, &note_id, &content)?; }
+            else { engine.generate_and_store(&conn, &note_id, &content)?; }
+            job.progress(1.0)
+        })
+    }).await.map_err(|e|e.to_string())?
 }
 
 /// Returns the top-K conceptually related notes for a note (HNSW vector search).
@@ -321,16 +335,8 @@ async fn find_semantic_related_notes(
 
 /// Generates and stores block-level embeddings for a note (fire-and-forget).
 #[tauri::command]
-async fn generate_and_store_block_embeddings(
-    state: tauri::State<'_, AppState>,
-    app_handle: tauri::AppHandle,
-    note_id: String,
-    content: String,
-) -> Result<(), String> {
-    let _lock = embed_guard(&state);
-    let engine = get_embedding_engine(&state, &app_handle)?;
-    let conn = db::init_db(&app_handle)?;
-    engine.generate_and_store_blocks(&conn, &note_id, &content)
+async fn generate_and_store_block_embeddings(app_handle: tauri::AppHandle, note_id: String, content: String) -> Result<(), String> {
+    schedule_embedding(app_handle, note_id, content, true).await
 }
 
 /// Returns the top-K semantically matching blocks from other notes.
@@ -352,143 +358,38 @@ async fn find_block_related_notes(
 ///
 /// Notes are processed in bounded chunks so a large vault's contents are
 /// never all held in memory at once.
-const BACKFILL_NOTE_CHUNK: usize = 64;
-
 #[tauri::command]
-async fn backfill_embeddings(
-    state: tauri::State<'_, AppState>,
-    app_handle: tauri::AppHandle,
-) -> Result<usize, String> {
-    let _lock = embed_guard(&state);
-    let conn = db::init_db(&app_handle)?;
-
-    // Topic tags must reflect note content regardless of embedding state:
-    // re-extract @keyword mentions for every note so tags that no longer
-    // meet the @tag boundary rule (e.g. emails like contact@yahoo.com) or
-    // were removed by external edits never linger as ghost tags. Runs even
-    // if the model below fails to load.
-    {
-        let mut stmt = conn
-            .prepare("SELECT id, path FROM notes WHERE path != ''")
-            .map_err(|e| e.to_string())?;
-        let rows = stmt
-            .query_map([], |row| {
-                let id: String = row.get(0)?;
-                let path: String = row.get(1)?;
-                Ok((id, path))
-            })
-            .map_err(|e| e.to_string())?;
-        for row in rows {
-            let (id, path) = row.map_err(|e| e.to_string())?;
-            let content = std::fs::read_to_string(&path).unwrap_or_default();
-            let _ = db::sync_note_tags(&conn, &id, &content);
-        }
-    }
-
-    // Model unavailable (offline first run, one-time download pending): tags
-    // are already synced above, so report a clean no-op instead of failing the
-    // command. The sanitized reason is logged for diagnostics.
-    let engine = match get_embedding_engine(&state, &app_handle) {
-        Ok(engine) => engine,
-        Err(msg) => {
-            println!("[embeddings] backfill skipped: {msg}");
-            return Ok(0);
-        }
-    };
-
-    let mut total = 0usize;
-
-    // Note-level backfill: notes with no whole-note embedding yet.
-    {
-        let mut stmt = conn
-            .prepare(
-                "SELECT n.id, n.path FROM notes n
-                 LEFT JOIN embeddings e ON e.note_id = n.id
-                 WHERE e.note_id IS NULL AND n.path != ''",
-            )
-            .map_err(|e| e.to_string())?;
-        let rows = stmt
-            .query_map([], |row| {
-                let id: String = row.get(0)?;
-                let path: String = row.get(1)?;
-                Ok((id, path))
-            })
-            .map_err(|e| e.to_string())?;
-
-        let mut pending: Vec<(String, String)> = Vec::with_capacity(BACKFILL_NOTE_CHUNK);
-        for row in rows {
-            let (id, path) = row.map_err(|e| e.to_string())?;
-            // Skip oversized notes up front (metadata only) so multi-MB notes
-            // never get read into memory or embedded (see MAX_EMBED_CHARS).
-            let too_large = std::fs::metadata(&path)
-                .map(|m| m.len() > crate::engine::embeddings::MAX_EMBED_CHARS as u64)
-                .unwrap_or(false);
-            if too_large {
-                println!("[embeddings] skipping note backfill for oversized note: {path}");
-                continue;
+async fn backfill_embeddings(app_handle: tauri::AppHandle) -> Result<usize, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        knowledge::jobs::run(&app_handle, "EMBED_BACKFILL", 0, "embedding-backfill", serde_json::json!({}), |job| {
+            let conn = db::init_db(&app_handle)?;
+            let state = app_handle.state::<AppState>();
+            let engine = get_embedding_engine(&state, &app_handle)?;
+            let mut offset = 0; let mut total = 0;
+            loop {
+                job.check()?;
+                let entries: Vec<String> = {
+                    let mut stmt = conn.prepare("SELECT path FROM knowledge_notes WHERE vault_id=?1 AND deleted=0 ORDER BY id LIMIT 32 OFFSET ?2").map_err(|e|e.to_string())?;
+                    let rows = stmt.query_map(params![job.scope.vault_id, offset], |r|r.get(0)).map_err(|e|e.to_string())?;
+                    rows.collect::<Result<_,_>>().map_err(|e|e.to_string())?
+                };
+                if entries.is_empty() {break;}
+                offset += entries.len();
+                for path in entries {
+                    job.check()?;
+                    if fs::metadata(&path).map(|m|m.len() > engine::embeddings::MAX_EMBED_CHARS as u64).unwrap_or(true) {continue;}
+                    let content = fs::read_to_string(&path).map_err(|e|e.to_string())?;
+                    // Each note and inference batch releases the shared model lease.
+                    engine.generate_and_store(&conn, &path, &content)?;
+                    job.check()?;
+                    engine.generate_and_store_blocks(&conn, &path, &content)?;
+                    total += 1;
+                    job.yield_background()?;
+                }
             }
-            let content = std::fs::read_to_string(&path).unwrap_or_default();
-            if content.trim().is_empty() {
-                continue;
-            }
-            pending.push((id, content));
-            if pending.len() >= BACKFILL_NOTE_CHUNK {
-                total += engine.backfill(&conn, std::mem::take(&mut pending))?;
-            }
-        }
-        if !pending.is_empty() {
-            total += engine.backfill(&conn, pending)?;
-        }
-    }
-
-    // Block-level backfill: notes with no block embeddings yet, or notes whose
-    // existing (pre-cap) block count exceeds the per-note cap — those get
-    // re-split and re-embedded with the consolidated splitter.
-    {
-        let mut stmt = conn
-            .prepare(
-                "SELECT n.id, n.path FROM notes n
-                 LEFT JOIN (
-                    SELECT note_id, COUNT(*) AS cnt FROM block_embeddings GROUP BY note_id
-                 ) b ON b.note_id = n.id
-                 WHERE n.path != '' AND (b.note_id IS NULL OR b.cnt > ?1)",
-            )
-            .map_err(|e| e.to_string())?;
-        let cap = crate::engine::embeddings::MAX_BLOCKS_PER_NOTE as i64;
-        let rows = stmt
-            .query_map([cap], |row| {
-                let id: String = row.get(0)?;
-                let path: String = row.get(1)?;
-                Ok((id, path))
-            })
-            .map_err(|e| e.to_string())?;
-
-        let mut pending_blocks: Vec<(String, String)> =
-            Vec::with_capacity(BACKFILL_NOTE_CHUNK);
-        for row in rows {
-            let (id, path) = row.map_err(|e| e.to_string())?;
-            let too_large = std::fs::metadata(&path)
-                .map(|m| m.len() > crate::engine::embeddings::MAX_EMBED_CHARS as u64)
-                .unwrap_or(false);
-            if too_large {
-                println!("[embeddings] skipping block backfill for oversized note: {path}");
-                continue;
-            }
-            let content = std::fs::read_to_string(&path).unwrap_or_default();
-            if content.trim().is_empty() {
-                continue;
-            }
-            pending_blocks.push((id, content));
-            if pending_blocks.len() >= BACKFILL_NOTE_CHUNK {
-                total += engine.backfill_blocks(&conn, std::mem::take(&mut pending_blocks))?;
-            }
-        }
-        if !pending_blocks.is_empty() {
-            total += engine.backfill_blocks(&conn, pending_blocks)?;
-        }
-    }
-
-    Ok(total)
+            Ok(total)
+        })
+    }).await.map_err(|e|e.to_string())?
 }
 
 #[tauri::command]
@@ -741,7 +642,13 @@ async fn index_vault(
     vault_path: String,
 ) -> Result<engine::indexer::IndexedVault, String> {
     tauri::async_runtime::spawn_blocking(move || {
-        engine::indexer::index_vault(Path::new(&vault_path), app_handle)
+        knowledge::activate(&app_handle, Path::new(&vault_path))?;
+        knowledge::jobs::run(&app_handle, "INDEX", 80, "index-vault", serde_json::json!({"root":vault_path}), |job| {
+            job.check()?;
+            let result = engine::indexer::index_vault(Path::new(&vault_path), app_handle.clone(), Some(job))?;
+            knowledge::jobs::resume_embeddings(app_handle.clone());
+            Ok(result)
+        })
     })
     .await
     .map_err(|e| e.to_string())?
@@ -755,7 +662,8 @@ fn get_backlinks_for_note(
     note_path: String,
 ) -> Result<Vec<db::BacklinkInfo>, String> {
     let conn = db::init_db(&app_handle)?;
-    db::get_backlinks_for_note(&conn, &note_path)
+    let scope = knowledge::current(&app_handle)?;
+    knowledge::search::backlinks(&conn, &scope.vault_id, &note_path)
 }
 
 /// Serves the content-free knowledge graph (nodes + edges) from SQLite so the
@@ -763,7 +671,8 @@ fn get_backlinks_for_note(
 #[tauri::command]
 fn get_graph(app_handle: tauri::AppHandle) -> Result<db::GraphPayload, String> {
     let conn = db::init_db(&app_handle)?;
-    db::get_graph(&conn)
+    let scope = knowledge::current(&app_handle)?;
+    knowledge::search::graph(&conn, &scope.vault_id)
 }
 
 #[tauri::command]
@@ -774,6 +683,7 @@ fn write_file(
     content: String,
 ) -> Result<(), String> {
     let path = Path::new(&file_path);
+    knowledge::validate_path(&app_handle,path)?;
     if let Some(parent) = path.parent() {
         if !parent.exists() {
             fs::create_dir_all(parent).map_err(|e| e.to_string())?;
@@ -785,6 +695,8 @@ fn write_file(
     // cause a `vault-changed` echo back into the webview on every keystroke.
     suppress_self_write(path, SELF_WRITE_MASK_MS);
     fs::write(path, &content).map_err(|e| e.to_string())?;
+
+    knowledge::sync_file(&app_handle, path, &content)?;
 
     // The watcher is masked for app-initiated writes, so the applied-link
     // graph (which the D3 graph tab reads from) would otherwise go stale —
@@ -811,7 +723,7 @@ fn write_file(
         // autosave is pure CPU + write churn. The full vault index on open
         // still rebuilds their backlinks.
         if content.len() <= LARGE_NOTE_CHARS {
-            if let Ok(dictionary) = db::get_vault_dictionary(&conn) {
+            if let Ok(dictionary) = knowledge::current(&app_handle).and_then(|s|knowledge::dictionary(&conn,&s.vault_id)) {
                 let linker = cached_linker(&state, dictionary);
                 let mentions = linker.find_mentions(&content, Some(&file_path));
                 let _ = db::update_backlinks(&conn, &file_path, &mentions, &content);
@@ -1034,6 +946,7 @@ fn delete_file(app_handle: tauri::AppHandle, file_path: String) -> Result<(), St
     // graph rows here (notes, backlinks, links, embeddings) — otherwise the
     // deleted note would linger as a ghost node/edge in the graph tab.
     if let Ok(conn) = db::init_db(&app_handle) {
+        knowledge::remove(&conn, &file_path)?;
         let _ = conn.execute("DELETE FROM notes WHERE id = ?1", params![file_path]);
         let _ = conn.execute(
             "DELETE FROM backlinks WHERE source_path = ?1 OR target_path = ?1",
@@ -1051,10 +964,13 @@ fn delete_file(app_handle: tauri::AppHandle, file_path: String) -> Result<(), St
 }
 
 #[tauri::command]
-fn rename_file(old_path: String, new_path: String) -> Result<(), String> {
+fn rename_file(app_handle: tauri::AppHandle, old_path: String, new_path: String) -> Result<(), String> {
     let old = Path::new(&old_path);
     let new = Path::new(&new_path);
+    knowledge::validate_path(&app_handle,old)?;
+    knowledge::validate_path(&app_handle,new)?;
 
+    if new.exists() { return Err("A note already exists at the destination".into()); }
     if !old.exists() {
         return Err(format!("Source file not found: {old_path}"));
     }
@@ -1065,50 +981,46 @@ fn rename_file(old_path: String, new_path: String) -> Result<(), String> {
         }
     }
     fs::rename(old, new).map_err(|e| e.to_string())?;
+    let conn = db::init_db(&app_handle)?;
+    knowledge::move_path(&conn, &old_path, &new_path)?;
     Ok(())
 }
 
 #[tauri::command]
-fn run_ingestion_script(script_command: String, vault_path: String) -> Result<String, String> {
-    if script_command.trim().is_empty() {
-        return Err("No script command provided.".to_string());
-    }
-
-    let formatted_command = script_command.replace("{vault_path}", &vault_path);
-
-    #[cfg(target_os = "windows")]
-    let mut cmd = std::process::Command::new("cmd");
-    #[cfg(target_os = "windows")]
-    cmd.args(&["/C", &formatted_command]).creation_flags(0x08000000);
-
-    #[cfg(not(target_os = "windows"))]
-    let mut cmd = std::process::Command::new("sh");
-    #[cfg(not(target_os = "windows"))]
-    cmd.args(&["-c", &formatted_command]);
-
-    let output = cmd
-        .current_dir(&vault_path)
-        .output()
-        .map_err(|e| format!("Failed to execute process: {}", e))?;
-
-    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-
-    if output.status.success() {
-        let out = if stdout.is_empty() {
-            "Script executed successfully with no output.".to_string()
-        } else {
-            stdout
-        };
-        Ok(out)
-    } else {
-        Err(format!("Execution error:\n{}\n{}", stdout, stderr))
-    }
+async fn run_ingestion_script(app: tauri::AppHandle, script_command: String, vault_path: String) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let key=knowledge::blocks::hash(&script_command);
+        knowledge::jobs::run(&app,"EXTRACT",10,&key,serde_json::json!({"custom":true}),|job| {
+            knowledge::models::authorize(&app,"Custom ingestion subprocess","EXTRACT",&script_command,false,false)?;
+            if script_command.trim().is_empty(){return Err("No script command provided".into());}
+            knowledge::validate_path(&app,Path::new(&vault_path))?;
+            let formatted=script_command.replace("{vault_path}",&vault_path);
+            #[cfg(windows)] let mut cmd={let mut c=Command::new("cmd");c.args(["/C",&formatted]).creation_flags(0x08000000);c};
+            #[cfg(not(windows))] let mut cmd={let mut c=Command::new("sh");c.args(["-c",&formatted]);c};
+            #[cfg(unix)] {use std::os::unix::process::CommandExt;cmd.process_group(0);}
+            let mut child=cmd.current_dir(&vault_path).stdout(Stdio::piped()).stderr(Stdio::piped()).spawn().map_err(|e|e.to_string())?;
+            let stdout=capture_ingestion_output(child.stdout.take().unwrap());
+            let stderr=capture_ingestion_output(child.stderr.take().unwrap());
+            let status=loop {
+                if job.check().is_err() || config::load_runtime_config(&app).unwrap_or_default().models.privacy==knowledge::models::PrivacyMode::StrictLocal {stop_ingestion_child(&mut child);return Err("Extraction cancelled".into());}
+                if let Some(status)=child.try_wait().map_err(|e|e.to_string())?{break status;}
+                std::thread::sleep(std::time::Duration::from_millis(100));
+            };
+            let out=String::from_utf8_lossy(&stdout.join().unwrap_or_default()).to_string();
+            let err=String::from_utf8_lossy(&stderr.join().unwrap_or_default()).to_string();
+            if status.success(){Ok(out)}else{Err(format!("Extraction failed: {out}\n{err}"))}
+        })
+    }).await.map_err(|e|e.to_string())?
+}
+fn capture_ingestion_output(mut pipe:impl std::io::Read+Send+'static)->std::thread::JoinHandle<Vec<u8>> {
+    std::thread::spawn(move||{let mut output=Vec::new();let mut bytes=[0;8192];loop{match pipe.read(&mut bytes){Ok(0)|Err(_)=>break,Ok(n)=>{let remaining=(4*1024*1024usize).saturating_sub(output.len());output.extend_from_slice(&bytes[..n.min(remaining)]);}}}output})
+}
+fn stop_ingestion_child(child:&mut std::process::Child){
+    #[cfg(unix)] unsafe{libc::kill(-(child.id() as i32),libc::SIGTERM);}
+    #[cfg(windows)] {let _=Command::new("taskkill").args(["/PID",&child.id().to_string(),"/T","/F"]).creation_flags(0x08000000).status();}
+    let _=child.kill();let _=child.wait();
 }
 
-// Helpers to discover a supported Python executable. The extractor itself
-// can repair an old ~/.prism/env, but it needs a supported system interpreter
-// to recreate that environment when Python 3.9 is all that is available.
 fn python_candidates() -> Vec<String> {
     #[cfg(target_os = "windows")]
     return vec![
@@ -1268,10 +1180,15 @@ async fn run_builtin_extractor_async(
     value: String,
     yt_method: String
 ) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let key=knowledge::blocks::hash(&format!("{ingest_type}:{value}:{yt_method}"));
+        knowledge::jobs::run(&app,"EXTRACT",10,&key,serde_json::json!({"type":ingest_type}),|job| {
     if vault_path.trim().is_empty() {
         return Err("Please select a note vault folder first.".to_string());
     }
 
+    knowledge::validate_path(&app,Path::new(&vault_path))?;
+    knowledge::models::authorize(&app,"Document extractor subprocess","EXTRACT",&value,false,false)?;
     let script_path = resolve_resource_file(&app, "Extractor Final/master_extractor.py");
     if !script_path.exists() {
         return Err(format!("Extractor script not found at path: {:?}", script_path));
@@ -1321,6 +1238,7 @@ async fn run_builtin_extractor_async(
     #[cfg(target_os = "windows")]
     cmd.creation_flags(0x08000000);
 
+    #[cfg(unix)] {use std::os::unix::process::CommandExt;cmd.process_group(0);}
     let mut child = cmd
         .current_dir(&vault_path)
         .stdout(Stdio::piped())
@@ -1353,13 +1271,19 @@ async fn run_builtin_extractor_async(
         }
     });
 
-    let status = child.wait().map_err(|e| format!("Process wait failed: {}", e))?;
+    let status=loop {
+        if job.check().is_err() || config::load_runtime_config(&app).unwrap_or_default().models.privacy==knowledge::models::PrivacyMode::StrictLocal {stop_ingestion_child(&mut child);return Err("Extraction cancelled".into());}
+        if let Some(status)=child.try_wait().map_err(|e|e.to_string())?{break status;}
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    };
     
     if status.success() {
         Ok("Extraction completed successfully.".to_string())
     } else {
         Err("Extraction failed. Check logs for details.".to_string())
     }
+        })
+    }).await.map_err(|e|e.to_string())?
 }
 
 #[tauri::command]
@@ -1514,7 +1438,7 @@ fn append_app_log(app: tauri::AppHandle, level: String, message: String) -> Resu
 
 #[tauri::command]
 fn format_note_content(content: String) -> Result<String, String> {
-    Ok(crate::engine::formatter::format_note_content(&content))
+    Ok(knowledge::models::format(&content))
 }
 
 #[tauri::command]
@@ -1584,7 +1508,12 @@ async fn get_all_reconstructed_versions(
 /// localStorage settings before saving.
 #[tauri::command]
 fn get_runtime_config(app: tauri::AppHandle) -> Option<config::RuntimeConfig> {
-    config::load_runtime_config(&app)
+    let mut cfg = config::load_runtime_config(&app)?;
+    if !cfg.omni_route.api_key.is_empty() || cfg.models.providers.iter().any(|p|!p.config.api_key.is_empty()) {
+        if config::save_runtime_config(&app, &cfg).is_ok() { cfg = config::load_runtime_config(&app)?; }
+        else { cfg.omni_route.api_key.clear(); for provider in &mut cfg.models.providers {provider.config.api_key.clear();} }
+    }
+    Some(cfg)
 }
 
 /// Persists the runtime config to disk and hot-applies the live-tunable
@@ -1634,7 +1563,9 @@ async fn relaunch_app(app: tauri::AppHandle, notebook_state: tauri::State<'_, no
 /// and returns the top results. The response body is parsed with the scraper
 /// crate — the HTML structure is simple enough for CSS selectors.
 #[tauri::command]
-async fn web_search(query: String) -> Result<Vec<WebSearchResult>, String> {
+async fn web_search(app: tauri::AppHandle, query: String) -> Result<Vec<WebSearchResult>, String> {
+    let consent_query = query.clone();
+    tauri::async_runtime::spawn_blocking(move || knowledge::models::authorize(&app, "https://html.duckduckgo.com", "WEB_SEARCH", &consent_query, false, false)).await.map_err(|e|e.to_string())??;
     let url = format!(
         "https://html.duckduckgo.com/html/?q={}",
         urlencoding::encode(&query)
@@ -1686,6 +1617,7 @@ async fn web_search(query: String) -> Result<Vec<WebSearchResult>, String> {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .manage(knowledge::KnowledgeRuntime::default())
         .manage(notebook::NotebookState::default())
         // Rust-backed fetch (reqwest) so the AI Co-Pilot's OpenAI SDK calls
         // don't depend on the webview's network stack (see Cargo.toml note).
@@ -1700,8 +1632,8 @@ pub fn run() {
                 db_path: Mutex::new(None),
                 watcher_path: Mutex::new(None),
                 watcher_stop: Mutex::new(None),
-                embeddings: Mutex::new(None),
-                embed_lock: Mutex::new(()),
+                embeddings: app.state::<knowledge::KnowledgeRuntime>().embeddings.clone(),
+                embed_lock: app.state::<knowledge::KnowledgeRuntime>().embed_lock.clone(),
                 linker_cache: Mutex::new(None),
             });
 
@@ -1730,6 +1662,17 @@ pub fn run() {
                     }
                 });
             }
+            if let Ok(conn) = db::init_db(app.handle()) { knowledge::jobs::recover(&conn).map_err(std::io::Error::other)?; }
+            let lifecycle_app = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                loop {
+                    tokio::time::sleep(std::time::Duration::from_secs(30)).await;
+                    let idle = config::load_runtime_config(&lifecycle_app).unwrap_or_default().models.idle_seconds.max(30);
+                    let state = lifecycle_app.state::<AppState>();
+                    let mut slot = state.embeddings.lock().unwrap();
+                    if slot.as_ref().and_then(|r|r.as_ref().ok()).is_some_and(|engine| Arc::strong_count(engine)==1 && engine.idle_for().as_secs()>=idle) { *slot=None; }
+                }
+            });
             // Build the native application menu bar (File / Edit / View).
             // On macOS this renders in the system menu bar even with decorations off;
             // on Windows it provides keyboard-shortcut handling.
@@ -1747,7 +1690,17 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            knowledge::knowledge_snapshot,
+            knowledge::get_knowledge_blocks,
+            knowledge::search::search_knowledge,
+            knowledge::search::get_relations,
+            knowledge::jobs::list_knowledge_jobs,
+            knowledge::jobs::cancel_knowledge_job,
+            knowledge::models::execute_model,
+            knowledge::models::list_approvals,
+            knowledge::models::resolve_approval,
             notebook::notebook_start,
+            notebook::notebook_import_copilot,
             notebook::notebook_stop,
             notebook::notebook_status,
             notebook::notebook_request,

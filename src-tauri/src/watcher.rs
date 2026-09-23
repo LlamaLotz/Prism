@@ -52,6 +52,7 @@ pub fn start_vault_watcher(
     tauri::async_runtime::spawn(async move {
         let _watcher = watcher;
         let mut pending: HashMap<PathBuf, EventKind> = HashMap::new();
+        let mut renames = Vec::new();
 
         loop {
             tokio::select! {
@@ -59,7 +60,9 @@ pub fn start_vault_watcher(
                 event = rx.recv() => {
                     match event {
                         Some(ev) => {
-                            if let Some(path) = ev.paths.first().cloned() {
+                            if matches!(ev.kind, EventKind::Modify(ModifyKind::Name(RenameMode::Both))) && ev.paths.len() == 2 {
+                                renames.push((ev.paths[0].clone(), ev.paths[1].clone()));
+                            } else if let Some(path) = ev.paths.first().cloned() {
                                 pending.insert(path, ev.kind);
                             }
                         }
@@ -70,10 +73,12 @@ pub fn start_vault_watcher(
                 // `if !pending.is_empty()` guard arms the timer only when work
                 // exists, so the branch can never fire (and wake the task) while
                 // the watcher is idle.
-                _ = tokio::time::sleep(Duration::from_millis(DEBOUNCE_MS)), if !pending.is_empty() => {
+                _ = tokio::time::sleep(Duration::from_millis(DEBOUNCE_MS)), if !pending.is_empty() || !renames.is_empty() => {
                     let batch = std::mem::take(&mut pending);
+                    let paired = std::mem::take(&mut renames);
                     let handle = app_handle.clone();
                     tauri::async_runtime::spawn_blocking(move || {
+                        for (from,to) in paired {if is_markdown(&from) && is_markdown(&to) {handle_rename(&handle,&from,&to);}}
                         process_batch(&handle, batch);
                     });
                 }
@@ -105,17 +110,10 @@ fn process_batch(app_handle: &AppHandle, batch: HashMap<PathBuf, EventKind>) {
         }
     }
 
-    // Pair rename From/To events (a rename emits both within the same batch).
-    let pairs = rename_from.len().min(rename_to.len());
-    for i in 0..pairs {
-        handle_rename(app_handle, &rename_from[i], &rename_to[i]);
-    }
-    for p in rename_from.iter().skip(pairs) {
-        handle_remove(app_handle, p);
-    }
-    for p in rename_to.iter().skip(pairs) {
-        handle_change(app_handle, p);
-    }
+    // Split events have no reliable pairing after coalescing. Never guess based
+    // on HashMap iteration order; canonical content matching handles unique moves.
+    for p in &rename_from { handle_remove(app_handle, p); }
+    for p in &rename_to { handle_change(app_handle, p); }
 
     for p in &removes {
         handle_remove(app_handle, p);
@@ -146,13 +144,14 @@ fn handle_change(app_handle: &AppHandle, path: &Path) {
         return;
     };
 
+    if let Err(error) = crate::knowledge::sync_file(app_handle, path, &content) { log::error!("Knowledge update: {error}"); }
     let aliases = extract_aliases(&content);
     if db::upsert_note(&conn, &path_str, &title, &path_str, &aliases).is_err() {
         return;
     }
     let _ = db::sync_note_tags(&conn, &path_str, &content);
 
-    if let Ok(dictionary) = db::get_vault_dictionary(&conn) {
+    if let Ok(dictionary) = crate::knowledge::current(app_handle).and_then(|s|crate::knowledge::dictionary(&conn,&s.vault_id)) {
         let linker = {
             let state = app_handle.state::<crate::AppState>();
             crate::cached_linker(&state, dictionary)
@@ -177,6 +176,7 @@ fn handle_remove(app_handle: &AppHandle, path: &Path) {
     let path_str = path.to_string_lossy().to_string();
 
     if let Ok(conn) = db::init_db(app_handle) {
+        let _ = crate::knowledge::remove(&conn, &path_str);
         let _ = conn.execute("DELETE FROM notes WHERE id = ?1", params![path_str]);
         let _ = conn.execute(
             "DELETE FROM backlinks WHERE source_path = ?1 OR target_path = ?1",
@@ -212,6 +212,8 @@ fn handle_rename(app_handle: &AppHandle, from: &Path, to: &Path) {
     let Ok(conn) = db::init_db(app_handle) else {
         return;
     };
+
+    let _ = crate::knowledge::move_path(&conn, &old_path, &new_path);
 
     // 1. Find every source note that links to the old note
     let mut sources: Vec<String> = Vec::new();

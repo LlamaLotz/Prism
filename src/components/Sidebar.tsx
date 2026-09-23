@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import { NoteFile, tauriAPI } from '../types';
 import { useIngestion } from '../services/ingestionStore';
+import { knowledge, type SearchPage } from '../services/knowledge';
 import { getAppIcon } from '../services/appIcon';
 
 interface SidebarProps {
@@ -218,13 +219,28 @@ export const Sidebar: React.FC<SidebarProps> = ({
     }
   };
 
-  const filteredNotes = useMemo(() =>
-    notes.filter((note) =>
-      note.title.toLowerCase().includes(search.toLowerCase()) ||
-      (note.content ?? '').toLowerCase().includes(search.toLowerCase())
-    ),
-    [notes, search]
-  );
+  const [searchResult, setSearchResult] = useState<SearchPage | null>(null);
+  const [searchError, setSearchError] = useState('');
+  const searchRevision = useRef(0);
+  const [loadingMore, setLoadingMore] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    ++searchRevision.current; setLoadingMore(false);
+    setSearchResult(null); setSearchError('');
+    if (!search.trim()) return;
+    const timer = window.setTimeout(() => {
+      void knowledge.search(search).then(result => { if (!cancelled) setSearchResult(result); })
+        .catch(error => { if (!cancelled) setSearchError(String(error)); });
+    }, 180);
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [search, notes]);
+  const filteredNotes = useMemo(() => {
+    if (!search.trim()) return notes;
+    const byPath = new Map(notes.map(note => [note.path, note]));
+    return (searchResult?.items ?? []).flatMap(hit => {
+      const note = byPath.get(hit.path); return note ? [note] : [];
+    });
+  }, [notes, search, searchResult]);
 
   const { rootNotes, folders } = useMemo(
     () => buildFolderTree(notes, foldersProp),
@@ -626,10 +642,19 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </>
         ) : filteredNotes.length === 0 ? (
           <div className="text-center text-xs text-slate-500 py-8">
-            No notes match your search.
+            {searchError || searchResult?.degraded || (!searchResult ? 'Searching…' : 'No notes match your search.')}
           </div>
         ) : (
-          filteredNotes.map((note) => renderNote(note, 0))
+          <>
+            {searchResult?.degraded && <p className="px-2 py-1 text-xs text-amber-300" role="status">{searchResult.degraded}</p>}
+            {filteredNotes.map((note) => renderNote(note, 0))}
+            {searchResult?.nextOffset != null && <button disabled={loadingMore} className="w-full p-2 text-xs underline" onClick={() => {
+              const text = search; const revision = searchRevision.current; setLoadingMore(true);
+              void knowledge.search(text, searchResult.nextOffset!).then(page => {
+                if (revision === searchRevision.current) setSearchResult(previous => previous ? { ...page, items: [...previous.items, ...page.items] } : page);
+              }).catch(e => {if (revision === searchRevision.current) setSearchError(String(e));}).finally(() => {if (revision === searchRevision.current) setLoadingMore(false);});
+            }}>Load more results</button>}
+          </>
         )}
       </div>
     </div>

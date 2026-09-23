@@ -228,6 +228,8 @@ fn migrate_backlinks(conn: &Connection) -> Result<(), String> {
 }
 
 fn init_schema(conn: &Connection) -> Result<(), String> {
+    conn.execute_batch("PRAGMA busy_timeout = 5000").map_err(|e| e.to_string())?;
+    crate::knowledge::schema::migrate(conn)?;
     migrate_backlinks(conn)?;
 
     conn.execute_batch(
@@ -485,7 +487,7 @@ pub fn rename_folder_paths(
     new_prefix: &str,
 ) -> Result<(), String> {
     let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
-    tx.execute_batch("PRAGMA foreign_keys = OFF").map_err(|e| e.to_string())?;
+    tx.execute_batch("PRAGMA defer_foreign_keys = ON").map_err(|e| e.to_string())?;
 
     // Prefix-match without LIKE (paths can contain `%`/`_`).
     let re_point = |tx: &rusqlite::Transaction, table: &str, col: &str| -> Result<(), String> {
@@ -500,6 +502,7 @@ pub fn rename_folder_paths(
         Ok(())
     };
 
+    re_point(&tx, "knowledge_notes", "path")?;
     re_point(&tx, "notes", "id")?;
     re_point(&tx, "notes", "path")?;
     re_point(&tx, "aliases", "note_id")?;

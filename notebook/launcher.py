@@ -16,6 +16,9 @@ os.environ["TIKTOKEN_CACHE_DIR"] = str(runtime / "tiktoken-cache")
 os.environ["PATH"] = str(runtime / "bin") + os.pathsep + os.environ.get("PATH", "")
 os.environ["IMAGEIO_FFMPEG_EXE"] = str(runtime / "bin" / ("ffmpeg.exe" if os.name == "nt" else "ffmpeg"))
 
+from prism_gateway import install
+install()
+
 if sys.argv[1] == "api":
     import uvicorn
     uvicorn.run("prism_api:app", host="127.0.0.1", port=int(sys.argv[2]), access_log=False, log_level="warning")

@@ -991,6 +991,25 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
             )}
 
             {/* --------------------------- AI ---------------------------- */}
+            {section === 'ai' && <section className="mb-6 rounded-lg border border-neutral-700 p-4">
+              <h3 className="mb-3 font-semibold">Privacy &amp; model runtime</h3>
+              <label className="block text-sm">External content processing
+                <select className="mt-2 block w-full rounded border border-neutral-600 bg-neutral-900 p-2" value={draft.models?.privacy ?? 'ask_before_cloud'} onChange={e => setDraft(previous => ({ ...previous, models: { idleSeconds: 300, routes: {}, ...previous.models, privacy: e.target.value as NonNullable<AppSettings['models']>['privacy'] } }))}>
+                  <option value="strict_local">Strict Local</option><option value="ask_before_cloud">Ask Before Cloud</option><option value="hybrid">Hybrid — explicit task routes only</option><option value="cloud_allowed">Cloud Allowed</option>
+                </select>
+              </label>
+              <label className="mt-3 block text-sm">Unload idle embedding model after (seconds)
+                <input type="number" min={30} className="ml-2 w-24 rounded bg-neutral-900 p-2" value={draft.models?.idleSeconds ?? 300} onChange={e => setDraft(previous => ({...previous, models: {privacy: 'ask_before_cloud', routes: {}, ...previous.models, idleSeconds: Math.max(30, Number(e.target.value) || 300)}}))} />
+              </label>
+              <button type="button" className="mt-4 rounded border border-neutral-600 px-3 py-2 text-sm" disabled={!draft.omniRoute.model || !draft.omniRoute.baseUrl} onClick={() => setDraft(previous => ({...previous, models: {privacy: 'ask_before_cloud', idleSeconds: 300, routes: {}, ...previous.models, providers: [...(previous.models?.providers ?? []), {id: crypto.randomUUID(), name: `${previous.omniRoute.provider}: ${previous.omniRoute.model}`, config: {...previous.omniRoute}, capabilities: ['generation']}]}}))}>Save current provider for task routing</button>
+              <div className="mt-3 grid gap-2">{['CHAT', 'SUMMARIZE', 'TAG', 'CLASSIFY'].map(task => <label key={task} className="flex items-center justify-between gap-3 text-sm">{task.toLowerCase()}
+                <select className="max-w-64 rounded bg-neutral-900 p-2" value={draft.models?.routes[task] ?? ''} onChange={e => setDraft(previous => { const routes = {...previous.models?.routes}; if (e.target.value) routes[task] = e.target.value; else delete routes[task]; return {...previous, models: {privacy: 'ask_before_cloud', idleSeconds: 300, ...previous.models, routes}}; })}>
+                  <option value="">Inherit current provider</option>{draft.models?.providers?.map(provider => <option key={provider.id} value={provider.id}>{provider.name}</option>)}
+                </select>
+              </label>)}</div>
+              <p className="mt-2 text-xs text-neutral-400">Embeddings: Prism Local · Formatting: deterministic local</p>
+              <p className="mt-2 text-xs text-neutral-400">Applies to Prism AI and the managed Notebook gateway. Localhost gateways may forward to cloud and require approval too.</p>
+            </section>}
             {section === 'ai' && (
               <div>
                 <SectionTitle hint="Configure AI provider and model for the Co-Pilot sidebar panel.">

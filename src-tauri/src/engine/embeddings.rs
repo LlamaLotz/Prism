@@ -417,7 +417,11 @@ fn excluded_note_ids(
 
 /// The semantic engine: shared model (thread-safe inference) + mutable index.
 pub struct EmbeddingEngine {
+    inference: Mutex<()>,
+    foreground_waiters: std::sync::atomic::AtomicUsize,
+    last_used: Mutex<std::time::Instant>,
     model: TextEmbedding,
+    model_signature: String,
     index: Mutex<EmbeddingIndex>,
     blocks: Mutex<Vec<BlockEntry>>,
     /// Runtime-tunable similarity threshold (was the MIN_SIMILARITY_SCORE
@@ -476,6 +480,8 @@ impl EmbeddingEngine {
         };
 
         let model = TextEmbedding::try_new(options).map_err(|e| e.to_string())?;
+        let revision=std::fs::read_to_string(model_repo_dir.join("refs/main")).unwrap_or_default();
+        let model_signature=format!("{MODEL_SIGNATURE}:{}",if revision.trim().is_empty(){"unversioned"}else{revision.trim()});
         println!("[embeddings] ONNX session loaded in {:?}", load_start.elapsed());
 
         // Detect a vector-dimension change (e.g. a model swap): every stored
@@ -510,7 +516,7 @@ impl EmbeddingEngine {
                     let _ = clear_note_embedding(conn, note_id);
                     false
                 } else {
-                    true
+                    known_model(conn, note_id, "note", &model_signature) && std::path::Path::new(note_id).starts_with(&config.vault_path)
                 }
             })
             .collect();
@@ -519,7 +525,7 @@ impl EmbeddingEngine {
 
         let blocks = load_all_block_embeddings(conn)?
             .into_iter()
-            .filter(|(note_id, _, _, _)| !is_empty_note(conn, note_id))
+            .filter(|(note_id, _, _, _)| !is_empty_note(conn, note_id) && known_model(conn, note_id, "block", &model_signature) && std::path::Path::new(note_id).starts_with(&config.vault_path))
             .map(|(note_id, block_id, _text, vector)| BlockEntry {
                 note_id,
                 block_id,
@@ -528,7 +534,11 @@ impl EmbeddingEngine {
             .collect();
 
         Ok(EmbeddingEngine {
+            inference: Mutex::new(()),
+            foreground_waiters: std::sync::atomic::AtomicUsize::new(0),
+            last_used: Mutex::new(std::time::Instant::now()),
             model,
+            model_signature,
             index: Mutex::new(index),
             blocks: Mutex::new(blocks),
             min_similarity: Mutex::new(min_similarity),
@@ -538,6 +548,26 @@ impl EmbeddingEngine {
     }
 
     /// Current similarity threshold used to gate semantic matches.
+    pub fn idle_for(&self) -> std::time::Duration {self.last_used.lock().unwrap().elapsed()}
+
+    pub fn search_text(&self, text: &str, limit: usize) -> Result<Vec<SemanticMatch>, String> {
+        use std::sync::atomic::Ordering;
+        self.foreground_waiters.fetch_add(1,Ordering::SeqCst);
+        let lease=self.inference.lock().unwrap();
+        self.foreground_waiters.fetch_sub(1,Ordering::SeqCst);
+        *self.last_used.lock().unwrap()=std::time::Instant::now();
+        let vector=self.model.embed(vec![text.to_string()],None).map_err(|e|e.to_string())?.pop().ok_or("Model returned no embedding")?;
+        drop(lease);
+        Ok(self.index.lock().unwrap().search(&vector,limit.min(1000),""))
+    }
+    fn yield_to_foreground(&self)->Result<(),String>{
+        while self.foreground_waiters.load(std::sync::atomic::Ordering::SeqCst)>0 {
+            crate::knowledge::jobs::checkpoint()?;
+            std::thread::sleep(std::time::Duration::from_millis(1));
+        }
+        Ok(())
+    }
+
     pub fn min_similarity(&self) -> f32 {
         *self.min_similarity.lock().unwrap()
     }
@@ -563,6 +593,10 @@ impl EmbeddingEngine {
     fn embed_serial(&self, texts: Vec<String>) -> Result<Vec<Vec<f32>>, String> {
         let mut out = Vec::with_capacity(texts.len());
         for chunk in texts.chunks(BLOCK_EMBED_BATCH) {
+            crate::knowledge::jobs::checkpoint()?;
+            self.yield_to_foreground()?;
+            let _lease = self.inference.lock().unwrap();
+            *self.last_used.lock().unwrap() = std::time::Instant::now();
             let batch = self
                 .model
                 .embed(chunk.to_vec(), Some(chunk.len()))
@@ -575,6 +609,10 @@ impl EmbeddingEngine {
     /// Generates a 768-dim embedding for `text` (no index lock held during
     /// inference so searches are never blocked by embedding work).
     pub fn generate_embedding(&self, text: &str) -> Result<Vec<f32>, String> {
+        crate::knowledge::jobs::checkpoint()?;
+        self.yield_to_foreground()?;
+        let _lease = self.inference.lock().unwrap();
+        *self.last_used.lock().unwrap() = std::time::Instant::now();
         let mut embeddings = self
             .model
             .embed(vec![text.to_string()], None)
@@ -620,13 +658,16 @@ impl EmbeddingEngine {
         let hash = fnv1a64(content.as_bytes());
         {
             let memo = self.last_embedded_hash.lock().unwrap();
-            if memo.get(note_id) == Some(&hash) {
+            if memo.get(note_id) == Some(&hash) && input_matches(conn,note_id,"note",content,&self.model_signature) {
                 return Ok(());
             }
         }
 
         let vector = self.generate_embedding(content)?;
+        crate::knowledge::jobs::checkpoint()?;
+        ensure_current(note_id, content)?;
         save_note_embedding(conn, note_id, &vector)?;
+        provenance(conn, note_id, "note", content,&self.model_signature)?;
         self.index.lock().unwrap().upsert(note_id, vector);
         self.last_embedded_hash.lock().unwrap().insert(note_id.to_string(), hash);
         Ok(())
@@ -936,7 +977,7 @@ impl EmbeddingEngine {
         let hash = fnv1a64(content.as_bytes());
         {
             let memo = self.last_embedded_hash.lock().unwrap();
-            if memo.get(note_id) == Some(&hash) {
+            if memo.get(note_id) == Some(&hash) && input_matches(conn,note_id,"block",content,&self.model_signature) {
                 return Ok(());
             }
         }
@@ -950,7 +991,7 @@ impl EmbeddingEngine {
         // small edit to a large note no longer re-embeds (and rewrites) all
         // of its blocks, which was the main CPU/temp spike on save.
         let existing: HashMap<(String, String), Vec<f32>> =
-            load_block_embeddings_for_note(conn, note_id)?
+            if known_model(conn, note_id, "block",&self.model_signature) {load_block_embeddings_for_note(conn, note_id)?} else {vec![]}
                 .into_iter()
                 .map(|(block_id, text, vector)| ((block_id, text), vector))
                 .collect();
@@ -971,6 +1012,8 @@ impl EmbeddingEngine {
             self.embed_serial(texts)?
         };
 
+        crate::knowledge::jobs::checkpoint()?;
+        ensure_current(note_id, content)?;
         // Purge stale rows and write reused + freshly embedded blocks in a
         // single transaction — one commit instead of hundreds of per-row
         // autocommits (each a WAL frame + checkpoint candidate) per save.
@@ -1009,6 +1052,8 @@ impl EmbeddingEngine {
             }
         }
 
+        provenance(conn, note_id, "block", content,&self.model_signature)?;
+        map_chunks(conn, note_id, &blocks,&self.model_signature)?;
         self.last_embedded_hash.lock().unwrap().insert(note_id.to_string(), hash);
         Ok(())
     }
@@ -1241,4 +1286,28 @@ mod tests {
 
         std::fs::remove_dir_all(&dir).unwrap();
     }
+}
+
+
+const MODEL_SIGNATURE: &str = "Qdrant/bge-base-en-v1.5-onnx-Q:768:max512:v1";
+fn known_model(conn:&Connection,path:&str,kind:&str,signature:&str)->bool {
+ conn.query_row("SELECT model FROM knowledge_embedding_provenance WHERE path=?1 AND kind=?2",params![path,kind],|r|r.get::<_,String>(0)).map(|m|m==signature && !signature.ends_with(":unversioned")).unwrap_or(false)
+}
+fn provenance(conn:&Connection,path:&str,kind:&str,content:&str,signature:&str)->Result<(),String>{
+ conn.execute("INSERT INTO knowledge_embedding_provenance(path,kind,hash,model) VALUES (?1,?2,?3,?4) ON CONFLICT(path,kind) DO UPDATE SET hash=excluded.hash,model=excluded.model",params![path,kind,crate::knowledge::blocks::hash(content),signature]).map_err(|e|e.to_string())?;Ok(())
+}
+fn ensure_current(path:&str,content:&str)->Result<(),String>{
+ let actual=std::fs::read_to_string(path).map_err(|_|"Note was removed during inference")?;
+ if actual!=content{return Err("Note changed during inference; stale result discarded".into());}Ok(())
+}
+fn map_chunks(conn:&Connection,path:&str,chunks:&[(String,String)],signature:&str)->Result<(),String>{
+ let mut stmt=conn.prepare("SELECT b.id,b.note_id,b.text FROM knowledge_blocks b JOIN knowledge_notes n ON n.id=b.note_id WHERE n.path=?1 AND n.deleted=0 AND b.deleted=0").map_err(|e|e.to_string())?;
+ let blocks=stmt.query_map([path],|r|Ok((r.get::<_,String>(0)?,r.get::<_,String>(1)?,r.get::<_,String>(2)?))).map_err(|e|e.to_string())?.collect::<Result<Vec<_>,_>>().map_err(|e|e.to_string())?;
+ let tx=conn.unchecked_transaction().map_err(|e|e.to_string())?;
+ for (chunk,text) in chunks {for (block,note,body) in &blocks {if text.contains(body) || body.contains(text) {tx.execute("INSERT OR REPLACE INTO knowledge_chunk_blocks(note_id,chunk_id,block_id,input_hash,model) VALUES (?1,?2,?3,?4,?5)",params![note,chunk,block,crate::knowledge::blocks::hash(text),signature]).map_err(|e|e.to_string())?;}}}
+ tx.commit().map_err(|e|e.to_string())
+}
+
+fn input_matches(conn:&Connection,path:&str,kind:&str,content:&str,signature:&str)->bool {
+ known_model(conn,path,kind,signature) && conn.query_row("SELECT hash FROM knowledge_embedding_provenance WHERE path=?1 AND kind=?2",params![path,kind],|r|r.get::<_,String>(0)).map(|hash|hash==crate::knowledge::blocks::hash(content)).unwrap_or(false)
 }

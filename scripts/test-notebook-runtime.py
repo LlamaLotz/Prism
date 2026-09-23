@@ -4,6 +4,7 @@
 Run with the payload path as argv[1]. Every service uses throwaway data and
 credentials. Exercises the actual packaged Python, database, API and worker.
 """
+import base64
 import json
 import os
 from pathlib import Path
@@ -58,11 +59,32 @@ def main():
             self.send_response(200); self.send_header('Content-Type', 'application/json'); self.send_header('Content-Length', str(len(payload))); self.end_headers(); self.wfile.write(payload)
     provider = ThreadingHTTPServer(('127.0.0.1', 0), Provider)
     threading.Thread(target=provider.serve_forever, daemon=True).start()
+    gateway_token = secrets.token_hex(32)
+    gateway_requests = []
+    class Gateway(BaseHTTPRequestHandler):
+        def log_message(self, *args): pass
+        def do_POST(self):
+            if self.headers.get('Authorization') != f'Bearer {gateway_token}':
+                self.send_error(403); return
+            request = json.loads(self.rfile.read(int(self.headers['Content-Length'])))
+            destination = urllib.parse.urlsplit(request['url'])
+            if destination.hostname != '127.0.0.1' or destination.port != provider.server_port:
+                self.send_error(403); return
+            gateway_requests.append(request['url'])
+            headers = {k: v for k, v in request['headers'] if k.lower() not in ('host', 'content-length', 'connection', 'accept-encoding')}
+            req = urllib.request.Request(request['url'], data=base64.b64decode(request['body']), headers=headers, method=request['method'])
+            with urllib.request.urlopen(req) as response:
+                data = {'status': response.status, 'headers': list(response.headers.items()), 'body': base64.b64encode(response.read()).decode()}
+            body = json.dumps(data).encode()
+            self.send_response(200); self.send_header('Content-Length', str(len(body))); self.end_headers(); self.wfile.write(body)
+    gateway = ThreadingHTTPServer(('127.0.0.1', 0), Gateway)
+    threading.Thread(target=gateway.serve_forever, daemon=True).start()
     with tempfile.TemporaryDirectory(prefix="prism-notebook-smoke-") as temp:
         temp = Path(temp)
         db_port, api_port = port(), port()
         password = secrets.token_hex(32)
         env = {**os.environ, "PRISM_NOTEBOOK_DATA": str(temp / "data"), "SURREAL_URL": f"ws://127.0.0.1:{db_port}/rpc", "SURREAL_USER": "prism", "SURREAL_PASS": password, "SURREAL_PASSWORD": password, "SURREAL_NAMESPACE": "open_notebook", "SURREAL_DATABASE": "open_notebook", "OPEN_NOTEBOOK_PASSWORD": password, "OPEN_NOTEBOOK_ENCRYPTION_KEY": secrets.token_hex(32), "PYTHONNOUSERSITE": "1", "CORS_ORIGINS": "tauri://localhost"}
+        env.update(PRISM_MODEL_GATEWAY=f"http://127.0.0.1:{gateway.server_port}/proxy", PRISM_MODEL_GATEWAY_TOKEN=gateway_token, PRISM_LOCAL_PORTS=f"{db_port},{api_port}")
         opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 
         def request(path, body=None, method=None, authenticated=True, raw=None, content_type=None, as_text=False):
@@ -176,6 +198,7 @@ def main():
                 schema = request("/openapi.json")
                 (root / "openapi.json").write_text(json.dumps(schema, indent=2) + "\n")
                 request(f"/api/notebooks/{notebook['id']}", method="DELETE")
+                assert gateway_requests, 'Model requests bypassed the gateway'
                 (root / 'smoke-tested.json').write_text(json.dumps({'revision': manifest['revision'], 'target': manifest['target'], 'provider': 'local deterministic fixture', 'checks': ['startup', 'authentication', 'ingestion', 'notes', 'chat', 'transformations', 'podcast-audio', 'jobs', 'drain', 'cancellation']}, indent=2) + '\n')
                 print("PASS: packaged database, API, authentication, migrations, worker ingestion, notes, chat, transformations, podcast audio, job status, drain and cancellation (local provider fixture)")
             except Exception:

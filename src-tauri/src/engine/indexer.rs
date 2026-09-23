@@ -257,7 +257,9 @@ fn run_pool_with_conn<F>(
 pub fn index_vault(
     vault_path: &Path,
     app_handle: tauri::AppHandle,
+    job: Option<&crate::knowledge::jobs::JobContext>,
 ) -> Result<IndexedVault, String> {
+    let scope = crate::knowledge::activate(&app_handle, vault_path)?;
     let vault_root = vault_path.to_path_buf();
     let paths = collect_markdown_paths(&vault_root);
     let folders = collect_folder_paths(&vault_root);
@@ -265,11 +267,16 @@ pub fn index_vault(
     // ---- Phase 1: upsert notes + aliases (bounded pool, transactional) ----
     let results: Arc<Mutex<Vec<IndexedFile>>> = Arc::new(Mutex::new(Vec::new()));
     let existing: Arc<Mutex<HashSet<String>>> = Arc::new(Mutex::new(HashSet::new()));
+    let errors = Arc::new(Mutex::new(Vec::<String>::new()));
     run_pool_with_conn(&paths, &app_handle, {
+        let job = job.cloned();
+        let errors = errors.clone();
+        let scope = scope.clone();
         let results = results.clone();
         let existing = existing.clone();
         let vault_root = vault_root.clone();
         move |conn, path| {
+            if job.as_ref().is_some_and(|j| j.check().is_err()) { return; }
             let Ok(content) = std::fs::read_to_string(path) else {
                 return;
             };
@@ -280,6 +287,7 @@ pub fn index_vault(
                 .unwrap_or_default();
             let aliases = crate::watcher::extract_aliases(&content);
             if db::upsert_note(conn, &path_str, &title, &path_str, &aliases).is_ok() {
+                if let Err(error) = crate::knowledge::sync(conn, &scope.vault_id, &path_str, &content) { errors.lock().unwrap().push(error); return; }
                 // Reconcile topic tags with disk on every full scan: renamed or
                 // moved notes get a fresh id (path) here, and their tag rows
                 // would otherwise point at the old id until the next write or
@@ -293,10 +301,14 @@ pub fn index_vault(
         }
     });
 
+    if let Some(error) = errors.lock().unwrap().first() { return Err(error.clone()); }
+    if let Some(job) = job { job.check()?; job.progress(0.5)?; }
     // ---- Phase 2: purge index rows for notes missing from disk ----
     {
         let conn = db::init_db(&app_handle)?;
-        let set = existing.lock().unwrap();
+        let mut set = existing.lock().unwrap().clone();
+        let paths: Vec<String> = {let mut stmt = conn.prepare("SELECT path FROM notes").map_err(|e|e.to_string())?;let rows=stmt.query_map([],|r|r.get(0)).map_err(|e|e.to_string())?;rows.collect::<Result<_,_>>().map_err(|e|e.to_string())?};
+        for path in paths {if !Path::new(&path).starts_with(&vault_root) {set.insert(path);}else if !set.contains(&path) {crate::knowledge::remove(&conn,&path)?;}}
         db::purge_stale_notes(&conn, &set)?;
     }
 
@@ -304,7 +316,7 @@ pub fn index_vault(
     {
         let dictionary = db::init_db(&app_handle)
             .ok()
-            .and_then(|conn| db::get_vault_dictionary(&conn).ok())
+            .and_then(|conn| crate::knowledge::dictionary(&conn,&scope.vault_id).ok())
             .unwrap_or_default();
         let linker = Arc::new(NoteLinker::new(dictionary));
 
@@ -329,6 +341,7 @@ pub fn index_vault(
         });
     }
 
+    if let Some(job) = job { job.check()?; job.progress(1.0)?; }
     let mut out = results.lock().unwrap();
     out.sort_by(|a, b| a.title.to_lowercase().cmp(&b.title.to_lowercase()));
     Ok(IndexedVault {

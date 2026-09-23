@@ -1,5 +1,6 @@
 """Apply narrowly scoped, asserted compatibility patches to generated payloads."""
 from pathlib import Path
+import json
 import shutil
 import sys
 
@@ -7,7 +8,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def patch(runtime: Path):
-    for name in ("launcher.py", "prism_api.py", "prism_worker.py"):
+    for name in ("launcher.py", "prism_api.py", "prism_worker.py", "prism_gateway.py"):
         shutil.copy2(ROOT / "notebook" / name, runtime / name)
     target = runtime / "backend/commands/podcast_commands.py"
     text = (ROOT / "notebook/upstream/commands/podcast_commands.py").read_text()
@@ -29,6 +30,12 @@ def patch(runtime: Path):
             raise ValueError("Configure the selected episode and speaker profile models before generating audio")
 ''' + marker
     target.write_text(text.replace(marker, replacement))
+    manifest = runtime / "manifest.json"
+    if manifest.exists():
+        value = json.loads(manifest.read_text())
+        value["knowledgeGateway"] = 1
+        manifest.write_text(json.dumps(value, indent=2) + "\n")
+    (runtime / "smoke-tested.json").unlink(missing_ok=True)
 
 
 if __name__ == "__main__":

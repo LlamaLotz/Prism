@@ -35,6 +35,12 @@ export class NotebookClient {
     this.assertActive();
     return result;
   }
+  async importCopilot(provider: string): Promise<{ modelId: string; credentialId: string }> {
+    this.assertActive();
+    const result = await invoke<{ modelId: string; credentialId: string }>('notebook_import_copilot', { workspaceId: this.workspaceId, provider });
+    this.assertActive();
+    return result;
+  }
   async source(fields: Record<string, string>, upload = false): Promise<SourceResponse | null> {
     this.assertActive();
     const result = await invoke<SourceResponse | null>('notebook_add_source', { workspaceId: this.workspaceId, fields, upload });

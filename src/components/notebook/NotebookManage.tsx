@@ -133,9 +133,8 @@ export function NotebookManage({ section, client, notebookId, config, onExport, 
           const supported = providers.some(p => p.name === config.provider);
           const provider = supported ? config.provider : 'openai_compatible';
           if (!supported && !(await dialogs.confirm('Import this custom endpoint as an OpenAI-compatible provider? It must support that protocol.', { title: 'Import Co-Pilot settings', confirmLabel: 'Import' }))) return;
-          const credential = await client.request<CredentialResponse>('/credentials', 'POST', { name: 'Prism Co-Pilot', provider, api_key: config.apiKey || null, base_url: config.baseUrl || null, modalities: ['language'] });
-          const model = await client.request<ModelResponse>('/models', 'POST', { name: config.model, provider, type: 'language', credential: credential.id });
-          await client.request('/models/defaults', 'PUT', { ...defaults, default_chat_model: model.id, default_transformation_model: model.id });
+          const imported = await client.importCopilot(provider);
+          await client.request('/models/defaults', 'PUT', { ...defaults, default_chat_model: imported.modelId, default_transformation_model: imported.modelId });
           setNotice('Co-Pilot provider imported. Configure embedding and speech models for search and podcasts.'); await refresh();
         })}>Import Co-Pilot settings</Button>}
       </div>

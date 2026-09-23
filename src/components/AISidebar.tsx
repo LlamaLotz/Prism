@@ -47,7 +47,7 @@ export const AISidebar: React.FC<AISidebarProps> = ({
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, isLoading]);
 
-  const isConfigured = !!config.apiKey && !!config.baseUrl;
+  const isConfigured = !!config.baseUrl && !!config.model;
 
   const handleSend = async (text: string = inputValue) => {
     const trimmed = text.trim();

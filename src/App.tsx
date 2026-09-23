@@ -26,6 +26,7 @@ import { TitleBar } from './components/TitleBar';
 import { LiquidGlass } from './components/LiquidGlass';
 import { createErrorDetails, createRawErrorDetails, errorDialogMessage, ErrorDetails } from './utils/errors';
 
+import { RuntimeActivity } from './components/RuntimeActivity';
 import { SplashScreen } from './components/SplashScreen';
 import { UpdateBanner } from './components/UpdateBanner';
 import { FileText, Network, PanelLeftClose, PanelLeftOpen, SplitSquareVertical, Sparkles, Tags } from 'lucide-react';
@@ -927,17 +928,19 @@ export default function App() {
   // 3. Save Settings Handler — persists to Rust (~/.prism/settings.json) as
   // the source of truth, keeping localStorage as a lightweight cache.
   const handleSaveSettings = (newSettings: AppSettings) => {
-    setSettings(newSettings);
     if (newSettings.appearance.linkHubVisibleByDefault !== settings.appearance.linkHubVisibleByDefault) {
       localStorage.removeItem('prism_linkhub_visible');
     }
     if (newSettings.appearance.linkHubDefaultHeight !== settings.appearance.linkHubDefaultHeight) {
       localStorage.removeItem('prism_linkhub_height');
     }
-    localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(newSettings));
-    tauriAPI.saveRuntimeConfig(newSettings).catch((e) => {
+    tauriAPI.saveRuntimeConfig(newSettings).then(async () => {
+      const saved = await tauriAPI.getRuntimeConfig();
+      if (saved) { setSettings(saved); localStorage.removeItem(LOCAL_STORAGE_KEY); }
+    }).catch((e) => {
       console.error('Failed to save settings to disk:', e);
       appLogger.error('Failed to save settings to disk', e);
+      void alert('Settings were not saved. ' + String(e), {title: 'Settings save failed'});
     });
     // Apply the version-history retention policy immediately on save.
     if (newSettings.system.versionRetentionDays > 0) {
@@ -1492,6 +1495,7 @@ export default function App() {
 
   return (
     <>
+      <RuntimeActivity />
       {/* Background environment layer (behind the app, viewport-level) */}
       {settings.appearance.backgroundEnvironment !== 'none' && (
         <div

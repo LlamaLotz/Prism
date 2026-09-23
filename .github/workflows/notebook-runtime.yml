@@ -44,7 +44,9 @@ jobs:
       - name: Build pinned runtime
         run: python scripts/build-notebook-runtime.py
       - name: Exercise packaged backend and media pipeline
-        run: python scripts/test-notebook-runtime.py src-tauri/notebook-runtime/${{ matrix.target }}
+        run: |
+          python scripts/test-prism-gateway.py src-tauri/notebook-runtime/${{ matrix.target }}
+          python scripts/test-notebook-runtime.py src-tauri/notebook-runtime/${{ matrix.target }}
       - name: Verify relocated runtime
         shell: python
         run: |

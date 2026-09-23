@@ -19,6 +19,7 @@ struct Runtime {
     connection: Arc<Connection>,
     children: Vec<Child>,
     _workspace_lock: fs::File,
+    _gateway: crate::knowledge::gateway::Gateway,
 }
 
 struct Connection {
@@ -61,6 +62,8 @@ pub struct RuntimeStatus {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct Manifest {
+    #[serde(default)]
+    knowledge_gateway: u32,
     revision: String,
     python_executable: String,
     surreal_executable: String,
@@ -246,6 +249,7 @@ pub async fn notebook_start(app: tauri::AppHandle, state: State<'_, NotebookStat
     stop_locked(&state).await;
     let root = runtime_root(&app)?;
     let manifest: Manifest = serde_json::from_slice(&fs::read(root.join("manifest.json")).map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;
+    if manifest.knowledge_gateway != 1 || !root.join("prism_gateway.py").exists() {return Err("Notebook runtime needs the Prism knowledge gateway update. Rebuild or update the bundled runtime.".into());}
     let workspace = vault.join(".prism/notebook");
     fs::create_dir_all(&workspace).map_err(|e| e.to_string())?;
     let workspace = fs::canonicalize(workspace).map_err(|e| e.to_string())?;
@@ -278,7 +282,11 @@ pub async fn notebook_start(app: tauri::AppHandle, state: State<'_, NotebookStat
     while api_port == db_port { api_port = unused_port()?; }
     let client = Client::builder().no_proxy().redirect(reqwest::redirect::Policy::none()).timeout(Duration::from_secs(600)).build().map_err(|e| e.to_string())?;
     let connection = Arc::new(Connection { id: Uuid::new_v4().to_string(), vault: vault.clone(), base_url: format!("http://127.0.0.1:{api_port}"), password: password.clone(), client, accepting: AtomicBool::new(true), inflight: AtomicUsize::new(0) });
-    let mut runtime = Runtime { connection, children: vec![], _workspace_lock: workspace_lock };
+    crate::knowledge::activate(&app, &vault)?;
+    let gateway = crate::knowledge::gateway::start(app.clone())?;
+    let gateway_url = gateway.url.clone();
+    let gateway_token = gateway.token.clone();
+    let mut runtime = Runtime { connection, children: vec![], _workspace_lock: workspace_lock, _gateway: gateway };
     let mut db = Command::new(root.join(&manifest.surreal_executable));
     db.args(["start", "--bind", &format!("127.0.0.1:{db_port}"), "--user", "prism", "--log", "error"])
         .env("SURREAL_PASS", &database_password).arg(format!("rocksdb:{}", data.join("surreal.db").display()));
@@ -293,7 +301,10 @@ pub async fn notebook_start(app: tauri::AppHandle, state: State<'_, NotebookStat
             .env("SURREAL_NAMESPACE", "open_notebook").env("SURREAL_DATABASE", "open_notebook")
             .env("OPEN_NOTEBOOK_ENCRYPTION_KEY", &secret).env("OPEN_NOTEBOOK_PASSWORD", &password)
             .env("CORS_ORIGINS", "http://tauri.localhost,tauri://localhost")
-            .env("PYTHONNOUSERSITE", "1");
+            .env("PYTHONNOUSERSITE", "1")
+            .env("PRISM_MODEL_GATEWAY", &gateway_url)
+            .env("PRISM_MODEL_GATEWAY_TOKEN", &gateway_token)
+            .env("PRISM_LOCAL_PORTS", format!("{db_port},{api_port}"));
         runtime.children.push(spawn(command)?);
         if service == "api" {
             let health = format!("{}/health", runtime.connection.base_url);
@@ -457,4 +468,17 @@ mod tests {
         assert_eq!(safe_filename(" . "), "Notebook export");
         assert!(safe_filename(&"a".repeat(1000)).len() < 150);
     }
+}
+
+/// Import saved credentials without ever returning their plaintext to the webview.
+#[tauri::command]
+pub async fn notebook_import_copilot(app:tauri::AppHandle,state:State<'_,NotebookState>,workspace_id:String,provider:String)->Result<Value,String>{
+    let config=crate::config::load_runtime_config(&app).ok_or("Configure the Prism provider first")?.omni_route;
+    if provider!=config.provider && provider!="openai_compatible" {return Err("Invalid import provider".into());}
+    let key=crate::config::provider_key(&config)?;
+    let lease=lease(&state,&workspace_id).await?;let c=&lease.0;
+    let credential=response_value(c.client.post(format!("{}/api/credentials",c.base_url)).bearer_auth(&c.password).json(&json!({"name":"Prism Co-Pilot","provider":provider,"api_key":if key.is_empty(){Value::Null}else{json!(key)},"base_url":config.base_url,"modalities":["language"]})).send().await.map_err(|_|"Notebook credential import failed")?).await?;
+    let credential_id=credential["id"].as_str().ok_or("Notebook returned no credential identifier")?;
+    let model=response_value(c.client.post(format!("{}/api/models",c.base_url)).bearer_auth(&c.password).json(&json!({"name":config.model,"provider":provider,"type":"language","credential":credential_id})).send().await.map_err(|_|"Notebook model import failed")?).await?;
+    Ok(json!({"modelId":model["id"],"credentialId":credential_id}))
 }
