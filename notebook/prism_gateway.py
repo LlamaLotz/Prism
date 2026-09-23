@@ -22,6 +22,20 @@ def install():
     def local(host, port):
         return host in ("127.0.0.1", "localhost", "::1") and int(port or 0) in allowed
 
+    # Windows asyncio (ProactorEventLoop) needs an internal loopback socketpair
+    # for its self-pipe. That uses an ephemeral 127.0.0.1 port that is *not* in
+    # PRISM_LOCAL_PORTS. Without an exemption the connect() hook breaks every
+    # `asyncio.run()` / `uvicorn.run()` on Windows (see
+    # `socket._fallback_socketpair -> csock.connect((addr, port))`).
+    # Keep the hook tight: only bypass the exact socketpair creation.
+    import threading
+
+    _socketpair_bypass = threading.local()
+    _orig_socketpair = getattr(socket, "socketpair", None)
+
+    def _bypass_active():
+        return getattr(_socketpair_bypass, "active", False)
+
     original_lookup = socket.getaddrinfo
     def lookup(host, port, *args, **kwargs):
         if not local(host, port):
@@ -30,16 +44,34 @@ def install():
     socket.getaddrinfo = lookup
     original_connect = socket.socket.connect
     original_connect_ex = socket.socket.connect_ex
+
     def connect(sock, address):
+        if _bypass_active():
+            return original_connect(sock, address)
         if sock.family in (socket.AF_INET, socket.AF_INET6) and not local(address[0], address[1]):
             raise PermissionError("Notebook network requests must use Prism's gateway")
         return original_connect(sock, address)
+
     def connect_ex(sock, address):
+        if _bypass_active():
+            return original_connect_ex(sock, address)
         if sock.family in (socket.AF_INET, socket.AF_INET6) and not local(address[0], address[1]):
             raise PermissionError("Notebook network requests must use Prism's gateway")
         return original_connect_ex(sock, address)
+
     socket.socket.connect = connect
     socket.socket.connect_ex = connect_ex
+
+    if _orig_socketpair is not None:
+
+        def _patched_socketpair(*args, **kwargs):
+            _socketpair_bypass.active = True
+            try:
+                return _orig_socketpair(*args, **kwargs)
+            finally:
+                _socketpair_bypass.active = False
+
+        socket.socketpair = _patched_socketpair  # type: ignore[assignment]
 
     import subprocess
 
