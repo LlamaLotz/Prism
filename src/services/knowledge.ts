@@ -28,6 +28,10 @@ export interface RetrievalPlan {
 }
 export type RetrievalRequest = { query: string; activeNoteId?: string | null; budgetChars?: number; offset?: number; limit?: number };
 
+export interface AgentToolDefinition { name: string; description: string; requiresApproval: boolean; category: string }
+export interface AgentToolResponse { tool: string; requiresApproval: boolean; approvalId: string | null; preview: string | null; result: unknown; error: string | null }
+export interface AgentPending { id: string; tool: string; vaultId: string; notePath: string; noteId: string | null; preview: string; createdAt: number; input: unknown }
+
 export const knowledge = {
   search: (text: string, offset = 0) => invoke<SearchPage>('search_knowledge', { query: { text, mode: 'hybrid', offset, limit: 100 } }),
   jobs: () => invoke<KnowledgeJob[]>('list_knowledge_jobs'),
@@ -36,4 +40,9 @@ export const knowledge = {
   approve: (id: string, approved: boolean) => invoke<void>('resolve_approval', { id, approved }),
   planRetrieval: (request: RetrievalRequest) => invoke<RetrievalPlan>('plan_retrieval', { request }),
   getContext: (request: RetrievalRequest) => invoke<RetrievalPlan>('get_context', { request }),
+  agentTools: () => invoke<AgentToolDefinition[]>('agent_list_tools'),
+  agentCall: (tool: string, input: unknown) => invoke<AgentToolResponse>('agent_call_tool', { request: { tool, input } }),
+  agentPending: () => invoke<AgentPending[]>('agent_list_pending'),
+  agentApprove: (id: string, approved: boolean) => invoke<{ approved: boolean; id: string; result?: unknown }>('agent_resolve_pending', { id, approved }),
+  agentUndo: (notePath: string) => invoke<{ notePath: string; relativePath: string; restoredVersion: number | null; preview: string }>('agent_undo_last', { notePath }),
 };

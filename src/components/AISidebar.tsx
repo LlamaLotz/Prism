@@ -1,13 +1,14 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { 
   Sparkles, Send, Loader2, RefreshCw, FileText, 
-  BookOpen, Link2, Hash, AlertTriangle, Globe 
+  BookOpen, Link2, Hash, AlertTriangle, Globe, ShieldCheck, Undo2, Eye, Check, X 
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import { NoteFile, OmniRouteConfig, tauriAPI } from '../types';
 import { summarizeNote, suggestConnections, suggestMetadata, sendChatMessage, sendChatMessageWithRetrieval } from '../services/apiService';
 import { buildChatSystemPrompt } from '../services/systemMessages';
-import type { Citation, RetrievedBlock } from '../services/knowledge';
+import { knowledge } from '../services/knowledge';
+import type { Citation, RetrievedBlock, AgentPending } from '../services/knowledge';
 import { createErrorDetails, createUserErrorDetails, ErrorDetails } from '../utils/errors';
 
 interface AISidebarProps {
@@ -39,6 +40,9 @@ export const AISidebar: React.FC<AISidebarProps> = ({
   const [isSearching, setIsSearching] = useState(false);
   const [searchMode, setSearchMode] = useState(false);
   const [error, setError] = useState<ErrorDetails | null>(null);
+  const [agentMode, setAgentMode] = useState(false);
+  const [pendingAgent, setPendingAgent] = useState<AgentPending[]>([]);
+  const [undoNote, setUndoNote] = useState<string | null>(null);
 
   const showError = (errorValue: unknown, fallback: string) => {
     setError(createErrorDetails(errorValue, fallback));
@@ -49,7 +53,31 @@ export const AISidebar: React.FC<AISidebarProps> = ({
   // Auto scroll chat
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, isLoading]);
+  }, [messages, isLoading, pendingAgent]);
+
+  // Poll agent pending approvals (10m expiry, vault generation bound) — only when agent mode active
+  useEffect(() => {
+    if (!agentMode) return;
+    let cancelled = false;
+    const tick = async () => {
+      try {
+        const list = await knowledge.agentPending();
+        if (!cancelled) setPendingAgent(list);
+      } catch {}
+    };
+    tick();
+    const id = setInterval(tick, 3000);
+    const unlistenKnowledge = (async () => {
+      try {
+        const { listen } = await import('@tauri-apps/api/event');
+        return await listen('knowledge-event', (e: any) => {
+          const kind = e?.payload?.kind as string | undefined;
+          if (kind === 'agent_approval_required' || kind === 'agent_applied' || kind === 'note_changed') tick();
+        });
+      } catch { return () => {}; }
+    })();
+    return () => { cancelled = true; clearInterval(id); unlistenKnowledge.then((fn) => fn()); };
+  }, [agentMode]);
 
   const isConfigured = !!config.baseUrl && !!config.model;
 
@@ -96,6 +124,29 @@ export const AISidebar: React.FC<AISidebarProps> = ({
     }
   };
 
+  const handleAgentTurn = async (trimmed: string) => {
+    // Minimal agent loop: call agent tool via Rust bus (reads auto, writes preview+approve)
+    // For now the sidebar routes the user's raw message as context to plan; model-side tool-calling
+    // will drive this in the next iteration. This path at least surfaces the Tool Bus manually.
+    // If the message looks like a tool call JSON, dispatch it; otherwise fall through to retrieval chat.
+    const asTool = (() => { try { return JSON.parse(trimmed); } catch { return null; } }) as any;
+    if (asTool && typeof asTool.tool === 'string' && asTool.input !== undefined) {
+      setMessages((prev) => [...prev, { role: 'user', content: trimmed }]);
+      setInputValue(''); setIsLoading(true);
+      try {
+        const res = await knowledge.agentCall(asTool.tool, asTool.input);
+        if (res.requiresApproval && res.approvalId) {
+          setMessages((prev) => [...prev, { role: 'assistant', content: `Agent prepared \`${res.tool}\` — review the preview below and Approve to apply.\n\nPreview:\n\`\`\`diff\n${res.preview ?? '(no preview)'}\n\`\`\`` }]);
+          const list = await knowledge.agentPending(); setPendingAgent(list);
+        } else {
+          setMessages((prev) => [...prev, { role: 'assistant', content: `Tool \`${res.tool}\` result:\n\`\`\`json\n${JSON.stringify(res.result, null, 2)}\n\`\`\`` }]);
+        }
+      } catch (err: any) { showError(err, 'Agent tool failed.'); } finally { setIsLoading(false); }
+      return true;
+    }
+    return false;
+  };
+
   const handleSearch = async (query: string) => {
     if (!query || isSearching) return;
 
@@ -125,6 +176,10 @@ export const AISidebar: React.FC<AISidebarProps> = ({
       const query = inputValue.trim();
       setInputValue('');
       await handleSearch(query);
+    } else if (agentMode && inputValue.trim()) {
+      const v = inputValue.trim();
+      if (await handleAgentTurn(v)) return;
+      await handleSend(v);
     } else {
       await handleSend();
     }
@@ -177,13 +232,22 @@ export const AISidebar: React.FC<AISidebarProps> = ({
           <Sparkles className="w-4.5 h-4.5 text-brand-400 animate-pulse" />
           <h2 className="text-sm font-bold text-slate-100">AI Co-Pilot</h2>
         </div>
-        <button
-          onClick={() => setMessages([])}
-          className="gloss-text-button ai-reset-button text-[10px] font-semibold text-slate-500 hover:text-slate-300 transition-colors"
-          title="Clear Chat History"
-        >
-          Reset
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setAgentMode((v) => !v)}
+            title={agentMode ? 'Agent: ON — writes need approval' : 'Agent: OFF — chat only'}
+            className={`inline-flex items-center gap-1 text-[10px] font-bold px-2 py-1 rounded-full border transition-colors ${agentMode ? 'bg-emerald-900/30 border-emerald-700 text-emerald-300' : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-slate-200'}`}
+          >
+            <ShieldCheck className="w-3 h-3" /> Agent {agentMode ? 'ON' : 'OFF'}
+          </button>
+          <button
+            onClick={() => setMessages([])}
+            className="gloss-text-button ai-reset-button text-[10px] font-semibold text-slate-500 hover:text-slate-300 transition-colors"
+            title="Clear Chat History"
+          >
+            Reset
+          </button>
+        </div>
       </div>
 
       {/* Connection warning */}
@@ -332,6 +396,27 @@ export const AISidebar: React.FC<AISidebarProps> = ({
       </div>
 
       {/* Input section */}
+      {agentMode && pendingAgent.length > 0 && (
+        <div className="border-t border-amber-900/40 bg-amber-950/20 p-3 space-y-2 max-h-52 overflow-auto">
+          <div className="text-[10px] font-bold tracking-wider text-amber-300 flex items-center gap-1"><Eye className="w-3 h-3" /> PENDING APPROVALS ({pendingAgent.length})</div>
+          {pendingAgent.map((p) => (
+            <div key={p.id} className="rounded-xl border border-amber-900/40 bg-slate-900 p-2 space-y-1.5">
+              <div className="text-[11px] font-semibold text-slate-200">{p.tool} · <span className="text-slate-400">{p.notePath}</span></div>
+              <pre className="text-[10px] leading-relaxed whitespace-pre-wrap break-words max-h-28 overflow-auto bg-slate-950 border border-slate-800 rounded-lg p-2 text-slate-300">{p.preview || '(no preview)'}</pre>
+              <div className="flex gap-1.5">
+                <button onClick={async () => { try { const r = await knowledge.agentApprove(p.id, true); setMessages((m) => [...m, { role: 'assistant', content: `Approved \`${p.tool}\`${(r as any)?.result ? ` — ${JSON.stringify((r as any).result)}` : ''}` }]); const list = await knowledge.agentPending(); setPendingAgent(list); setUndoNote(p.notePath); } catch (e: any) { showError(e, 'Approval failed.'); } }} className="inline-flex items-center gap-1 text-[11px] font-bold px-3 py-1 rounded-full bg-emerald-600 hover:bg-emerald-500 text-white"><Check className="w-3 h-3" /> Approve</button>
+                <button onClick={async () => { try { await knowledge.agentApprove(p.id, false); const list = await knowledge.agentPending(); setPendingAgent(list); setMessages((m) => [...m, { role: 'assistant', content: `Denied \`${p.tool}\`` }]); } catch (e: any) { showError(e, 'Deny failed.'); } }} className="inline-flex items-center gap-1 text-[11px] font-bold px-3 py-1 rounded-full bg-slate-700 hover:bg-slate-600 text-slate-200"><X className="w-3 h-3" /> Deny</button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+      {agentMode && undoNote && (
+        <div className="border-t border-slate-800 bg-slate-900/60 p-2 flex items-center justify-between">
+          <span className="text-[10px] text-slate-400">Last edit recoverable via history</span>
+          <button onClick={async () => { try { const r = await knowledge.agentUndo(undoNote); setMessages((m) => [...m, { role: 'assistant', content: `Undid last change to \`${r.relativePath}\`\n\`\`\`diff\n${r.preview}\n\`\`\`` }]); } catch (e: any) { showError(e, 'Undo failed.'); } }} className="inline-flex items-center gap-1 text-[10px] font-bold px-3 py-1 rounded-full bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200"><Undo2 className="w-3 h-3" /> Undo last edit</button>
+        </div>
+      )}
       <form 
         onSubmit={(e) => {
           e.preventDefault();

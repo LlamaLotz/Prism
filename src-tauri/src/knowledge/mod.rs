@@ -1,4 +1,5 @@
 //! Vault-scoped service boundary. Path-based IPC remains a compatibility layer.
+pub mod agent;
 pub mod blocks;
 pub mod gateway;
 pub mod jobs;
