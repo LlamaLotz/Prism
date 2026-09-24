@@ -575,15 +575,20 @@ impl EmbeddingEngine {
     /// Hot-applies live-tunable embedding parameters from a config save
     /// without rebuilding the engine. Thread count is NOT applied here — it's
     /// baked into the ONNX session at init and takes effect on next launch.
-    pub fn apply_runtime_config(&self, config: &crate::config::RuntimeConfig) {
+    pub fn apply_runtime_config(&self, config: &crate::config::RuntimeConfig) -> Result<(), String> {
         let threshold = config.linking.similarity_threshold.clamp(0.0, 1.0);
         let batch = config.linking.embedding_batch_size.max(1);
-        *self.min_similarity.lock().unwrap() = threshold;
-        *self.backfill_batch_size.lock().unwrap() = batch;
-        self.index.lock().unwrap().min_similarity = threshold;
+        // Acquire every lock before changing any live value.
+        let mut similarity = self.min_similarity.lock().map_err(|_| "Embedding settings unavailable; restart Prism")?;
+        let mut batch_size = self.backfill_batch_size.lock().map_err(|_| "Embedding settings unavailable; restart Prism")?;
+        let mut index = self.index.lock().map_err(|_| "Embedding index unavailable; restart Prism")?;
+        *similarity = threshold;
+        *batch_size = batch;
+        index.min_similarity = threshold;
         println!(
             "[embeddings] applied runtime config: similarity_threshold={threshold}, backfill_batch={batch}"
         );
+        Ok(())
     }
 
     /// Embeds `texts` in small serial batches so fastembed's rayon
@@ -1213,15 +1218,51 @@ pub fn apply_embedding_runtime_config(
     state: &crate::AppState,
     config: &crate::config::RuntimeConfig,
 ) -> Result<(), String> {
-    if let Some(Ok(engine)) = state.embeddings.lock().unwrap().as_ref() {
-        engine.apply_runtime_config(config);
+    let engine = state.embeddings.lock()
+        .map_err(|_| "Embedding engine is unavailable; restart Prism")?
+        .as_ref().cloned();
+    match engine {
+        Some(Ok(engine)) => engine.apply_runtime_config(config),
+        Some(Err(error)) => Err(error),
+        None => Ok(()),
     }
-    Ok(())
+}
+
+/// Contain third-party model-loader panics before they poison shared locks.
+pub(crate) fn initialize_safely<T>(initialize: impl FnOnce() -> Result<T, String>) -> Result<T, String> {
+    std::panic::catch_unwind(std::panic::AssertUnwindSafe(initialize))
+        .unwrap_or_else(|_| Err("Semantic engine could not load. Reinstall Prism to repair its bundled ONNX Runtime; notes and settings remain available.".into()))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn loader_panic_is_cached_without_poisoning_the_engine_slot() {
+        let slot = Mutex::new(None::<Result<(), String>>);
+        {
+            let mut guard = slot.lock().unwrap();
+            *guard = Some(initialize_safely(|| panic!("unloadable ONNX library")));
+        }
+        assert!(!slot.is_poisoned());
+        assert!(slot.lock().unwrap().as_ref().unwrap().is_err());
+    }
+
+    #[test]
+    fn poisoned_engine_slot_is_a_save_warning_not_a_panic() {
+        let state = crate::AppState {
+            linker: Mutex::new(None), db_path: Mutex::new(None), watcher_path: Mutex::new(None),
+            watcher_stop: Mutex::new(None), embeddings: std::sync::Arc::new(Mutex::new(None)),
+            embed_lock: std::sync::Arc::new(Mutex::new(())), linker_cache: Mutex::new(None),
+        };
+        let slot = state.embeddings.clone();
+        let _ = std::thread::spawn(move || {
+            let _guard = slot.lock().unwrap();
+            panic!("loader failed");
+        }).join();
+        assert!(apply_embedding_runtime_config(&state, &crate::config::RuntimeConfig::default()).is_err());
+    }
 
     #[test]
     fn split_into_blocks_caps_pathological_notes() {

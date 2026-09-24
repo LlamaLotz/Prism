@@ -186,9 +186,11 @@ jobs:
             tar -xzf "$work/$arch.tgz" -C "$work/$arch"
           done
 
-          arm_lib="$(find "$work/arm64" -name 'libonnxruntime.1.18.1.dylib' -print -quit)"
-          x64_lib="$(find "$work/x86_64" -name 'libonnxruntime.1.18.1.dylib' -print -quit)"
-          if [ -z "$arm_lib" ] || [ -z "$x64_lib" ]; then
+          # Select only lib/: the archive also contains a same-named dSYM
+          # payload, which is debug information and cannot be dlopen'ed.
+          arm_lib="$work/arm64/onnxruntime-osx-arm64-1.18.1/lib/libonnxruntime.1.18.1.dylib"
+          x64_lib="$work/x86_64/onnxruntime-osx-x86_64-1.18.1/lib/libonnxruntime.1.18.1.dylib"
+          if [ ! -f "$arm_lib" ] || [ ! -f "$x64_lib" ]; then
             echo 'ONNX Runtime dylib not found in the downloaded macOS packages' >&2
             exit 1
           fi
@@ -200,7 +202,7 @@ jobs:
           # which is exactly where ort's `load-dynamic` lookup resolves
           # `libonnxruntime.dylib` relative to the executable.
           lipo -create "$arm_lib" "$x64_lib" -output src-tauri/onnxruntime/libonnxruntime.dylib
-          lipo -info src-tauri/onnxruntime/libonnxruntime.dylib
+          python scripts/verify-onnxruntime.py src-tauri/onnxruntime/libonnxruntime.dylib
 
           # ort-sys only reaches its parcel.pyke.io download when neither
           # pkg-config nor ORT_LIB_LOCATION is set, and the artifact it wants for
@@ -238,7 +240,7 @@ jobs:
             echo 'Prism.app not found - cannot verify the ONNX Runtime bundle' >&2
             exit 1
           fi
-          test -f "$app/Contents/MacOS/libonnxruntime.dylib" || {
+          python scripts/verify-onnxruntime.py "$app/Contents/MacOS/libonnxruntime.dylib" || {
             echo "libonnxruntime.dylib missing from $app/Contents/MacOS" >&2
             exit 1
           }

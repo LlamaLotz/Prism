@@ -321,8 +321,8 @@ export const tauriAPI = {
   },
   // Persists the full settings object and hot-applies the runtime-tunable
   // values (similarity threshold, embedding batch) on the Rust side.
-  saveRuntimeConfig: async (settings: AppSettings): Promise<void> => {
-    await invoke('save_runtime_config', { config: settings });
+  saveRuntimeConfig: async (settings: AppSettings): Promise<SettingsSaveResult> => {
+    return await invoke<SettingsSaveResult>('save_runtime_config', { config: settings });
   },
   // Deletes version-history rows older than `retentionDays` (0 = keep all).
   purgeExpiredHistory: async (retentionDays: number): Promise<void> => {
@@ -343,3 +343,17 @@ export const tauriAPI = {
   },
   isElectron: false,
 };
+
+export interface SettingsSaveResult {
+  settings: AppSettings;
+  runtimeWarning: string | null;
+}
+
+// A committed save whose live application failed. The UI must retain the
+// canonical settings and explain that a restart/repair is still needed.
+export class SettingsApplyError extends Error {
+  constructor(message: string, public readonly savedSettings: AppSettings) {
+    super(message);
+    this.name = 'SettingsApplyError';
+  }
+}

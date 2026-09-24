@@ -1,0 +1,28 @@
+<!doctype html><html><body><p>Testing native settings persistence…</p><script>
+(async () => {
+  const invoke = window.__TAURI_INTERNALS__.invoke;
+  const equal = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+  try {
+    const original = await invoke('get_runtime_config');
+    if (!original) throw new Error('Copied settings did not load');
+    for (const change of [
+      original,
+      { ...original, appearance: { ...original.appearance, themeMode: original.appearance.themeMode === 'dark' ? 'light' : 'dark' } },
+      { ...original, linking: { ...original.linking, embeddingBatchSize: 8 } },
+      original,
+    ]) {
+      const result = await invoke('save_runtime_config', { config: change });
+      if (result.runtimeWarning) throw new Error('Unexpected runtime warning');
+      const read = await invoke('get_runtime_config');
+      if (!equal(result.settings, read)) throw new Error('Persisted values differ from save acknowledgement');
+    }
+    await invoke('smoke_poison_embeddings');
+    const result = await invoke('save_runtime_config', { config: original });
+    if (!result.runtimeWarning) throw new Error('Poisoned engine did not report a warning');
+    if (!equal(original, await invoke('get_runtime_config'))) throw new Error('Poisoned engine prevented durable save');
+    await invoke('smoke_done', { error: null });
+  } catch (error) {
+    await invoke('smoke_done', { error: String(error) });
+  }
+})();
+</script></body></html>

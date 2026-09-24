@@ -219,6 +219,10 @@ impl Default for RuntimeConfig {
 /// `~/.prism/settings.json` — same data directory as the SQLite index and
 /// log files.
 pub fn config_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    #[cfg(feature = "settings-smoke")]
+    if let Some(profile) = app.try_state::<crate::settings_smoke::Profile>() {
+        return Ok(profile.0.clone());
+    }
     let home = app.path().home_dir().map_err(|e| e.to_string())?;
     Ok(home.join(".prism").join("settings.json"))
 }
@@ -233,19 +237,33 @@ pub fn load_runtime_config(app: &tauri::AppHandle) -> Option<RuntimeConfig> {
 }
 
 /// Persists the config to disk (pretty-printed JSON for debuggability).
-pub fn save_runtime_config(app: &tauri::AppHandle, config: &RuntimeConfig) -> Result<(), String> {
-    let path = config_path(app)?;
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SettingsSaveResult {
+    pub settings: RuntimeConfig,
+    pub runtime_warning: Option<String>,
+}
+
+pub fn save_runtime_config(app: &tauri::AppHandle, config: &RuntimeConfig) -> Result<RuntimeConfig, String> {
+    save_config_at(&config_path(app)?, config, migrate_key)
+}
+
+fn save_config_at(
+    path: &std::path::Path,
+    config: &RuntimeConfig,
+    mut store_key: impl FnMut(&mut OmniRouteConfig) -> Result<(), String>,
+) -> Result<RuntimeConfig, String> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     }
     let mut config = config.clone();
     if config.omni_route.api_key.is_empty() && config.omni_route.credential_ref.is_empty() {
-        if let Some(previous) = load_runtime_config(app) {
+        if let Some(previous) = std::fs::read_to_string(path).ok().and_then(|raw| serde_json::from_str::<RuntimeConfig>(&raw).ok()) {
             if previous.omni_route.provider == config.omni_route.provider && previous.omni_route.base_url == config.omni_route.base_url { config.omni_route.credential_ref = previous.omni_route.credential_ref; }
         }
     }
-    migrate_key(&mut config.omni_route)?;
-    for provider in &mut config.models.providers { migrate_key(&mut provider.config)?; }
+    store_key(&mut config.omni_route)?;
+    for provider in &mut config.models.providers { store_key(&mut provider.config)?; }
     let raw =
         serde_json::to_string_pretty(&config).map_err(|e| format!("Failed to serialize config: {e}"))?;
     use std::io::Write;
@@ -253,12 +271,60 @@ pub fn save_runtime_config(app: &tauri::AppHandle, config: &RuntimeConfig) -> Re
     temporary.write_all(raw.as_bytes()).map_err(|e|e.to_string())?;
     temporary.as_file().sync_all().map_err(|e|e.to_string())?;
     temporary.persist(&path).map_err(|e|format!("Failed to replace settings: {e}"))?;
-    Ok(())
+    Ok(config)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn settings_save_round_trip_returns_the_canonical_config() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("settings.json");
+        let mut config = RuntimeConfig::default();
+        config.omni_route.api_key = "test-key".into();
+        let saved = save_config_at(&path, &config, |provider| {
+            if !provider.api_key.is_empty() {
+                provider.credential_ref = "test-reference".into();
+                provider.api_key.clear();
+            }
+            Ok(())
+        }).unwrap();
+        let raw = std::fs::read_to_string(&path).unwrap();
+        let loaded: RuntimeConfig = serde_json::from_str(&raw).unwrap();
+        assert_eq!(loaded.omni_route.credential_ref, saved.omni_route.credential_ref);
+        assert!(!raw.contains("test-key"));
+        let again = save_config_at(&path, &RuntimeConfig::default(), |_| Ok(())).unwrap();
+        assert_eq!(again.omni_route.credential_ref, "test-reference");
+    }
+
+    #[test]
+    fn credential_failure_preserves_previous_settings() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("settings.json");
+        save_config_at(&path, &RuntimeConfig::default(), |_| Ok(())).unwrap();
+        let before = std::fs::read(&path).unwrap();
+        let mut changed = RuntimeConfig::default();
+        changed.omni_route.api_key = "new-test-key".into();
+        assert!(save_config_at(&path, &changed, |_| Err("Credential store locked".into())).is_err());
+        assert_eq!(std::fs::read(&path).unwrap(), before);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn unwritable_directory_preserves_previous_settings() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("settings.json");
+        save_config_at(&path, &RuntimeConfig::default(), |_| Ok(())).unwrap();
+        let before = std::fs::read(&path).unwrap();
+        std::fs::set_permissions(dir.path(), std::fs::Permissions::from_mode(0o500)).unwrap();
+        let result = save_config_at(&path, &RuntimeConfig::default(), |_| Ok(()));
+        std::fs::set_permissions(dir.path(), std::fs::Permissions::from_mode(0o700)).unwrap();
+        assert!(result.is_err());
+        assert_eq!(std::fs::read(&path).unwrap(), before);
+    }
 
     #[test]
     fn settings_before_notebook_gain_safe_defaults() {

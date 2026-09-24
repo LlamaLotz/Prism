@@ -72,3 +72,12 @@ windows-core = "0.61.2"
 
 [target.'cfg(any(target_os = "macos", windows, target_os = "linux"))'.dependencies]
 tauri-plugin-updater = "^2"
+
+[features]
+# Opt-in native IPC regression harness; never enabled in release packaging.
+settings-smoke = []
+
+[[bin]]
+name = "settings-smoke"
+path = "src/bin/settings_smoke.rs"
+required-features = ["settings-smoke"]

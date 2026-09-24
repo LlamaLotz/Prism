@@ -1,3 +1,4 @@
+import { DEFAULT_SETTINGS } from './defaultSettings';
 import React, { useState, useEffect, useRef } from 'react';
 import { NotebookPage } from './components/notebook/NotebookPage';
 import { APP_PAGES, type AppPage } from './types';
@@ -11,7 +12,7 @@ import { SettingsPage, type SectionId } from './components/SettingsPage';
 import { IngestModal } from './components/IngestModal';
 import { IngestionLogPanel } from './components/IngestionLogPanel';
 import { useIngestion } from './services/ingestionStore';
-import { AppSettings, NoteFile, GraphNode, GraphLink, GraphPayload, tauriAPI } from './types';
+import { AppSettings, SettingsApplyError, NoteFile, GraphNode, GraphLink, GraphPayload, tauriAPI } from './types';
 import { listen } from '@tauri-apps/api/event';
 import { linkerService } from './services/linkerService';
 import { backfillEmbeddings, generateAndStoreEmbedding, generateAndStoreBlockEmbeddings } from './services/semantic';
@@ -105,61 +106,6 @@ function graphSignature(g: { nodes: GraphNode[]; links: GraphLink[] }): string {
     .join(';');
   return `${g.nodes.length}#${nodes}||${g.links.length}#${links}`;
 }
-
-const DEFAULT_SETTINGS: AppSettings = {
-  notebook: { embedByDefault: false, sourcePanelWidth: 260, notesPanelWidth: 260 },
-  vaultPath: '',
-  ingestionScript: 'python "/Users/Shiver/Documents/Prism/Extractor Final/master_extractor.py" --vault {vault_path}',
-  omniRoute: {
-    provider: '', // none — user picks a provider in Settings
-    apiKey: '',
-    baseUrl: 'https://api.omniroute.ai/v1',
-    model: 'gpt-4o',
-    temperature: 0.7,
-    injectUserProfile: false,
-    userProfile: '',
-  },
-  appearance: {
-    themeStyle: 'industrial',
-    themeMode: 'dark',
-    startupView: 'graph',
-    defaultGraphMode: '3d',
-    backgroundPattern: 'grid',
-    aiPanelOpenOnStart: false,
-    sidebarCollapsedOnStart: false,
-    linkHubVisibleByDefault: true,
-    linkHubDefaultHeight: 220,
-    labelQuality: 'high',
-    autoRotateOnLoad: false,
-    autoRotateSpeed: 0.67,
-    accentColor: '#38BDF8',
-    hoverGlowColor: '#38BDF8',
-    graphNodeColor: '#38BDF8',
-    appIcon: '',
-    sidebarStatusText: '{time}',
-    liquidGlassOpacity: 0.93,
-    backgroundEnvironment: 'none',
-  },
-  editor: {
-    autosaveDebounceMs: 800,
-    fullRenderLineThreshold: 8000,
-    findDebounceMs: 1000,
-  },
-  linking: {
-    autoLinkOnSave: true,
-    similarityThreshold: 0.7,
-    embedDebounceMs: 4000,
-    backfillOnVaultOpen: true,
-    embeddingThreads: 1,
-    embeddingBatchSize: 16,
-    persistNodePositions: true,
-  },
-  system: {
-    watchVault: true,
-    syncH1OnStartup: true,
-    versionRetentionDays: 0,
-  },
-};
 
 // Deep-merges persisted settings over the defaults so a config file written by
 // an older version (missing newly-added fields) never leaves the app with
@@ -927,30 +873,28 @@ export default function App() {
 
   // 3. Save Settings Handler — persists to Rust (~/.prism/settings.json) as
   // the source of truth, keeping localStorage as a lightweight cache.
-  const handleSaveSettings = (newSettings: AppSettings) => {
-    if (newSettings.appearance.linkHubVisibleByDefault !== settings.appearance.linkHubVisibleByDefault) {
-      localStorage.removeItem('prism_linkhub_visible');
+  const handleSaveSettings = async (newSettings: AppSettings): Promise<AppSettings> => {
+    const { settings: saved, runtimeWarning } = await tauriAPI.saveRuntimeConfig(newSettings);
+    setSettings(saved);
+    // These are caches/overrides, not part of durable persistence.
+    try {
+      localStorage.removeItem(LOCAL_STORAGE_KEY);
+      if (saved.appearance.linkHubVisibleByDefault !== settings.appearance.linkHubVisibleByDefault) {
+        localStorage.removeItem('prism_linkhub_visible');
+      }
+      if (saved.appearance.linkHubDefaultHeight !== settings.appearance.linkHubDefaultHeight) {
+        localStorage.removeItem('prism_linkhub_height');
+      }
+    } catch (e) {
+      appLogger.error('Settings saved, but local overrides could not be updated', e);
     }
-    if (newSettings.appearance.linkHubDefaultHeight !== settings.appearance.linkHubDefaultHeight) {
-      localStorage.removeItem('prism_linkhub_height');
-    }
-    tauriAPI.saveRuntimeConfig(newSettings).then(async () => {
-      const saved = await tauriAPI.getRuntimeConfig();
-      if (saved) { setSettings(saved); localStorage.removeItem(LOCAL_STORAGE_KEY); }
-    }).catch((e) => {
-      console.error('Failed to save settings to disk:', e);
-      appLogger.error('Failed to save settings to disk', e);
-      void alert('Settings were not saved. ' + String(e), {title: 'Settings save failed'});
-    });
-    // Apply the version-history retention policy immediately on save.
-    if (newSettings.system.versionRetentionDays > 0) {
-      tauriAPI.purgeExpiredHistory(newSettings.system.versionRetentionDays).catch((e) => {
-        console.error('Failed to purge expired history:', e);
+    if (saved.system.versionRetentionDays > 0) {
+      void tauriAPI.purgeExpiredHistory(saved.system.versionRetentionDays).catch((e) => {
+        appLogger.error('Settings saved, but history cleanup failed', e);
       });
     }
-    // Changing "Start with sidebar collapsed" re-arms it for the next launch:
-    // clear the manual-toggle override so the new preference applies on start.
-
+    if (runtimeWarning) throw new SettingsApplyError(runtimeWarning, saved);
+    return saved;
   };
 
   // 4. Folder Select Trigger
@@ -958,7 +902,14 @@ export default function App() {
     const path = await tauriAPI.selectFolder();
     if (path) {
       const updated = { ...settings, vaultPath: path };
-      handleSaveSettings(updated);
+      try {
+        await handleSaveSettings(updated);
+      } catch (e) {
+        const committed = e instanceof SettingsApplyError;
+        await alert((committed ? 'Settings were saved, but could not be fully applied. ' : 'Settings were not saved. ') + String(e), {
+          title: committed ? 'Settings saved with a warning' : 'Settings save failed',
+        });
+      }
     }
   };
 

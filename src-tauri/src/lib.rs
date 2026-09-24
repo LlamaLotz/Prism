@@ -250,7 +250,7 @@ fn get_embedding_engine(
     state: &tauri::State<'_, AppState>,
     app_handle: &tauri::AppHandle,
 ) -> Result<Arc<EmbeddingEngine>, String> {
-    let mut guard = state.embeddings.lock().unwrap();
+    let mut guard = state.embeddings.lock().map_err(|_| "Embedding engine is unavailable; restart Prism")?;
     if let Some(result) = guard.as_ref() {
         return result.clone();
     }
@@ -266,9 +266,13 @@ fn get_embedding_engine(
     // batch size) come from the persisted config.
     let mut runtime_config = config::load_runtime_config(app_handle).unwrap_or_default();
     runtime_config.vault_path = knowledge::current(app_handle)?.root.to_string_lossy().to_string();
-    let result = verify_model_cache(&cache_dir)
-        .and_then(|_| EmbeddingEngine::new(&conn, cache_dir, &runtime_config).map_err(sanitize_embedding_error))
-        .map(Arc::new);
+    // ort can panic when a bundled library is missing or unloadable. Catch it
+    // inside the mutex lifetime so a model failure cannot poison app state.
+    let result = engine::embeddings::initialize_safely(|| {
+        verify_model_cache(&cache_dir)
+            .and_then(|_| EmbeddingEngine::new(&conn, cache_dir, &runtime_config).map_err(sanitize_embedding_error))
+            .map(Arc::new)
+    });
 
     *guard = Some(result.clone());
     result
@@ -1526,14 +1530,16 @@ fn get_runtime_config(app: tauri::AppHandle) -> Option<config::RuntimeConfig> {
 /// embedding parameters (similarity threshold, backfill batch) to the cached
 /// engine without a restart.
 #[tauri::command]
-fn save_runtime_config(
-    state: tauri::State<'_, AppState>,
+async fn save_runtime_config(
     app: tauri::AppHandle,
     config: config::RuntimeConfig,
-) -> Result<(), String> {
-    config::save_runtime_config(&app, &config)?;
-    crate::engine::embeddings::apply_embedding_runtime_config(&state, &config)?;
-    Ok(())
+) -> Result<config::SettingsSaveResult, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let settings = config::save_runtime_config(&app, &config)?;
+        let state = app.state::<AppState>();
+        let runtime_warning = crate::engine::embeddings::apply_embedding_runtime_config(&state, &settings).err();
+        Ok(config::SettingsSaveResult { settings, runtime_warning })
+    }).await.map_err(|_| "Settings save task failed; reopen Settings to check the persisted values".to_string())?
 }
 
 /// Purges version-history rows older than `retention_days` (0 = keep all).
@@ -1675,7 +1681,7 @@ pub fn run() {
                     tokio::time::sleep(std::time::Duration::from_secs(30)).await;
                     let idle = config::load_runtime_config(&lifecycle_app).unwrap_or_default().models.idle_seconds.max(30);
                     let state = lifecycle_app.state::<AppState>();
-                    let mut slot = state.embeddings.lock().unwrap();
+                    let Ok(mut slot) = state.embeddings.lock() else { continue; };
                     if slot.as_ref().and_then(|r|r.as_ref().ok()).is_some_and(|engine| Arc::strong_count(engine)==1 && engine.idle_for().as_secs()>=idle) { *slot=None; }
                 }
             });
@@ -1772,11 +1778,20 @@ pub fn run() {
             relaunch_app,
             web_search
         ])
-        .build(tauri::generate_context!())
+        .build(app_context())
         .expect("error while building tauri application")
         .run(|app, event| {
             if matches!(event, tauri::RunEvent::Exit) {
                 tauri::async_runtime::block_on(notebook::shutdown(&app.state::<notebook::NotebookState>()));
             }
         });
+}
+
+#[cfg(feature = "settings-smoke")]
+mod settings_smoke;
+#[cfg(feature = "settings-smoke")]
+pub use settings_smoke::run as run_settings_smoke;
+
+fn app_context() -> tauri::Context<tauri::Wry> {
+    tauri::generate_context!()
 }

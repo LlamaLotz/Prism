@@ -26,7 +26,7 @@ import {
   Lock,
   Download,
 } from 'lucide-react';
-import { AppSettings, tauriAPI } from '../types';
+import { AppSettings, SettingsApplyError, tauriAPI } from '../types';
 import {
   checkForAppUpdate,
   downloadAndInstallAppUpdate,
@@ -48,7 +48,7 @@ interface SettingsPageProps {
   isOpen: boolean;
   onClose: () => void;
   settings: AppSettings;
-  onSave: (settings: AppSettings) => void;
+  onSave: (settings: AppSettings) => Promise<AppSettings>;
   /** Section to land on when the page opens (defaults to 'general'). */
   initialSection?: SectionId;
 }
@@ -708,6 +708,12 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
   const [showUnsaved, setShowUnsaved] = useState(false);
   const [justSaved, setJustSaved] = useState(false);
   const savedTimer = useRef<number | null>(null);
+  const savingRef = useRef(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  useEffect(() => () => {
+    if (savedTimer.current) window.clearTimeout(savedTimer.current);
+  }, []);
   const [showIconPreview, setShowIconPreview] = useState(false);
   // Manual update-check state (Settings → System), driven by the same
   // plugin-backed updater service the startup banner uses.
@@ -723,6 +729,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
     setIsDirty(false);
     setShowUnsaved(false);
     setJustSaved(false);
+    setSaveError(null);
     setUpdateStatus({ state: 'idle' });
   } else if (!isOpen && lastOpen) {
     setLastOpen(false);
@@ -731,6 +738,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
   // Closing (X, Cancel, Esc) with unsaved changes asks first. Defined before
   // the early return so the Esc effect below can reference it.
   const requestClose = () => {
+    if (savingRef.current) return;
     if (isDirty) setShowUnsaved(true);
     else onClose();
   };
@@ -754,6 +762,9 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
   const aiProvider = getApiProvider(draft.omniRoute.provider);
 
   const patch = <K extends keyof AppSettings>(key: K, value: AppSettings[K]) => {
+    if (savingRef.current) return;
+    setJustSaved(false);
+    setSaveError(null);
     setIsDirty(true);
     setDraft((d) => ({ ...d, [key]: value }));
   };
@@ -761,6 +772,9 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
     key: K,
     value: AppSettings[K]
   ) => {
+    if (savingRef.current) return;
+    setJustSaved(false);
+    setSaveError(null);
     setIsDirty(true);
     setDraft((d) => ({ ...d, [key]: value }));
   };
@@ -780,25 +794,36 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
     return d;
   };
 
-  // Save changes but KEEP the settings panel open (shows a brief "Saved").
-  const handleSave = () => {
-    const next = normalizeDraft(draft);
-    onSave(next);
-    setDraft(next);
-    setIsDirty(false);
-    setJustSaved(true);
-    if (savedTimer.current) window.clearTimeout(savedTimer.current);
-    savedTimer.current = window.setTimeout(() => setJustSaved(false), 1600);
-  };
-  // Small "Apply & Close": saves and exits in one step.
-  const handleApplyAndClose = () => {
-    const next = normalizeDraft(draft);
-    onSave(next);
-    setDraft(next);
-    setIsDirty(false);
+  const save = async (closeAfterSave: boolean) => {
+    if (savingRef.current) return;
+    savingRef.current = true;
+    setIsSaving(true);
+    setJustSaved(false);
+    setSaveError(null);
     setShowUnsaved(false);
-    onClose();
+    if (savedTimer.current) window.clearTimeout(savedTimer.current);
+    try {
+      const saved = await onSave(normalizeDraft(draft));
+      setDraft(saved);
+      setIsDirty(false);
+      setJustSaved(true);
+      if (closeAfterSave) onClose();
+      else savedTimer.current = window.setTimeout(() => setJustSaved(false), 1600);
+    } catch (error) {
+      if (error instanceof SettingsApplyError) {
+        setDraft(error.savedSettings);
+        setIsDirty(false);
+        setSaveError('Settings were saved, but could not be fully applied. ' + error.message);
+      } else {
+        setSaveError('Settings were not saved. Your changes are still here. ' + createErrorDetails(error, 'Please try again.').human);
+      }
+    } finally {
+      savingRef.current = false;
+      setIsSaving(false);
+    }
   };
+  const handleSave = () => { void save(false); };
+  const handleApplyAndClose = () => { void save(true); };
 
 
   const runInstaller = async () => {
@@ -872,7 +897,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
       : 0;
 
   return (
-    <div className="settings-page-overlay fixed inset-0 z-50 flex bg-neutral-950 text-neutral-100 select-none">
+    <fieldset disabled={isSaving} aria-busy={isSaving} className="settings-page-overlay fixed inset-0 z-50 m-0 min-w-0 border-0 p-0 flex bg-neutral-950 text-neutral-100 select-none">
       {/* Left section nav */}
       <aside className="settings-page-nav w-60 shrink-0 border-r border-slate-900 bg-slate-950/60 flex flex-col">
         <div className="flex items-center justify-between px-5 h-14 border-b border-slate-900 shrink-0">
@@ -1830,6 +1855,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
           </div>
         </div>
 
+        {saveError && <div role="alert" className="shrink-0 px-8 py-3 text-sm text-amber-300 bg-slate-950">{saveError}</div>}
         {/* Footer */}
         <div className="shrink-0 px-8 py-4 border-t border-slate-900 bg-slate-950/60 flex items-center justify-between">
           <div className="text-[11px] text-slate-600 flex items-center gap-1.5">
@@ -1856,7 +1882,9 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                 justSaved ? 'from-emerald-500 to-emerald-600 hover:from-emerald-400 hover:to-emerald-500' : ''
               }`}
             >
-              {justSaved ? (
+              {isSaving ? (
+                <><Loader2 className="w-4 h-4 animate-spin" /> Saving…</>
+              ) : justSaved ? (
                 <>
                   <CheckCircle2 className="w-4 h-4" /> Saved
                 </>
@@ -1930,6 +1958,6 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
           </div>
         </div>
       )}
-    </div>
+    </fieldset>
   );
 };
