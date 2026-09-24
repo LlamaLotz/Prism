@@ -13,12 +13,29 @@ from open_notebook.database.repository import ensure_record_id, repo_query
 from surreal_commands.core.service import command_service
 
 
+DEFAULT_CONCURRENCY = 2
+MIN_CONCURRENCY = 1
+MAX_CONCURRENCY = 8
+
+
+def worker_concurrency() -> int:
+    """Parallel-job cap from PRISM_WORKER_CONCURRENCY (Settings > System >
+    Worker Queue). Absent/invalid values fall back to the default so queue
+    behavior never breaks."""
+    try:
+        n = int(os.environ.get("PRISM_WORKER_CONCURRENCY", DEFAULT_CONCURRENCY))
+    except (TypeError, ValueError):
+        return DEFAULT_CONCURRENCY
+    return max(MIN_CONCURRENCY, min(MAX_CONCURRENCY, n))
+
+
 async def run():
     drain = Path(os.environ["PRISM_NOTEBOOK_DATA"], ".drain")
     drain.unlink(missing_ok=True)
     # The previous supervisor no longer owns this workspace. Never silently
     # rerun interrupted billable jobs; surface them for an explicit retry.
     await repo_query("UPDATE command SET status = 'failed', error_message = 'Interrupted when Prism closed. Retry this source or podcast.' WHERE status = 'running'")
+    concurrency = worker_concurrency()
     active: dict[str, asyncio.Task] = {}
     while True:
         for job_id, task in list(active.items()):
@@ -33,8 +50,8 @@ async def run():
         if drain.exists():
             if not active:
                 return
-        elif len(active) < 2:
-            rows = await repo_query("SELECT * FROM command WHERE status = 'new' ORDER BY created ASC LIMIT $limit", {"limit": 2 - len(active)})
+        elif len(active) < concurrency:
+            rows = await repo_query("SELECT * FROM command WHERE status = 'new' ORDER BY created ASC LIMIT $limit", {"limit": concurrency - len(active)})
             for row in rows:
                 job_id = str(row["id"])
                 # A cancellation can race the list query. Claim conditionally.

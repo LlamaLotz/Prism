@@ -6,9 +6,9 @@ import {
 import ReactMarkdown from 'react-markdown';
 import { NoteFile, OmniRouteConfig, tauriAPI } from '../types';
 import { summarizeNote, suggestConnections, suggestMetadata, sendChatMessage, sendChatMessageWithRetrieval } from '../services/apiService';
-import { buildChatSystemPrompt } from '../services/systemMessages';
+import { buildAgentSystemPrompt, buildChatSystemPrompt } from '../services/systemMessages';
 import { knowledge } from '../services/knowledge';
-import type { Citation, RetrievedBlock, AgentPending } from '../services/knowledge';
+import type { AgentToolDefinition, Citation, RetrievedBlock, AgentPending } from '../services/knowledge';
 import { createErrorDetails, createUserErrorDetails, ErrorDetails } from '../utils/errors';
 
 interface AISidebarProps {
@@ -26,6 +26,11 @@ interface ChatMessage {
   degraded?: string | null;
   retrievedBlocks?: RetrievedBlock[];
 }
+
+// Bounds for one model-driven agent turn: model ↔ Tool Bus rounds, and how
+// much of a single tool result is fed back (keeps small context windows safe).
+const MAX_AGENT_ROUNDS = 5;
+const MAX_TOOL_RESULT_CHARS = 6000;
 
 export const AISidebar: React.FC<AISidebarProps> = ({
   note,
@@ -124,11 +129,38 @@ export const AISidebar: React.FC<AISidebarProps> = ({
     }
   };
 
+  // Model-driven tool calls are emitted as fenced ```json blocks holding
+  // exactly one {"tool", "input"} call each (provider-agnostic — the model
+  // only ever sees plain messages via `execute_model`).
+  const extractToolCalls = (text: string): Array<{ tool: string; input: unknown }> => {
+    const calls: Array<{ tool: string; input: unknown }> = [];
+    const fence = /```(?:json)?\s*([\s\S]*?)```/gi;
+    let m: RegExpExecArray | null;
+    while ((m = fence.exec(text)) !== null) {
+      const raw = m[1].trim();
+      if (!raw.startsWith('{') && !raw.startsWith('[')) continue;
+      try {
+        const parsed = JSON.parse(raw);
+        const items = Array.isArray(parsed) ? parsed : parsed.tool ? [parsed] : [];
+        for (const item of items) {
+          if (item && typeof item.tool === 'string' && item.input !== undefined) {
+            calls.push({ tool: item.tool, input: item.input });
+          }
+        }
+      } catch { /* prose code block, not a tool call */ }
+    }
+    return calls;
+  };
+
+  const postApprovalMessage = async (tool: string, preview: string | null) => {
+    setMessages((prev) => [...prev, { role: 'assistant', content: `Agent prepared \`${tool}\` — review the preview below and Approve to apply.\n\nPreview:\n\`\`\`diff\n${preview ?? '(no preview)'}\n\`\`\`` }]);
+    try { const list = await knowledge.agentPending(); setPendingAgent(list); } catch {}
+  };
+
   const handleAgentTurn = async (trimmed: string) => {
-    // Minimal agent loop: call agent tool via Rust bus (reads auto, writes preview+approve)
-    // For now the sidebar routes the user's raw message as context to plan; model-side tool-calling
-    // will drive this in the next iteration. This path at least surfaces the Tool Bus manually.
-    // If the message looks like a tool call JSON, dispatch it; otherwise fall through to retrieval chat.
+    if (isLoading) return true;
+    // Manual fast-path: a raw {"tool":..., "input":...} message dispatches
+    // directly to the Tool Bus without involving the model.
     const asTool = (() => { try { return JSON.parse(trimmed); } catch { return null; } }) as any;
     if (asTool && typeof asTool.tool === 'string' && asTool.input !== undefined) {
       setMessages((prev) => [...prev, { role: 'user', content: trimmed }]);
@@ -136,15 +168,87 @@ export const AISidebar: React.FC<AISidebarProps> = ({
       try {
         const res = await knowledge.agentCall(asTool.tool, asTool.input);
         if (res.requiresApproval && res.approvalId) {
-          setMessages((prev) => [...prev, { role: 'assistant', content: `Agent prepared \`${res.tool}\` — review the preview below and Approve to apply.\n\nPreview:\n\`\`\`diff\n${res.preview ?? '(no preview)'}\n\`\`\`` }]);
-          const list = await knowledge.agentPending(); setPendingAgent(list);
+          await postApprovalMessage(res.tool, res.preview);
         } else {
           setMessages((prev) => [...prev, { role: 'assistant', content: `Tool \`${res.tool}\` result:\n\`\`\`json\n${JSON.stringify(res.result, null, 2)}\n\`\`\`` }]);
         }
       } catch (err: any) { showError(err, 'Agent tool failed.'); } finally { setIsLoading(false); }
       return true;
     }
-    return false;
+    // Model-driven loop: the model gets the Tool Bus registry (reads + edit
+    // tools) so agent mode can read and edit notes through conversation.
+    // Writes still stop at the preview + user-approval gate — the model can
+    // prepare edits, never apply them silently.
+    if (!isConfigured) {
+      setError(createUserErrorDetails('AI is not configured. Please enter your API Key and Base URL in Settings.'));
+      return true;
+    }
+    setInputValue(''); setError(null);
+    // Fetch the Tool Bus registry first: when it is unreachable we fall back
+    // to plain chat (`handleSend` posts the user bubble itself).
+    let registry: AgentToolDefinition[] = [];
+    try { registry = await knowledge.agentTools(); } catch { registry = []; }
+    if (!registry.length) { await handleSend(trimmed); return true; }
+    setMessages((prev) => [...prev, { role: 'user', content: trimmed }]);
+    setIsLoading(true);
+    try {
+      const activeForRetrieval = note ? { title: note.title, path: note.path, content: note.content } : null;
+      const history = messages.slice(-12).map((m) => ({ role: m.role as 'user' | 'assistant', content: m.content }));
+      const work: Array<{ role: 'user' | 'assistant' | 'system'; content: string }> = [
+        { role: 'system', content: `${buildChatSystemPrompt(note)}\n\n${buildAgentSystemPrompt(registry)}` },
+        ...history,
+        { role: 'user', content: trimmed },
+      ];
+      let finished = false;
+      for (let round = 0; round < MAX_AGENT_ROUNDS && !finished; round++) {
+        const { text: response } = await sendChatMessageWithRetrieval(config, work, activeForRetrieval);
+        work.push({ role: 'assistant', content: response });
+        const calls = extractToolCalls(response);
+        if (!calls.length) {
+          setMessages((prev) => [...prev, { role: 'assistant', content: response }]);
+          finished = true;
+          break;
+        }
+        setMessages((prev) => [...prev, { role: 'assistant', content: `Agent: calling ${calls.map((c) => `\`${c.tool}\``).join(', ')}…` }]);
+        for (const call of calls) {
+          let res;
+          try {
+            res = await knowledge.agentCall(call.tool, call.input);
+          } catch (err: any) {
+            const details = createErrorDetails(err, 'Agent tool failed.');
+            work.push({ role: 'user', content: `Tool ${call.tool} failed: ${details.human} Adjust the call and retry, or explain the problem to the user.` });
+            continue;
+          }
+          if (res.requiresApproval && res.approvalId) {
+            await postApprovalMessage(res.tool, res.preview);
+            work.push({ role: 'user', content: `Tool ${call.tool} prepared a preview (approval id ${res.approvalId}) now waiting for the user's decision. Do not call further write tools. Summarize what you prepared and ask for approval.` });
+            // One more model pass for the summary, then end the turn — the
+            // user's Approve/Deny resolves the pending edit via the review UI.
+            try {
+              const { text: summary } = await sendChatMessageWithRetrieval(config, work, activeForRetrieval);
+              if (!extractToolCalls(summary).length) {
+                setMessages((prev) => [...prev, { role: 'assistant', content: summary }]);
+              }
+            } catch { /* preview message above already informs the user */ }
+            finished = true;
+            break;
+          }
+          const resultJson = JSON.stringify(res.result ?? res.error ?? null, null, 2);
+          const clipped = resultJson.length > MAX_TOOL_RESULT_CHARS
+            ? `${resultJson.slice(0, MAX_TOOL_RESULT_CHARS)}\n...[tool result truncated]`
+            : resultJson;
+          work.push({ role: 'user', content: `Tool ${call.tool} result:\n${clipped}\nContinue: call another tool if needed, or answer the user (no json blocks).` });
+        }
+      }
+      if (!finished) {
+        setMessages((prev) => [...prev, { role: 'assistant', content: 'Agent reached its step limit. Review any prepared previews below, or ask me to continue.' }]);
+      }
+    } catch (err: any) {
+      showError(err, 'Agent turn failed.');
+    } finally {
+      setIsLoading(false);
+    }
+    return true;
   };
 
   const handleSearch = async (query: string) => {
@@ -235,7 +339,7 @@ export const AISidebar: React.FC<AISidebarProps> = ({
         <div className="flex items-center gap-2">
           <button
             onClick={() => setAgentMode((v) => !v)}
-            title={agentMode ? 'Agent: ON — writes need approval' : 'Agent: OFF — chat only'}
+            title={agentMode ? 'Agent: ON — can read and prepare note edits (writes need your approval)' : 'Agent: OFF — chat only'}
             aria-pressed={agentMode}
             className="runtime-button"
           >

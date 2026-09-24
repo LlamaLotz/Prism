@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useId, useRef, useState } from 'react';
 import ReactMarkdown, { defaultUrlTransform } from 'react-markdown';
-import { BookOpen, Plus, ArrowLeft, Upload, RefreshCw, Send, X, Settings2, Search, Headphones, Wand2, FolderOpen } from 'lucide-react';
+import { BookOpen, Plus, ArrowLeft, Upload, RefreshCw, Send, X, Settings2, Search, Headphones, Wand2, FolderOpen, Pencil } from 'lucide-react';
 import { NotebookClient, notebookRuntime, recordId } from '../../services/notebook';
 import type { AppSettings, NoteFile } from '../../types';
 import type { NotebookResponse, SourceListResponse, SourceResponse, NoteResponse, ChatSessionResponse, ChatSessionWithMessagesResponse, ChatMessage, BuildContextResponse, SourceInsightResponse, TransformationResponse, SearchResponse, ModelResponse } from '../../types/notebook-api';
@@ -13,6 +13,13 @@ export const Button = ({ children, className = '', ...props }: React.ButtonHTMLA
 export function Field({ label, children }: { label: string; children: React.ReactNode }) {
   const id = useId();
   return <div className="nb-label"><label htmlFor={id}>{label}</label>{React.isValidElement<{ id?: string }>(children) ? React.cloneElement(children, { id }) : children}</div>;
+}
+
+/** Settle a request without throwing, so one half of `refreshNotebook` can
+ *  succeed while the other fails (notes still render if sources error). */
+async function settled<T>(promise: Promise<T>): Promise<{ ok: true; value: T } | { ok: false; error: unknown }> {
+  try { return { ok: true, value: await promise }; }
+  catch (error) { return { ok: false, error }; }
 }
 
 export function NotebookMarkdown({ text, onReference }: { text: string; onReference: (id: string) => void }) {
@@ -116,12 +123,25 @@ function NotebookWorkspace({ client, vaultPath, vaultNotes, settings, onVaultExp
   const previewGeneration = useRef(0);
   useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
 
-  const run = useCallback(async (operation: () => Promise<void>) => {
-    setPending(n => n + 1); setError('');
-    try { await operation(); }
-    catch (e) { if (alive.current) setError(String(e)); }
-    finally { if (alive.current) setPending(n => n - 1); }
+  // Dedupe identical consecutive errors so a persistent backend failure
+  // (e.g. 422) shows one banner instead of flickering on every poll.
+  const lastError = useRef('');
+  const reportError = useCallback((message: string) => {
+    if (!alive.current || message === lastError.current) return;
+    lastError.current = message;
+    setError(message);
   }, []);
+  const clearError = useCallback(() => { lastError.current = ''; setError(''); }, []);
+  const run = useCallback(async (operation: () => Promise<void>, opts?: { silent?: boolean }) => {
+    setPending(n => n + 1); if (!opts?.silent) clearError();
+    try { await operation(); if (opts?.silent && alive.current) clearError(); }
+    catch (e) {
+      const message = String(e);
+      if (opts?.silent) { if (alive.current && !lastError.current) { lastError.current = message; setError(message); } }
+      else reportError(message);
+    }
+    finally { if (alive.current) setPending(n => n - 1); }
+  }, [clearError, reportError]);
   const refreshLibrary = useCallback(async () => {
     const rows = await client.request<NotebookResponse[]>('/notebooks');
     if (!alive.current) return;
@@ -130,8 +150,17 @@ function NotebookWorkspace({ client, vaultPath, vaultNotes, settings, onVaultExp
   }, [client]);
   const refreshNotebook = useCallback(async () => {
     const id = selectedRef.current; if (!id) return;
-    const [s, n] = await Promise.all([client.request<SourceListResponse[]>(`/sources?notebook_id=${encodeURIComponent(id)}&limit=1000`), client.request<NoteResponse[]>(`/notes?notebook_id=${encodeURIComponent(id)}`)]);
-    if (alive.current && selectedRef.current === id) { setSources(s); setNotes(n); }
+    // Sources are paged server-side (max 100/page); notes fetch has no limit
+    // param. Settled separately so a sources failure can't blank the notes.
+    const [s, n] = await Promise.all([
+      settled(client.listAllSources(id)),
+      settled(client.request<NoteResponse[]>(`/notes?notebook_id=${encodeURIComponent(id)}`)),
+    ]);
+    if (!alive.current || selectedRef.current !== id) return;
+    let failure: unknown = null;
+    if (s.ok) setSources(s.value); else failure = s.error;
+    if (n.ok) setNotes(n.value); else failure = failure ?? n.error;
+    if (failure) throw failure;
   }, [client]);
   useEffect(() => { void run(async () => { await refreshLibrary(); setModels(await client.request<ModelResponse[]>('/models')); setTransformations(await client.request<TransformationResponse[]>('/transformations')); }); }, [client]);
   useEffect(() => {
@@ -142,7 +171,7 @@ function NotebookWorkspace({ client, vaultPath, vaultNotes, settings, onVaultExp
   }, [selected]);
   useEffect(() => {
     if (!selected) return;
-    const timer = setInterval(() => { if (sources.some(s => ['new', 'pending', 'running', 'queued', 'processing'].includes(s.status ?? ''))) void run(refreshNotebook); }, 3000);
+    const timer = setInterval(() => { if (sources.some(s => ['new', 'pending', 'running', 'queued', 'processing'].includes(s.status ?? ''))) void run(refreshNotebook, { silent: true }); }, 3000);
     return () => clearInterval(timer);
   }, [selected, sources, refreshNotebook]);
   const sessionPath = chatSource ? `/sources/${recordId(chatSource)}/chat/sessions` : '/chat/sessions';
@@ -181,7 +210,7 @@ function NotebookWorkspace({ client, vaultPath, vaultNotes, settings, onVaultExp
   };
   const openReference = (id: string) => void run(async () => {
     if (id.startsWith('source:')) await openSource(id);
-    else if (id.startsWith('note:')) { if (!(await discardDraft())) return; setDraft(await client.request<NoteResponse>(`/notes/${recordId(id)}`)); setDirty(false); setMobilePane('notes'); }
+    else if (id.startsWith('note:')) { if (!(await discardDraft())) return; const loaded = await client.request<NoteResponse>(`/notes/${recordId(id)}`); draftSnapshot.current = loaded; setDraft(loaded); setDirty(false); setMobilePane('notes'); }
     else { const insight = await client.request<SourceInsightResponse>(`/insights/${recordId(id)}`); await openSource(insight.source_id); }
   });
 
@@ -237,10 +266,47 @@ function NotebookWorkspace({ client, vaultPath, vaultNotes, settings, onVaultExp
       if (selectedRef.current === notebookId) setMessages(data.messages ?? []);
     } catch (e) { setQuestion(questionText); throw e; }
   });
+  // Snapshot of the note as loaded from the API — Cancel restores this
+  // without any mutation; a failed Save keeps the user's unsaved draft.
+  const draftSnapshot = useRef<NoteResponse | null>(null);
+  const noteTitleRef = useRef<HTMLInputElement | null>(null);
+  const saveNoteInFlight = useRef(false);
+  const [savingNote, setSavingNote] = useState(false);
+  // Direct edit: fetch + populate the editor for exactly this note, with no
+  // prior selection step required from the caller.
+  const editNote = async (id: string) => {
+    if (!(await discardDraft())) return;
+    const loaded = await client.request<NoteResponse>(`/notes/${recordId(id)}`);
+    if (!alive.current) return;
+    draftSnapshot.current = loaded;
+    setDraft(loaded); setDirty(false); setMobilePane('notes');
+    requestAnimationFrame(() => noteTitleRef.current?.focus());
+  };
+  const cancelNoteEdit = async () => {
+    if (dirty && !(await discardDraft())) return;
+    // Restore the original value; never touches the API.
+    setDraft(draftSnapshot.current); setDirty(false);
+  };
   const saveNote = async () => {
-    if (!draft) return;
-    const result = await client.request<NoteResponse>(draft.id ? `/notes/${recordId(draft.id)}` : '/notes', draft.id ? 'PUT' : 'POST', { title: draft.title, content: draft.content ?? '', note_type: draft.note_type ?? 'human', ...(!draft.id && { notebook_id: selected }) });
-    setDraft(result); setDirty(false); await refreshNotebook();
+    if (!draft || saveNoteInFlight.current) return;
+    saveNoteInFlight.current = true; setSavingNote(true);
+    try {
+      const result = await client.request<NoteResponse>(draft.id ? `/notes/${recordId(draft.id)}` : '/notes', draft.id ? 'PUT' : 'POST', { title: draft.title, content: draft.content ?? '', note_type: draft.note_type ?? 'human', ...(!draft.id && { notebook_id: selected }) });
+      if (!alive.current) return;
+      draftSnapshot.current = result;
+      setDraft(result); setDirty(false);
+      // Update the list immediately without waiting for a full refresh.
+      setNotes(rows => {
+        const next = rows.some(r => r.id === result.id)
+          ? rows.map(r => r.id === result.id ? result : r)
+          : [...rows, result];
+        return [...next].sort((a, b) => (b.updated ?? '').localeCompare(a.updated ?? ''));
+      });
+      await refreshNotebook();
+    } finally {
+      saveNoteInFlight.current = false;
+      if (alive.current) setSavingNote(false);
+    }
   };
   const notebook = notebooks.find(n => n.id === selected);
   const busy = pending > 0;
@@ -252,7 +318,7 @@ function NotebookWorkspace({ client, vaultPath, vaultNotes, settings, onVaultExp
       <div className="nb-tabs">{([['workspace', BookOpen, 'Research'], ['search', Search, 'Search'], ['transformations', Wand2, 'Transform'], ['podcasts', Headphones, 'Podcasts'], ['settings', Settings2, 'Manage']] as const).map(([key, Icon, label]) => <Button key={key} aria-pressed={section === key} onClick={() => setSection(key)}><Icon size={14}/>{label}</Button>)}</div>
       <Button title="Refresh" aria-label="Refresh notebooks" disabled={busy} onClick={() => void run(async () => { await refreshLibrary(); await refreshNotebook(); })}><RefreshCw size={14}/></Button>
     </div>
-    {error && <div className="nb-error" role="alert"><span>{error}</span><Button aria-label="Dismiss error" onClick={() => setError('')}><X size={14}/></Button></div>}
+    {error && <div className="nb-error" role="alert"><span>{error}</span><Button aria-label="Dismiss error" onClick={clearError}><X size={14}/></Button></div>}
     {notice && <div className="nb-toolbar nb-muted" role="status"><span className="flex-1">{notice}</span><Button aria-label="Dismiss notice" onClick={() => setNotice('')}><X size={14}/></Button></div>}
     {busy && <div className="h-0.5 bg-brand-500 animate-pulse" role="status" aria-label="Notebook is working"/>}
     {section === 'search' ? <div className="nb-scroll nb-stack">
@@ -262,7 +328,7 @@ function NotebookWorkspace({ client, vaultPath, vaultNotes, settings, onVaultExp
       </form>
       {results && <p className="nb-muted">{results.total_count} results</p>}
       {results?.results.map((r, i) => <article className="nb-card nb-stack" key={String(r.id ?? i)}><h3>{String(r.title ?? r.name ?? 'Result')}</h3><NotebookMarkdown text={String(r.content ?? r.full_text ?? r.text ?? '')} onReference={openReference}/><Button onClick={() => openReference(String(r.id))}>Open result</Button></article>)}
-    </div> : section !== 'workspace' ? <NotebookManage key={section} section={section} client={client} notebookId={selected} config={settings.omniRoute} onExport={exportText} onReference={openReference} onRestart={onRestart}/>
+    </div> : section !== 'workspace' ? <NotebookManage key={section} section={section} client={client} notebookId={selected} config={settings.omniRoute} workerConcurrency={settings.notebook.workerConcurrency} onExport={exportText} onReference={openReference} onRestart={onRestart}/>
     : !selected ? <div className="nb-scroll nb-stack">
       <div className="nb-toolbar"><div className="flex-1"><h2 className="text-lg">Your research library</h2><p className="nb-muted">Bring sources together. Ask questions. Keep what you discover.</p></div><label className="nb-muted"><input type="checkbox" checked={archived} onChange={e => setArchived(e.target.checked)}/> Archived</label><Button className="primary" disabled={busy} onClick={() => void run(async () => { const name = await dialogs.prompt('Notebook name', { title: 'Create notebook' }); if (!name?.trim()) return; const row = await client.request<NotebookResponse>('/notebooks', 'POST', { name: name.trim(), description: '' }); await refreshLibrary(); await selectNotebook(row.id); })}><Plus size={14}/>New notebook</Button></div>
       {!notebooks.length && <div className="nb-center"><div className="nb-stack"><BookOpen size={44} className="text-brand-400 mx-auto"/><p>Create your first notebook to start researching.</p></div></div>}
@@ -299,7 +365,7 @@ function NotebookWorkspace({ client, vaultPath, vaultNotes, settings, onVaultExp
           <form className="nb-compose" onSubmit={e => { e.preventDefault(); send(); }}><select className="nb-input text-xs" aria-label="Chat model" value={model} onChange={e => setModel(e.target.value)}><option value="">Default chat model</option>{models.filter(m => m.type === 'language').map(m => <option key={m.id} value={m.id}>{m.name}</option>)}</select><textarea className="nb-input" aria-label="Question" rows={3} value={question} onChange={e => setQuestion(e.target.value)} placeholder="Ask about your research…"/><Button type="submit" className="primary justify-self-end" disabled={busy || !question.trim()}><Send size={14}/>Send</Button></form>
         </main>
         <div className="nb-resize"><ResizeHandle direction="horizontal" onResize={d => setNoteWidth(w => Math.min(480, Math.max(200, w - d)))}/></div>
-        <aside className="nb-pane" style={{ width: noteWidth }} data-active={mobilePane === 'notes'} aria-label="Notebook notes"><div className="nb-toolbar"><h2 className="font-semibold text-sm flex-1">Notes</h2><Button disabled={busy} onClick={() => void run(async () => { if (!(await discardDraft())) return; setDraft({ id: '', title: 'New note', content: '', note_type: 'human', created: '', updated: '' }); setDirty(true); })}><Plus size={14}/></Button></div><div className="nb-scroll nb-stack">{notes.map(n => <Button key={n.id} aria-pressed={draft?.id === n.id} onClick={() => void run(async () => { if (!(await discardDraft())) return; setDraft(await client.request<NoteResponse>(`/notes/${recordId(n.id)}`)); setDirty(false); })}>{n.title || 'Untitled note'}</Button>)}{!notes.length && !draft && <p className="nb-muted">Write a note or save an answer from your conversation.</p>}{draft && <div className="nb-stack"><Field label="Title"><input className="nb-input" value={draft.title ?? ''} onChange={e => { setDraft({ ...draft, title: e.target.value }); setDirty(true); }}/></Field><Field label="Note"><textarea className="nb-input min-h-64" value={draft.content ?? ''} onChange={e => { setDraft({ ...draft, content: e.target.value }); setDirty(true); }}/></Field><div className="nb-tabs"><Button disabled={busy || !dirty} className="primary" onClick={() => void run(saveNote)}>Save</Button><Button disabled={busy} onClick={() => void run(() => exportText(draft.title || 'Note', draft.content || ''))}>Save to vault</Button>{draft.id && <Button disabled={busy} onClick={() => void run(async () => { if (!(await dialogs.confirm('Delete this notebook note?', { danger: true }))) return; await client.request(`/notes/${recordId(draft.id)}`, 'DELETE'); setDraft(null); setDirty(false); await refreshNotebook(); })}>Delete</Button>}</div></div>}</div></aside>
+        <aside className="nb-pane" style={{ width: noteWidth }} data-active={mobilePane === 'notes'} aria-label="Notebook notes"><div className="nb-toolbar"><h2 className="font-semibold text-sm flex-1">Notes</h2><Button disabled={busy} aria-label="New note" onClick={() => void run(async () => { if (!(await discardDraft())) return; draftSnapshot.current = null; setDraft({ id: '', title: 'New note', content: '', note_type: 'human', created: '', updated: '' }); setDirty(true); requestAnimationFrame(() => noteTitleRef.current?.focus()); })}><Plus size={14}/></Button></div><div className="nb-scroll nb-stack">{notes.map(n => <div key={n.id} className="nb-note-row flex items-center gap-1"><Button className="flex-1 text-left" aria-pressed={draft?.id === n.id} onClick={() => void run(() => editNote(n.id))}>{n.title || 'Untitled note'}</Button><Button aria-label={`Edit ${n.title || 'untitled note'}`} title="Edit note" disabled={busy} onClick={() => void run(() => editNote(n.id))}><Pencil size={14}/></Button></div>)}{!notes.length && !draft && <p className="nb-muted">Write a note or save an answer from your conversation.</p>}{draft && <div className="nb-stack"><Field label="Title"><input ref={noteTitleRef} className="nb-input" value={draft.title ?? ''} onChange={e => { setDraft({ ...draft, title: e.target.value }); setDirty(true); }}/></Field><Field label="Note"><textarea className="nb-input min-h-64" value={draft.content ?? ''} onChange={e => { setDraft({ ...draft, content: e.target.value }); setDirty(true); }}/></Field><div className="nb-tabs"><Button disabled={busy || savingNote || !dirty} className="primary" onClick={() => void run(saveNote)}>{savingNote ? 'Saving…' : 'Save'}</Button><Button disabled={busy || savingNote} onClick={() => void cancelNoteEdit()}>Cancel</Button><Button disabled={busy || savingNote} onClick={() => void run(() => exportText(draft.title || 'Note', draft.content || ''))}>Save to vault</Button>{draft.id && <Button disabled={busy || savingNote} onClick={() => void run(async () => { if (!(await dialogs.confirm('Delete this notebook note?', { danger: true }))) return; await client.request(`/notes/${recordId(draft.id)}`, 'DELETE'); draftSnapshot.current = null; setDraft(null); setDirty(false); await refreshNotebook(); })}>Delete</Button>}</div></div>}</div></aside>
       </div>
     </>}
   </>;

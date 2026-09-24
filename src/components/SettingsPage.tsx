@@ -43,6 +43,12 @@ import {
 } from '../services/apiProviders';
 import { APP_ICON_GROUPS, getAppIcon } from '../services/appIcon';
 import { createErrorDetails } from '../utils/errors';
+import {
+  DEFAULT_WORKER_CONCURRENCY,
+  MAX_WORKER_CONCURRENCY,
+  MIN_WORKER_CONCURRENCY,
+  normalizeWorkerConcurrency,
+} from '../services/notebook';
 
 interface SettingsPageProps {
   isOpen: boolean;
@@ -687,6 +693,81 @@ const TextField: React.FC<{
   />
 );
 
+/**
+ * Worker-queue concurrency override control. `undefined` means "no override"
+ * (the system default is used); any valid 1–8 value is an active override.
+ * Invalid/empty input is rejected with a hint and never persisted.
+ */
+const WorkerQueueControl: React.FC<{
+  value: number | undefined;
+  onChange: (v: number | undefined) => void;
+}> = ({ value, onChange }) => {
+  const override = normalizeWorkerConcurrency(value);
+  const [text, setText] = useState(value === undefined ? '' : String(value));
+  const [focused, setFocused] = useState(false);
+  useEffect(() => {
+    if (!focused) setText(value === undefined ? '' : String(value));
+  }, [value, focused]);
+  const commit = () => {
+    if (text.trim() === '') {
+      onChange(undefined);
+      return;
+    }
+    const n = normalizeWorkerConcurrency(text);
+    if (n === null) return; // keep the invalid text visible with the hint
+    onChange(n);
+  };
+  return (
+    <div className="flex flex-col items-end gap-1.5">
+      <div className="flex items-center gap-2">
+        <span
+          className={`text-[10px] uppercase font-semibold px-2 py-0.5 rounded-full border ${
+            override === null
+              ? 'text-slate-400 border-slate-700'
+              : 'text-brand-300 border-brand-500/40 bg-brand-500/10'
+          }`}
+        >
+          {override === null ? `Default (${DEFAULT_WORKER_CONCURRENCY})` : `Override active (${override})`}
+        </span>
+        <input
+          type="number"
+          value={text}
+          min={MIN_WORKER_CONCURRENCY}
+          max={MAX_WORKER_CONCURRENCY}
+          step={1}
+          placeholder={String(DEFAULT_WORKER_CONCURRENCY)}
+          onFocus={() => setFocused(true)}
+          onChange={(e) => setText(e.target.value)}
+          onBlur={() => {
+            setFocused(false);
+            commit();
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+          }}
+          aria-label="Worker queue concurrency override"
+          className="w-24 bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-sm text-slate-200 focus:outline-none focus:border-brand-500 tabular-nums"
+        />
+        <span className="text-xs text-slate-500">jobs</span>
+        {value !== undefined && (
+          <button
+            type="button"
+            onClick={() => onChange(undefined)}
+            className="text-xs text-slate-500 hover:text-rose-400 px-2 py-1.5 transition-colors cursor-pointer"
+          >
+            Reset to default
+          </button>
+        )}
+      </div>
+      {text.trim() !== '' && normalizeWorkerConcurrency(text) === null && (
+        <p className="text-[11px] text-amber-500/90 leading-relaxed text-right">
+          Enter a whole number {MIN_WORKER_CONCURRENCY}–{MAX_WORKER_CONCURRENCY}, or clear the field to use the default.
+        </p>
+      )}
+    </div>
+  );
+};
+
 /* ------------------------------------------------------------------ */
 /* Settings page                                                       */
 /* ------------------------------------------------------------------ */
@@ -768,7 +849,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
     setIsDirty(true);
     setDraft((d) => ({ ...d, [key]: value }));
   };
-  const patchNested = <K extends 'omniRoute' | 'appearance' | 'editor' | 'linking' | 'system'>(
+  const patchNested = <K extends 'omniRoute' | 'appearance' | 'editor' | 'linking' | 'system' | 'notebook'>(
     key: K,
     value: AppSettings[K]
   ) => {
@@ -1758,6 +1839,17 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                       min={0}
                       max={3650}
                       suffix="days"
+                    />
+                  </Field>
+                  <Field
+                    label="Worker queue concurrency"
+                    hint="How many Notebook background jobs (source processing, embeddings, podcasts) run at once. Takes effect when Notebook next starts. Empty/invalid values fall back to the default."
+                  >
+                    <WorkerQueueControl
+                      value={draft.notebook.workerConcurrency}
+                      onChange={(workerConcurrency) =>
+                        patchNested('notebook', { ...draft.notebook, workerConcurrency })
+                      }
                     />
                   </Field>
                   <Field

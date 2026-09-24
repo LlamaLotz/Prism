@@ -97,6 +97,9 @@ export interface AppSettings {
     embedByDefault: boolean;
     sourcePanelWidth: number;
     notesPanelWidth: number;
+    /** Worker-queue concurrency override (parallel background jobs).
+     *  Undefined = no override, the system default (2) is used. */
+    workerConcurrency?: number;
   };
   vaultPath: string;
   ingestionScript: string;

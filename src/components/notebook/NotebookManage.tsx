@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { NotebookClient, recordId } from '../../services/notebook';
+import { NotebookClient, NOTEBOOK_JOBS_PAGE_LIMIT, DEFAULT_WORKER_CONCURRENCY, normalizeWorkerConcurrency, recordId } from '../../services/notebook';
 import type { OmniRouteConfig } from '../../types';
 import type { CredentialResponse, ProviderInfoResponse, ModelResponse, DefaultModelsResponse, TransformationResponse, TransformationExecuteResponse, EpisodeProfileResponse, SpeakerProfileResponse, PodcastEpisodeResponse, DiscoverModelsResponse, SettingsResponse, CapabilitiesResponse } from '../../types/notebook-api';
 import { useDialog } from '../DialogProvider';
@@ -26,8 +26,10 @@ function EntityForm({ title, fields, initial, onSave, onCancel, children }: { ti
   </form>;
 }
 
-export function NotebookManage({ section, client, notebookId, config, onExport, onReference, onRestart }: {
+export function NotebookManage({ section, client, notebookId, config, workerConcurrency, onExport, onReference, onRestart }: {
   section: 'transformations' | 'podcasts' | 'settings'; client: NotebookClient; notebookId: string | null; config: OmniRouteConfig;
+  /** Worker-queue concurrency override (undefined = system default). */
+  workerConcurrency?: number;
   onExport: (title: string, text: string) => Promise<void>; onReference: (id: string) => void; onRestart: () => Promise<void>;
 }) {
   const dialogs = useDialog();
@@ -61,7 +63,15 @@ export function NotebookManage({ section, client, notebookId, config, onExport, 
   const alive = useRef(true);
   useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
   useEffect(() => () => { if (audio) URL.revokeObjectURL(audio.url); }, [audio]);
-  const run = async (fn: () => Promise<void>) => { setBusy(true); setError(''); try { await fn(); } catch (e) { if (alive.current) setError(String(e)); } finally { if (alive.current) setBusy(false); } };
+  // Dedupe identical consecutive errors so the 5s poller can't spam the banner.
+  const lastError = useRef('');
+  const reportError = (e: unknown) => {
+    const message = String(e);
+    if (!alive.current || message === lastError.current) return;
+    lastError.current = message;
+    setError(message);
+  };
+  const run = async (fn: () => Promise<void>) => { setBusy(true); lastError.current = ''; setError(''); try { await fn(); } catch (e) { reportError(e); } finally { if (alive.current) setBusy(false); } };
   const refresh = async () => {
     const requests = [
       client.request<CredentialResponse[]>('/credentials').then(setCredentials), client.request<ProviderInfoResponse[]>('/providers').then(setProviders),
@@ -69,7 +79,7 @@ export function NotebookManage({ section, client, notebookId, config, onExport, 
       client.request<TransformationResponse[]>('/transformations').then(setTransforms), client.request<PodcastEpisodeResponse[]>('/podcasts/episodes').then(setEpisodes),
       client.request<SpeakerProfileResponse[]>('/speaker-profiles').then(setSpeakers), client.request<EpisodeProfileResponse[]>('/episode-profiles').then(setProfiles),
       client.request<SettingsResponse>('/settings').then(setProcessing), client.request<CapabilitiesResponse>('/capabilities').then(setCapabilities),
-      client.request<Row[]>('/commands/jobs?limit=100').then(setJobs),
+      client.request<Row[]>(`/commands/jobs?limit=${NOTEBOOK_JOBS_PAGE_LIMIT}`).then(setJobs),
     ];
     const results = await Promise.allSettled(requests);
     const failures = results.filter((r): r is PromiseRejectedResult => r.status === 'rejected');
@@ -80,8 +90,8 @@ export function NotebookManage({ section, client, notebookId, config, onExport, 
     if (!['episodes', 'jobs'].includes(tab)) return;
     const timer = setInterval(() => {
       if (busy) return;
-      const request = tab === 'episodes' ? client.request<PodcastEpisodeResponse[]>('/podcasts/episodes').then(setEpisodes) : client.request<Row[]>('/commands/jobs?limit=100').then(setJobs);
-      request.catch(e => { if (alive.current) setError(String(e)); });
+      const request = tab === 'episodes' ? client.request<PodcastEpisodeResponse[]>('/podcasts/episodes').then(setEpisodes) : client.request<Row[]>(`/commands/jobs?limit=${NOTEBOOK_JOBS_PAGE_LIMIT}`).then(setJobs);
+      request.catch(reportError);
     }, 5000);
     return () => clearInterval(timer);
   }, [tab, busy]);
@@ -144,7 +154,7 @@ export function NotebookManage({ section, client, notebookId, config, onExport, 
     {tab === 'models' && <><Button onClick={() => edit('model')}>Register a model manually</Button>{models.map(m => <div key={m.id} className="nb-card nb-toolbar"><span className="flex-1">{m.name} <span className="nb-muted">{m.provider} · {m.type.replaceAll('_', ' ')}</span></span><Button onClick={() => deleteRow(`/models/${recordId(m.id)}`, m.name)}>Delete</Button></div>)}</>}
     {tab === 'defaults' && <div className="nb-card nb-stack"><h3>Default models</h3>{[['default_chat_model', 'Chat', 'language'], ['default_transformation_model', 'Transformations', 'language'], ['large_context_model', 'Large context', 'language'], ['default_embedding_model', 'Embeddings', 'embedding'], ['default_text_to_speech_model', 'Text to speech', 'text_to_speech'], ['default_speech_to_text_model', 'Speech to text', 'speech_to_text'], ['default_tools_model', 'Tools', 'language']].map(([key, label, type]) => <Field key={key} label={label}><select className="nb-input" value={defaults[key as keyof DefaultModelsResponse] ?? ''} onChange={e => setDefaults(d => ({ ...d, [key]: e.target.value || null }))}><option value="">Not configured</option>{modelOptions(type).map(o => <option value={o.value} key={o.value}>{o.label}</option>)}</select></Field>)}<Button disabled={busy} onClick={() => void run(async () => { await client.request('/models/defaults', 'PUT', defaults); setNotice('Default models saved. Rebuild embeddings if you changed the embedding model.'); })}>Save defaults</Button></div>}
     {tab === 'processing' && <div className="nb-card nb-stack"><h3>Content processing</h3><p className="nb-muted">Optional extraction engines are shown only when available in this installation.</p><Field label="Document engine"><select className="nb-input" value={processing.default_content_processing_engine_doc ?? 'auto'} onChange={e => setProcessing(p => ({ ...p, default_content_processing_engine_doc: e.target.value }))}><option value="auto">Automatic</option><option value="simple">Standard</option>{capabilities?.docling_available && <option value="docling">Docling</option>}</select></Field><Field label="Automatically embed new content"><select className="nb-input" value={processing.default_embedding_option ?? 'ask'} onChange={e => setProcessing(p => ({ ...p, default_embedding_option: e.target.value }))}><option value="ask">Ask</option><option value="always">Always</option><option value="never">Never</option></select></Field><Button disabled={busy} onClick={() => void run(async () => { await client.request('/settings', 'PUT', processing); setNotice('Processing preferences saved.'); })}>Save preferences</Button><hr className="border-slate-800"/><h3>Embeddings</h3><p className="nb-muted">Rebuild after changing embedding models. Progress appears under Jobs.</p><div className="nb-tabs">{['existing', 'all'].map(mode => <Button key={mode} disabled={busy} onClick={() => void run(async () => { if (!(await dialogs.confirm(`Rebuild embeddings for ${mode === 'all' ? 'all content' : 'previously embedded content'}? This uses your embedding provider.`, { confirmLabel: 'Rebuild' }))) return; const r = await client.request<{ message: string }>('/embeddings/rebuild', 'POST', { mode, include_sources: true, include_notes: true, include_insights: true }); setNotice(r.message); })}>Rebuild {mode}</Button>)}</div></div>}
-    {tab === 'jobs' && <><div className="nb-toolbar"><p className="nb-muted flex-1">Queued, running, completed, and failed background work. Retry failed sources or podcasts from their own panels.</p><Button disabled={busy} onClick={() => void onRestart()}>Restart Notebook</Button></div>{jobs.map((j, i) => <div className="nb-card nb-stack" key={String(j.id ?? i)}><h3>{String(j.command ?? j.command_name ?? 'Background job')}</h3><p className="nb-muted">{String(j.status ?? '')}</p>{j.error ? <p className="nb-error">{String(j.error)}</p> : null}{['running', 'queued', 'pending'].includes(String(j.status)) && <Button onClick={() => void run(async () => { await client.request(`/commands/jobs/${recordId(String(j.id))}`, 'DELETE'); await refresh(); })}>Cancel job</Button>}</div>)}</>}
+    {tab === 'jobs' && <><div className="nb-toolbar"><p className="nb-muted flex-1">Queued, running, completed, and failed background work. Retry failed sources or podcasts from their own panels.</p><span className="nb-muted text-xs" role="status">{(() => { const o = normalizeWorkerConcurrency(workerConcurrency); return o === null ? `Worker queue: default (${DEFAULT_WORKER_CONCURRENCY} jobs)` : `Worker queue: override (${o} jobs)`; })()}</span><Button disabled={busy} onClick={() => void onRestart()}>Restart Notebook</Button></div>{jobs.map((j, i) => <div className="nb-card nb-stack" key={String(j.id ?? i)}><h3>{String(j.command ?? j.command_name ?? 'Background job')}</h3><p className="nb-muted">{String(j.status ?? '')}</p>{j.error ? <p className="nb-error">{String(j.error)}</p> : null}{['running', 'queued', 'pending'].includes(String(j.status)) && <Button onClick={() => void run(async () => { await client.request(`/commands/jobs/${recordId(String(j.id))}`, 'DELETE'); await refresh(); })}>Cancel job</Button>}</div>)}</>}
     {tab === 'transformations' && <>
       <div className="nb-toolbar"><p className="nb-muted flex-1">Reusable instructions for summaries, questions, outlines, and more.</p><Button onClick={() => edit('transformation', { name: '', title: '', description: '', prompt: '', apply_default: false })}>New transformation</Button></div>
       <div className="nb-card nb-stack"><Field label="Transformation"><select className="nb-input" value={transform} onChange={e => setTransform(e.target.value)}><option value="">Select…</option>{transforms.map(t => <option key={t.id} value={t.id}>{t.title}</option>)}</select></Field><Field label="Text to transform"><textarea className="nb-input" rows={6} value={input} onChange={e => setInput(e.target.value)}/></Field><Button disabled={busy || !transform || !input.trim()} onClick={() => void run(async () => { const r = await client.request<TransformationExecuteResponse>('/transformations/execute', 'POST', { transformation_id: transform, input_text: input }); setOutput(r.output); })}>Run transformation</Button>{output && <><NotebookMarkdown text={output} onReference={onReference}/><div className="nb-tabs"><Button onClick={() => void run(() => onExport('Transformation', output))}>Save to vault</Button>{notebookId && <Button onClick={() => void run(async () => { await client.request('/notes', 'POST', { title: 'Transformation', content: output, note_type: 'ai', notebook_id: notebookId }); setNotice('Saved to notebook.'); })}>Save as note</Button>}</div></>}</div>

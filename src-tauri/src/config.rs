@@ -188,16 +188,35 @@ impl Default for SystemConfig {
     }
 }
 
+/// Bounds for the user-configurable worker-queue concurrency override.
+pub const DEFAULT_WORKER_CONCURRENCY: u32 = 2;
+pub const MIN_WORKER_CONCURRENCY: u32 = 1;
+pub const MAX_WORKER_CONCURRENCY: u32 = 8;
+
+/// Clamp a stored override into range; returns None when unset so callers
+/// fall back to the default instead of breaking queue behavior.
+pub fn effective_worker_concurrency(override_value: Option<u32>) -> u32 {
+    match override_value {
+        Some(n) if n >= MIN_WORKER_CONCURRENCY && n <= MAX_WORKER_CONCURRENCY => n,
+        _ => DEFAULT_WORKER_CONCURRENCY,
+    }
+}
+
 #[derive(Serialize, Deserialize, Clone, Debug)]
 #[serde(rename_all = "camelCase", default)]
 pub struct NotebookConfig {
     pub embed_by_default: bool,
     pub source_panel_width: u32,
     pub notes_panel_width: u32,
+    /// Worker-queue concurrency override (parallel background jobs).
+    /// None/absent = no override; the system default applies. Old settings
+    /// files without this key keep working unchanged.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub worker_concurrency: Option<u32>,
 }
 
 impl Default for NotebookConfig {
-    fn default() -> Self { Self { embed_by_default: false, source_panel_width: 260, notes_panel_width: 260 } }
+    fn default() -> Self { Self { embed_by_default: false, source_panel_width: 260, notes_panel_width: 260, worker_concurrency: None } }
 }
 
 impl Default for RuntimeConfig {
@@ -333,7 +352,25 @@ mod tests {
         let restored: RuntimeConfig = serde_json::from_value(json).unwrap();
         assert!(!restored.notebook.embed_by_default);
         assert_eq!(restored.notebook.source_panel_width, 260);
+        assert_eq!(restored.notebook.worker_concurrency, None);
+        assert_eq!(effective_worker_concurrency(None), DEFAULT_WORKER_CONCURRENCY);
         assert_eq!(restored.appearance.startup_view, "graph");
+    }
+
+    #[test]
+    fn worker_concurrency_override_clamps_to_safe_range() {
+        // No override (incl. old settings files without the key) → default.
+        assert_eq!(effective_worker_concurrency(None), DEFAULT_WORKER_CONCURRENCY);
+        assert_eq!(effective_worker_concurrency(Some(4)), 4);
+        // Out-of-range / zero values never break queue behavior.
+        assert_eq!(effective_worker_concurrency(Some(0)), DEFAULT_WORKER_CONCURRENCY);
+        assert_eq!(effective_worker_concurrency(Some(99)), DEFAULT_WORKER_CONCURRENCY);
+        // Serde round-trip: missing key and explicit null both mean "no override".
+        let missing: NotebookConfig = serde_json::from_value(serde_json::json!({})).unwrap();
+        assert_eq!(missing.worker_concurrency, None);
+        let nulled: NotebookConfig =
+            serde_json::from_value(serde_json::json!({ "workerConcurrency": null })).unwrap();
+        assert_eq!(nulled.worker_concurrency, None);
     }
 
     #[test]

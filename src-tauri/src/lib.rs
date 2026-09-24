@@ -274,6 +274,12 @@ fn get_embedding_engine(
             .map(Arc::new)
     });
 
+    // A caught loader panic still prints its panic line via the default hook
+    // before `initialize_safely` contains it — log explicitly that the app
+    // survives, so a handled degradation is never mistaken for a crash.
+    if let Err(e) = result.as_ref() {
+        println!("[embeddings] continuing without the semantic engine (lexical search only): {e}");
+    }
     *guard = Some(result.clone());
     result
 }

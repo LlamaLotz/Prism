@@ -191,7 +191,7 @@ async fn stop_locked(state: &NotebookState) {
         // existing requests/jobs to finish; keep the old vault DB alive meanwhile.
         let deadline = Instant::now() + Duration::from_secs(20);
         while Instant::now() < deadline {
-            let jobs = c.client.get(format!("{}/api/commands/jobs?status_filter=running&limit=1000", c.base_url))
+            let jobs = c.client.get(format!("{}/api/commands/jobs?status_filter=running&limit=100", c.base_url))
                 .bearer_auth(&c.password).timeout(Duration::from_secs(2)).send().await;
             let idle = match jobs {
                 Ok(r) => r.json::<Vec<Value>>().await.map(|v| v.is_empty()).unwrap_or(false),
@@ -292,6 +292,12 @@ pub async fn notebook_start(app: tauri::AppHandle, state: State<'_, NotebookStat
         .env("SURREAL_PASS", &database_password).arg(format!("rocksdb:{}", data.join("surreal.db").display()));
     runtime.children.push(spawn(db)?);
     ready(&mut runtime, &format!("http://127.0.0.1:{db_port}/health"), "database").await?;
+    // Worker-queue concurrency override from the persisted settings (System >
+    // Worker Queue). Absent/invalid values fall back to the default so old
+    // configs keep working unchanged.
+    let worker_concurrency = crate::config::load_runtime_config(&app)
+        .map(|c| crate::config::effective_worker_concurrency(c.notebook.worker_concurrency))
+        .unwrap_or(crate::config::DEFAULT_WORKER_CONCURRENCY);
     for service in ["api", "worker"] {
         let mut command = Command::new(root.join(&manifest.python_executable));
         command.arg("-B").arg(root.join("launcher.py")).arg(service).arg(api_port.to_string())
@@ -304,6 +310,7 @@ pub async fn notebook_start(app: tauri::AppHandle, state: State<'_, NotebookStat
             .env("PYTHONNOUSERSITE", "1")
             .env("PRISM_MODEL_GATEWAY", &gateway_url)
             .env("PRISM_MODEL_GATEWAY_TOKEN", &gateway_token)
+            .env("PRISM_WORKER_CONCURRENCY", worker_concurrency.to_string())
             .env("PRISM_LOCAL_PORTS", format!("{db_port},{api_port}"));
         runtime.children.push(spawn(command)?);
         if service == "api" {

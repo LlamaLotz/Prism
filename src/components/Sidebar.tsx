@@ -1,9 +1,9 @@
 import { JobsButton } from './RuntimeActivity';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { 
-  Folder, FolderOpen, FolderPlus, FolderMinus, Plus, Search, FileText, Trash2, Edit3, 
+import {
+  Folder, FolderOpen, FolderPlus, FolderMinus, Plus, Search, FileText, Trash2, Edit3,
   RefreshCw, Terminal, Settings, ChevronRight, Play, PanelLeftClose,
-  ArrowUp, ArrowDown, TerminalSquare
+  ArrowUp, ArrowDown, TerminalSquare, Pencil
 } from 'lucide-react';
 import { NoteFile, tauriAPI } from '../types';
 import { useIngestion } from '../services/ingestionStore';
@@ -365,6 +365,17 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
         {/* Note Hover Actions */}
         <div className="flex items-center gap-1.5 shrink-0 opacity-50 hover:opacity-100 transition-opacity">
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onOpenNote(note);
+            }}
+            className="p-1 hover:bg-slate-800 text-slate-400 hover:text-brand-400 rounded transition-colors"
+            title="Edit note (open in editor)"
+            aria-label={`Edit ${note.title}`}
+          >
+            <Pencil className="w-3.5 h-3.5" />
+          </button>
           <button
             onClick={(e) => {
               e.stopPropagation();

@@ -1,5 +1,30 @@
 import { invoke } from '@tauri-apps/api/core';
-import type { SourceResponse } from '../types/notebook-api';
+import type { SourceListResponse, SourceResponse } from '../types/notebook-api';
+
+/** Backend maximum for `GET /sources?limit` (FastAPI `Query(le=100)`).
+ *  Never send a larger `query.limit` — page with `offset` instead. */
+export const NOTEBOOK_SOURCE_PAGE_LIMIT = 100;
+/** Backend maximum for `GET /api/commands/jobs?limit` (`prism_api.py`). */
+export const NOTEBOOK_JOBS_PAGE_LIMIT = 100;
+/** Default Notebook worker concurrency (parallel background jobs). */
+export const DEFAULT_WORKER_CONCURRENCY = 2;
+/** Bounds for the user-configurable worker concurrency override. */
+export const MIN_WORKER_CONCURRENCY = 1;
+export const MAX_WORKER_CONCURRENCY = 8;
+
+/** Normalize a worker-concurrency value; returns null when unset/invalid so
+ *  callers fall back to the default instead of breaking queue behavior. */
+export function normalizeWorkerConcurrency(value: unknown): number | null {
+  const n = typeof value === 'string' && value.trim() === '' ? NaN : Number(value);
+  if (!Number.isFinite(n) || !Number.isInteger(n)) return null;
+  if (n < MIN_WORKER_CONCURRENCY || n > MAX_WORKER_CONCURRENCY) return null;
+  return n;
+}
+
+/** Resolve the effective worker concurrency: override when valid, else default. */
+export function resolveWorkerConcurrency(override: unknown): number {
+  return normalizeWorkerConcurrency(override) ?? DEFAULT_WORKER_CONCURRENCY;
+}
 
 export interface NotebookRuntimeStatus {
   state: 'stopped' | 'ready' | 'failed';
@@ -40,6 +65,20 @@ export class NotebookClient {
     const result = await invoke<{ modelId: string; credentialId: string }>('notebook_import_copilot', { workspaceId: this.workspaceId, provider });
     this.assertActive();
     return result;
+  }
+  /** Load every source for a notebook in pages of at most
+   *  NOTEBOOK_SOURCE_PAGE_LIMIT, so large libraries never hit the backend
+   *  `query.limit <= 100` validation and never get truncated. */
+  async listAllSources(notebookId: string): Promise<SourceListResponse[]> {
+    const all: SourceListResponse[] = [];
+    for (let offset = 0; ; offset += NOTEBOOK_SOURCE_PAGE_LIMIT) {
+      const page = await this.request<SourceListResponse[]>(
+        `/sources?notebook_id=${encodeURIComponent(notebookId)}&limit=${NOTEBOOK_SOURCE_PAGE_LIMIT}&offset=${offset}`,
+      );
+      all.push(...page);
+      if (page.length < NOTEBOOK_SOURCE_PAGE_LIMIT) break;
+    }
+    return all;
   }
   async source(fields: Record<string, string>, upload = false): Promise<SourceResponse | null> {
     this.assertActive();

@@ -1229,9 +1229,31 @@ pub fn apply_embedding_runtime_config(
 }
 
 /// Contain third-party model-loader panics before they poison shared locks.
+///
+/// Background: `ort` with `load-dynamic` panics (rather than returning `Err`)
+/// when `libonnxruntime` cannot be `dlopen`ed. Every such failure lands here
+/// as `Err`, so a missing library degrades to lexical search instead of
+/// aborting the process (and a later retry re-attempts the load cleanly).
 pub(crate) fn initialize_safely<T>(initialize: impl FnOnce() -> Result<T, String>) -> Result<T, String> {
-    std::panic::catch_unwind(std::panic::AssertUnwindSafe(initialize))
-        .unwrap_or_else(|_| Err("Semantic engine could not load. Reinstall Prism to repair its bundled ONNX Runtime; notes and settings remain available.".into()))
+    std::panic::catch_unwind(std::panic::AssertUnwindSafe(initialize)).unwrap_or_else(|payload| {
+        let detail = payload
+            .downcast_ref::<String>()
+            .cloned()
+            .or_else(|| payload.downcast_ref::<&str>().map(|s| s.to_string()))
+            .filter(|s| !s.trim().is_empty());
+        // NOTE: the default panic hook still prints the panic line above this
+        // message. That print is cosmetic — the panic was caught and the app
+        // continues without the semantic engine.
+        let repair = if cfg!(debug_assertions) {
+            "Rebuild the app (cargo build stages the dev dylib next to the binary) or restore libonnxruntime.dylib beside the executable."
+        } else {
+            "Reinstall Prism to repair its bundled ONNX Runtime."
+        };
+        match detail {
+            Some(d) => Err(format!("Semantic engine could not load ({d}). {repair} Notes and settings remain available.")),
+            None => Err(format!("Semantic engine could not load. {repair} Notes and settings remain available.")),
+        }
+    })
 }
 
 #[cfg(test)]
@@ -1247,6 +1269,25 @@ mod tests {
         }
         assert!(!slot.is_poisoned());
         assert!(slot.lock().unwrap().as_ref().unwrap().is_err());
+    }
+
+    #[test]
+    fn loader_panic_details_and_repeated_failures_stay_errors() {
+        // The panic payload surfaces in the error for diagnosability.
+        let err = initialize_safely::<()>(|| panic!("dlopen libonnxruntime.dylib failed")).unwrap_err();
+        assert!(err.contains("dlopen libonnxruntime.dylib failed"), "unexpected: {err}");
+        // A missing native library fails every load attempt (std OnceLock
+        // retries after a panic rather than latching) — each attempt must
+        // come back as Err and run again, never escape the guard.
+        let attempts = Mutex::new(0);
+        for _ in 0..3 {
+            let retry = initialize_safely::<()>(|| {
+                *attempts.lock().unwrap() += 1;
+                panic!("An error occurred while attempting to load the ONNX Runtime binary");
+            });
+            assert!(retry.is_err(), "failed load must not escape the guard");
+        }
+        assert_eq!(*attempts.lock().unwrap(), 3);
     }
 
     #[test]

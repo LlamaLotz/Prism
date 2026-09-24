@@ -1,6 +1,8 @@
 import type { AppSettings } from './types';
 
 export const DEFAULT_SETTINGS: AppSettings = {
+  // workerConcurrency is intentionally omitted: undefined = no override,
+  // the system default (DEFAULT_WORKER_CONCURRENCY = 2) applies.
   notebook: { embedByDefault: false, sourcePanelWidth: 260, notesPanelWidth: 260 },
   vaultPath: '',
   ingestionScript: 'python "/Users/Shiver/Documents/Prism/Extractor Final/master_extractor.py" --vault {vault_path}',
