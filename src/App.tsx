@@ -26,7 +26,7 @@ import { TitleBar } from './components/TitleBar';
 import { LiquidGlass } from './components/LiquidGlass';
 import { createErrorDetails, createRawErrorDetails, errorDialogMessage, ErrorDetails } from './utils/errors';
 
-import { RuntimeActivity } from './components/RuntimeActivity';
+import { RuntimeActivity, JobsButton } from './components/RuntimeActivity';
 import { SplashScreen } from './components/SplashScreen';
 import { UpdateBanner } from './components/UpdateBanner';
 import { FileText, Network, PanelLeftClose, PanelLeftOpen, SplitSquareVertical, Sparkles, Tags } from 'lucide-react';
@@ -1494,8 +1494,7 @@ export default function App() {
   };
 
   return (
-    <>
-      <RuntimeActivity />
+    <RuntimeActivity>
       {/* Background environment layer (behind the app, viewport-level) */}
       {settings.appearance.backgroundEnvironment !== 'none' && (
         <div
@@ -1546,6 +1545,7 @@ export default function App() {
           >
             <PanelLeftOpen className="w-5 h-5" />
           </button>
+          <JobsButton />
         </div>
       ) : (
         <div className="relative shrink-0 h-full" style={{ width: sidebarWidth }}>
@@ -1766,6 +1766,6 @@ export default function App() {
         />
       )}
     </div>
-    </>
+    </RuntimeActivity>
   );
 }

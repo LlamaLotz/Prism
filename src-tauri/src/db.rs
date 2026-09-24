@@ -486,6 +486,8 @@ pub fn rename_folder_paths(
     old_prefix: &str,
     new_prefix: &str,
 ) -> Result<(), String> {
+    let old_prefix = format!("{}/", old_prefix.trim_end_matches('/'));
+    let new_prefix = format!("{}/", new_prefix.trim_end_matches('/'));
     let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
     tx.execute_batch("PRAGMA defer_foreign_keys = ON").map_err(|e| e.to_string())?;
 
@@ -493,7 +495,7 @@ pub fn rename_folder_paths(
     let re_point = |tx: &rusqlite::Transaction, table: &str, col: &str| -> Result<(), String> {
         tx.execute(
             &format!(
-                "UPDATE {table} SET {col} = REPLACE({col}, ?1, ?2) \
+                "UPDATE {table} SET {col} = ?2 || substr({col}, length(?1)+1) \
                  WHERE substr({col}, 1, length(?1)) = ?1"
             ),
             params![old_prefix, new_prefix],
@@ -502,7 +504,15 @@ pub fn rename_folder_paths(
         Ok(())
     };
 
+    let paths: Vec<String> = {
+        let mut stmt=tx.prepare("SELECT path FROM knowledge_notes WHERE instr(path,?1)=1 AND deleted=0").map_err(|e|e.to_string())?;
+        let rows=stmt.query_map([&old_prefix],|r|r.get(0)).map_err(|e|e.to_string())?;
+        rows.collect::<Result<_,_>>().map_err(|e|e.to_string())?
+    };
+    for path in paths { crate::knowledge::record_path_change(&tx,&path,"note_moved")?; }
+    tx.execute("UPDATE knowledge_notes SET revision=revision+1,updated_at=unixepoch() WHERE instr(path,?1)=1",[&old_prefix]).map_err(|e|e.to_string())?;
     re_point(&tx, "knowledge_notes", "path")?;
+    re_point(&tx, "knowledge_embedding_provenance", "path")?;
     re_point(&tx, "notes", "id")?;
     re_point(&tx, "notes", "path")?;
     re_point(&tx, "aliases", "note_id")?;
@@ -1334,6 +1344,30 @@ pub fn get_block_texts(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn runtime_moves_and_deletes_advance_snapshot_without_retargeting_siblings() {
+        let db=Database::open(":memory:").unwrap();
+        let c=&db.conn;
+        let v=crate::knowledge::vault(c,std::path::Path::new("/vault")).unwrap();
+        let (id,_)=crate::knowledge::sync(c,&v,"/vault/a/a/n.md","first note").unwrap();
+        let (sibling,_)=crate::knowledge::sync(c,&v,"/vault/ab/n.md","sibling").unwrap();
+        c.execute("INSERT INTO knowledge_embedding_provenance VALUES (?1,'note','hash','model')",["/vault/a/a/n.md"]).unwrap();
+        rename_folder_paths(c,"/vault/a","/vault/b").unwrap();
+        let path=|id:&str| c.query_row("SELECT path FROM knowledge_notes WHERE id=?1",[id],|r|r.get::<_,String>(0)).unwrap();
+        assert_eq!(path(&id),"/vault/b/a/n.md");
+        assert_eq!(path(&sibling),"/vault/ab/n.md");
+        assert_eq!(c.query_row("SELECT path FROM knowledge_embedding_provenance",[],|r|r.get::<_,String>(0)).unwrap(),"/vault/b/a/n.md");
+        crate::knowledge::move_path(c,"/vault/b/a/n.md","/vault/b/a/new.md").unwrap();
+        assert_eq!(path(&id),"/vault/b/a/new.md");
+        crate::knowledge::remove(c,"/vault/b/a/new.md").unwrap();
+        crate::knowledge::remove(c,"/vault/b/a/new.md").unwrap();
+        assert_eq!(c.query_row("SELECT revision FROM knowledge_vaults WHERE id=?1",[&v],|r|r.get::<_,i64>(0)).unwrap(),5);
+        let mut stmt=c.prepare("SELECT kind FROM knowledge_events WHERE entity_id=?1 ORDER BY sequence").unwrap();
+        let events=stmt.query_map([&id],|r|r.get::<_,String>(0)).unwrap().collect::<Result<Vec<_>,_>>().unwrap();
+        assert_eq!(events,vec!["note_moved","note_moved","note_deleted"]);
+        assert_eq!(c.query_row("SELECT count(*) FROM knowledge_fts WHERE note_id=?1",[&id],|r|r.get::<_,i64>(0)).unwrap(),0);
+    }
 
     #[test]
     fn test_vault_dictionary() {

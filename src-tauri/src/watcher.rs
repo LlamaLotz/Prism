@@ -177,6 +177,7 @@ fn handle_remove(app_handle: &AppHandle, path: &Path) {
 
     if let Ok(conn) = db::init_db(app_handle) {
         let _ = crate::knowledge::remove(&conn, &path_str);
+        let _ = crate::knowledge::publish_path_change(app_handle, &conn, &path_str);
         let _ = conn.execute("DELETE FROM notes WHERE id = ?1", params![path_str]);
         let _ = conn.execute(
             "DELETE FROM backlinks WHERE source_path = ?1 OR target_path = ?1",
@@ -214,6 +215,7 @@ fn handle_rename(app_handle: &AppHandle, from: &Path, to: &Path) {
     };
 
     let _ = crate::knowledge::move_path(&conn, &old_path, &new_path);
+    let _ = crate::knowledge::publish_path_change(app_handle, &conn, &new_path);
 
     // 1. Find every source note that links to the old note
     let mut sources: Vec<String> = Vec::new();
@@ -251,7 +253,9 @@ fn handle_rename(app_handle: &AppHandle, from: &Path, to: &Path) {
             // Mask this rewrite so the watcher doesn't re-index every source
             // note (and re-write) in a loop during a rename.
             suppress_self_write(Path::new(&src), SELF_WRITE_MASK_MS);
-            let _ = std::fs::write(src, updated);
+            if std::fs::write(src, &updated).is_ok() {
+                let _ = crate::knowledge::sync_file(app_handle, Path::new(src), &updated);
+            }
         }
     }
 

@@ -1,3 +1,4 @@
+import { JobsButton } from './RuntimeActivity';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { 
   Folder, FolderOpen, FolderPlus, FolderMinus, Plus, Search, FileText, Trash2, Edit3, 
@@ -490,6 +491,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           >
             <PanelLeftClose className="w-4 h-4" />
           </button>
+          <JobsButton />
           <button
             onClick={onOpenSettings}
             className="sidebar-toolbar-button text-slate-400 hover:text-slate-200 hover:bg-slate-900 p-1.5 rounded-lg transition-colors border border-transparent hover:border-slate-800 relative"

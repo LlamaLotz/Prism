@@ -937,6 +937,7 @@ fn rename_folder(
 #[tauri::command]
 fn delete_file(app_handle: tauri::AppHandle, file_path: String) -> Result<(), String> {
     let path = Path::new(&file_path);
+    knowledge::validate_path(&app_handle, path)?;
     if path.exists() {
         // Mask the remove event: the frontend re-indexes immediately after.
         suppress_self_write(path, SELF_WRITE_MASK_MS);
@@ -947,6 +948,7 @@ fn delete_file(app_handle: tauri::AppHandle, file_path: String) -> Result<(), St
     // deleted note would linger as a ghost node/edge in the graph tab.
     if let Ok(conn) = db::init_db(&app_handle) {
         knowledge::remove(&conn, &file_path)?;
+        knowledge::publish_path_change(&app_handle, &conn, &file_path)?;
         let _ = conn.execute("DELETE FROM notes WHERE id = ?1", params![file_path]);
         let _ = conn.execute(
             "DELETE FROM backlinks WHERE source_path = ?1 OR target_path = ?1",
@@ -983,6 +985,10 @@ fn rename_file(app_handle: tauri::AppHandle, old_path: String, new_path: String)
     fs::rename(old, new).map_err(|e| e.to_string())?;
     let conn = db::init_db(&app_handle)?;
     knowledge::move_path(&conn, &old_path, &new_path)?;
+    knowledge::publish_path_change(&app_handle, &conn, &new_path)?;
+    if new.extension().and_then(|ext| ext.to_str()).is_some_and(|ext| ext.eq_ignore_ascii_case("md")) {
+        knowledge::sync_file(&app_handle, new, &fs::read_to_string(new).map_err(|e|e.to_string())?)?;
+    }
     Ok(())
 }
 

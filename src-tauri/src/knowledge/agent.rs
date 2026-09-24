@@ -241,7 +241,7 @@ fn extract_frontmatter(content: &str) -> (String, String) {
 // ---------------------------------------------------------------------------
 
 #[derive(Deserialize, Debug, Clone)]
-#[serde(rename_all = "camelCase", tag = "op")]
+#[serde(rename_all = "camelCase", rename_all_fields = "camelCase", tag = "op")]
 pub enum EditOp {
     ReplaceBlock { block_id: String, text: String },
     InsertAfter { block_id: String, text: String },
@@ -1181,6 +1181,6 @@ mod tests {
         let raw = serde_json::json!({"op":"replace_block","block_id":"a","text":"hi"});
         let norm = normalize_op_value(raw);
         let op: EditOp = serde_json::from_value(norm).unwrap();
-        matches!(op, EditOp::ReplaceBlock { .. });
+        assert!(matches!(op, EditOp::ReplaceBlock { block_id, text } if block_id == "a" && text == "hi"));
     }
 }

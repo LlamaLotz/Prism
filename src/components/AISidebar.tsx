@@ -227,7 +227,7 @@ export const AISidebar: React.FC<AISidebarProps> = ({
   return (
     <div className="ai-sidebar w-full min-w-0 box-border border-l border-[var(--color-border)] bg-panel flex flex-col h-full select-none rounded-l-2xl">
       {/* Header */}
-      <div className="p-4 border-b border-[var(--color-border)] flex items-center justify-between bg-panel">
+      <div className="p-4 border-b border-[var(--color-border)] flex flex-wrap gap-3 items-center justify-between bg-panel">
         <div className="flex items-center gap-2">
           <Sparkles className="w-4.5 h-4.5 text-brand-400 animate-pulse" />
           <h2 className="text-sm font-bold text-slate-100">AI Co-Pilot</h2>
@@ -236,7 +236,8 @@ export const AISidebar: React.FC<AISidebarProps> = ({
           <button
             onClick={() => setAgentMode((v) => !v)}
             title={agentMode ? 'Agent: ON — writes need approval' : 'Agent: OFF — chat only'}
-            className={`inline-flex items-center gap-1 text-[10px] font-bold px-2 py-1 rounded-full border transition-colors ${agentMode ? 'bg-emerald-900/30 border-emerald-700 text-emerald-300' : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-slate-200'}`}
+            aria-pressed={agentMode}
+            className="runtime-button"
           >
             <ShieldCheck className="w-3 h-3" /> Agent {agentMode ? 'ON' : 'OFF'}
           </button>
@@ -397,24 +398,24 @@ export const AISidebar: React.FC<AISidebarProps> = ({
 
       {/* Input section */}
       {agentMode && pendingAgent.length > 0 && (
-        <div className="border-t border-amber-900/40 bg-amber-950/20 p-3 space-y-2 max-h-52 overflow-auto">
-          <div className="text-[10px] font-bold tracking-wider text-amber-300 flex items-center gap-1"><Eye className="w-3 h-3" /> PENDING APPROVALS ({pendingAgent.length})</div>
+        <div className="agent-review">
+          <div className="text-[10px] font-bold tracking-wider text-[var(--color-text-hi)] flex items-center gap-1"><Eye className="w-3 h-3" /> PENDING APPROVALS ({pendingAgent.length})</div>
           {pendingAgent.map((p) => (
-            <div key={p.id} className="rounded-xl border border-amber-900/40 bg-slate-900 p-2 space-y-1.5">
-              <div className="text-[11px] font-semibold text-slate-200">{p.tool} · <span className="text-slate-400">{p.notePath}</span></div>
-              <pre className="text-[10px] leading-relaxed whitespace-pre-wrap break-words max-h-28 overflow-auto bg-slate-950 border border-slate-800 rounded-lg p-2 text-slate-300">{p.preview || '(no preview)'}</pre>
-              <div className="flex gap-1.5">
-                <button onClick={async () => { try { const r = await knowledge.agentApprove(p.id, true); setMessages((m) => [...m, { role: 'assistant', content: `Approved \`${p.tool}\`${(r as any)?.result ? ` — ${JSON.stringify((r as any).result)}` : ''}` }]); const list = await knowledge.agentPending(); setPendingAgent(list); setUndoNote(p.notePath); } catch (e: any) { showError(e, 'Approval failed.'); } }} className="inline-flex items-center gap-1 text-[11px] font-bold px-3 py-1 rounded-full bg-emerald-600 hover:bg-emerald-500 text-white"><Check className="w-3 h-3" /> Approve</button>
-                <button onClick={async () => { try { await knowledge.agentApprove(p.id, false); const list = await knowledge.agentPending(); setPendingAgent(list); setMessages((m) => [...m, { role: 'assistant', content: `Denied \`${p.tool}\`` }]); } catch (e: any) { showError(e, 'Deny failed.'); } }} className="inline-flex items-center gap-1 text-[11px] font-bold px-3 py-1 rounded-full bg-slate-700 hover:bg-slate-600 text-slate-200"><X className="w-3 h-3" /> Deny</button>
+            <article key={p.id}>
+              <div className="text-[11px] font-semibold text-[var(--color-text-hi)]">{p.tool} · <span className="text-[var(--color-text-body)]">{p.notePath}</span></div>
+              <pre >{p.preview || '(no preview)'}</pre>
+              <div className="runtime-actions">
+                <button onClick={async () => { try { const r = await knowledge.agentApprove(p.id, true); setMessages((m) => [...m, { role: 'assistant', content: `Approved \`${p.tool}\`${(r as any)?.result ? ` — ${JSON.stringify((r as any).result)}` : ''}` }]); const list = await knowledge.agentPending(); setPendingAgent(list); setUndoNote(p.notePath); } catch (e: any) { showError(e, 'Approval failed.'); } }} className="runtime-button runtime-primary"><Check className="w-3 h-3" /> Approve</button>
+                <button onClick={async () => { try { await knowledge.agentApprove(p.id, false); const list = await knowledge.agentPending(); setPendingAgent(list); setMessages((m) => [...m, { role: 'assistant', content: `Denied \`${p.tool}\`` }]); } catch (e: any) { showError(e, 'Deny failed.'); } }} className="runtime-button"><X className="w-3 h-3" /> Deny</button>
               </div>
-            </div>
+            </article>
           ))}
         </div>
       )}
       {agentMode && undoNote && (
-        <div className="border-t border-slate-800 bg-slate-900/60 p-2 flex items-center justify-between">
+        <div className="agent-undo">
           <span className="text-[10px] text-slate-400">Last edit recoverable via history</span>
-          <button onClick={async () => { try { const r = await knowledge.agentUndo(undoNote); setMessages((m) => [...m, { role: 'assistant', content: `Undid last change to \`${r.relativePath}\`\n\`\`\`diff\n${r.preview}\n\`\`\`` }]); } catch (e: any) { showError(e, 'Undo failed.'); } }} className="inline-flex items-center gap-1 text-[10px] font-bold px-3 py-1 rounded-full bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200"><Undo2 className="w-3 h-3" /> Undo last edit</button>
+          <button onClick={async () => { try { const r = await knowledge.agentUndo(undoNote); setMessages((m) => [...m, { role: 'assistant', content: `Undid last change to \`${r.relativePath}\`\n\`\`\`diff\n${r.preview}\n\`\`\`` }]); } catch (e: any) { showError(e, 'Undo failed.'); } }} className="runtime-button"><Undo2 className="w-3 h-3" /> Undo last edit</button>
         </div>
       )}
       <form 

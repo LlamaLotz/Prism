@@ -296,11 +296,24 @@ pub fn sync(
     tx.commit().map_err(|e| e.to_string())?;
     Ok((id, true))
 }
+// Record invalidation in the same transaction as a path mutation so snapshots
+// cannot observe the new path with an old revision/event sequence.
+pub(crate) fn record_path_change(c: &Connection, path: &str, kind: &str) -> Result<(), String> {
+    c.execute("UPDATE knowledge_vaults SET revision=revision+1 WHERE id IN (SELECT vault_id FROM knowledge_notes WHERE path=?1 AND deleted=0)", [path]).map_err(|e| e.to_string())?;
+    c.execute("INSERT INTO knowledge_events(vault_id,kind,entity_id) SELECT vault_id,?2,id FROM knowledge_notes WHERE path=?1 AND deleted=0", params![path,kind]).map_err(|e|e.to_string())?;
+    Ok(())
+}
+pub fn publish_path_change(app: &tauri::AppHandle, c: &Connection, path: &str) -> Result<(), String> {
+    let event = c.query_row("SELECT e.sequence,e.vault_id,e.kind,e.entity_id FROM knowledge_events e JOIN knowledge_notes n ON n.id=e.entity_id WHERE n.path=?1 ORDER BY e.sequence DESC LIMIT 1", [path], |r| Ok(RuntimeEvent {sequence:r.get(0)?,vault_id:r.get(1)?,kind:r.get(2)?,entity_id:r.get(3)?})).optional().map_err(|e| e.to_string())?;
+    if let Some(event)=event {app.emit("knowledge-event",event).map_err(|e|e.to_string())?;}
+    Ok(())
+}
 pub fn move_path(conn: &Connection, old: &str, new: &str) -> Result<(), String> {
     let tx = rusqlite::Transaction::new_unchecked(conn, rusqlite::TransactionBehavior::Immediate)
         .map_err(|e| e.to_string())?;
+    record_path_change(&tx, old, "note_moved")?;
     tx.execute(
-        "UPDATE knowledge_notes SET path=?1,revision=revision+1 WHERE path=?2",
+        "UPDATE knowledge_notes SET path=?1,revision=revision+1,updated_at=unixepoch() WHERE path=?2",
         params![new, old],
     )
     .map_err(|e| e.to_string())?;
@@ -323,6 +336,7 @@ pub fn move_path(conn: &Connection, old: &str, new: &str) -> Result<(), String> 
 pub fn remove(conn: &Connection, path: &str) -> Result<(), String> {
     let tx = rusqlite::Transaction::new_unchecked(conn, rusqlite::TransactionBehavior::Immediate)
         .map_err(|e| e.to_string())?;
+    record_path_change(&tx, path, "note_deleted")?;
     tx.execute(
         "DELETE FROM knowledge_fts WHERE note_id IN (SELECT id FROM knowledge_notes WHERE path=?1)",
         [path],
@@ -330,7 +344,7 @@ pub fn remove(conn: &Connection, path: &str) -> Result<(), String> {
     .map_err(|e| e.to_string())?;
     tx.execute("UPDATE knowledge_blocks SET fts_rowid=NULL WHERE note_id IN (SELECT id FROM knowledge_notes WHERE path=?1)",[path]).map_err(|e|e.to_string())?;
     tx.execute(
-        "UPDATE knowledge_notes SET deleted=1,empty_fts_rowid=NULL,revision=revision+1 WHERE path=?1",
+        "UPDATE knowledge_notes SET deleted=1,empty_fts_rowid=NULL,revision=revision+1,updated_at=unixepoch() WHERE path=?1 AND deleted=0",
         [path],
     )
     .map_err(|e| e.to_string())?;
