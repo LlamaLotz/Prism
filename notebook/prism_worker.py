@@ -9,6 +9,7 @@ import os
 from pathlib import Path
 
 import commands  # Registers the pinned upstream commands.
+import provider_profiles  # noqa: F401 - registers Co-Pilot-parity model profiles
 from open_notebook.database.repository import ensure_record_id, repo_query
 from surreal_commands.core.service import command_service
 

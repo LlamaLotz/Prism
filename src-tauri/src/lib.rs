@@ -1559,6 +1559,158 @@ fn purge_expired_history(
     db::history::purge_expired_history(&conn, retention_days)
 }
 
+// --- Unified chat library ----------------------------------------------------
+// Co-Pilot + Notebook conversation history, vault-scoped. Co-Pilot turns
+// persist here directly; Notebook sessions are linked by backend id.
+
+#[tauri::command]
+async fn create_chat_session(
+    app_handle: tauri::AppHandle,
+    title: String,
+    origin: String,
+) -> Result<db::chat::ChatSession, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let scope = knowledge::current(&app_handle)?;
+        let conn = db::init_db(&app_handle)?;
+        db::chat::create_session(&conn, &scope.vault_id, &title, &origin)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+async fn list_chat_sessions(
+    app_handle: tauri::AppHandle,
+    query: Option<String>,
+    origin: Option<String>,
+    limit: Option<i64>,
+) -> Result<Vec<db::chat::ChatSession>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let scope = knowledge::current(&app_handle)?;
+        let conn = db::init_db(&app_handle)?;
+        db::chat::list_sessions(&conn, &scope.vault_id, query.as_deref(), origin.as_deref(), limit.unwrap_or(100))
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+async fn rename_chat_session(
+    app_handle: tauri::AppHandle,
+    id: String,
+    title: String,
+) -> Result<db::chat::ChatSession, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let scope = knowledge::current(&app_handle)?;
+        let conn = db::init_db(&app_handle)?;
+        db::chat::rename_session(&conn, &scope.vault_id, &id, &title)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+async fn delete_chat_session(
+    app_handle: tauri::AppHandle,
+    id: String,
+) -> Result<bool, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let scope = knowledge::current(&app_handle)?;
+        let conn = db::init_db(&app_handle)?;
+        db::chat::delete_session(&conn, &scope.vault_id, &id)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+async fn get_chat_messages(
+    app_handle: tauri::AppHandle,
+    session_id: String,
+    limit: Option<i64>,
+    offset: Option<i64>,
+) -> Result<Vec<db::chat::ChatMessage>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let scope = knowledge::current(&app_handle)?;
+        let conn = db::init_db(&app_handle)?;
+        db::chat::get_messages(&conn, &scope.vault_id, &session_id, limit.unwrap_or(200), offset.unwrap_or(0))
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+async fn append_chat_message(
+    app_handle: tauri::AppHandle,
+    session_id: String,
+    role: String,
+    content: String,
+    metadata: Option<String>,
+) -> Result<db::chat::ChatMessage, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let scope = knowledge::current(&app_handle)?;
+        let conn = db::init_db(&app_handle)?;
+        db::chat::append_message(&conn, &scope.vault_id, &session_id, &role, &content, metadata.as_deref())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+async fn replace_chat_transcript(
+    app_handle: tauri::AppHandle,
+    session_id: String,
+    messages: Vec<(String, String, Option<String>)>,
+) -> Result<usize, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let scope = knowledge::current(&app_handle)?;
+        let conn = db::init_db(&app_handle)?;
+        db::chat::replace_messages(&conn, &scope.vault_id, &session_id, &messages)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+async fn link_notebook_session(
+    app_handle: tauri::AppHandle,
+    notebook_session_id: String,
+    title: String,
+    notebook_id: Option<String>,
+    source_id: Option<String>,
+    model: Option<String>,
+) -> Result<db::chat::ChatSession, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let scope = knowledge::current(&app_handle)?;
+        let conn = db::init_db(&app_handle)?;
+        db::chat::link_notebook_session(
+            &conn,
+            &scope.vault_id,
+            &notebook_session_id,
+            &title,
+            notebook_id.as_deref(),
+            source_id.as_deref(),
+            model.as_deref(),
+        )
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+async fn unlink_notebook_session(
+    app_handle: tauri::AppHandle,
+    notebook_session_id: String,
+) -> Result<bool, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let scope = knowledge::current(&app_handle)?;
+        let conn = db::init_db(&app_handle)?;
+        db::chat::unlink_notebook_session(&conn, &scope.vault_id, &notebook_session_id)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 /// Fully closes Prism and starts a fresh instance of the current executable.
 /// Unlike a webview reload, this tears down and restarts the whole Tauri
 /// process so anything initialized at startup (watcher, DB caches, etc.) is
@@ -1781,6 +1933,15 @@ pub fn run() {
             get_runtime_config,
             save_runtime_config,
             purge_expired_history,
+            create_chat_session,
+            list_chat_sessions,
+            rename_chat_session,
+            delete_chat_session,
+            get_chat_messages,
+            append_chat_message,
+            replace_chat_transcript,
+            link_notebook_session,
+            unlink_notebook_session,
             relaunch_app,
             web_search
         ])

@@ -32,6 +32,29 @@ export interface AgentToolDefinition { name: string; description: string; requir
 export interface AgentToolResponse { tool: string; requiresApproval: boolean; approvalId: string | null; preview: string | null; result: unknown; error: string | null }
 export interface AgentPending { id: string; tool: string; vaultId: string; notePath: string; noteId: string | null; preview: string; createdAt: number; input: unknown }
 
+/** One entry in the unified chat library (Co-Pilot + Notebook history). */
+export type ChatOrigin = 'copilot' | 'notebook';
+export interface ChatLibrarySession {
+  id: string;
+  title: string;
+  origin: ChatOrigin;
+  notebookSessionId: string | null;
+  notebookId: string | null;
+  sourceId: string | null;
+  model: string | null;
+  createdAt: number;
+  updatedAt: number;
+  messageCount: number;
+}
+export interface ChatLibraryMessage {
+  id: string;
+  sessionId: string;
+  role: 'user' | 'assistant';
+  content: string;
+  metadata: string | null;
+  createdAt: number;
+}
+
 export const knowledge = {
   search: (text: string, offset = 0) => invoke<SearchPage>('search_knowledge', { query: { text, mode: 'hybrid', offset, limit: 100 } }),
   jobs: () => invoke<KnowledgeJob[]>('list_knowledge_jobs'),
@@ -45,4 +68,13 @@ export const knowledge = {
   agentPending: () => invoke<AgentPending[]>('agent_list_pending'),
   agentApprove: (id: string, approved: boolean) => invoke<{ approved: boolean; id: string; result?: unknown }>('agent_resolve_pending', { id, approved }),
   agentUndo: (notePath: string) => invoke<{ notePath: string; relativePath: string; restoredVersion: number | null; preview: string }>('agent_undo_last', { notePath }),
+  createChat: (title: string, origin: ChatOrigin) => invoke<ChatLibrarySession>('create_chat_session', { title, origin }),
+  listChats: (query?: string | null, origin?: ChatOrigin | null, limit?: number) => invoke<ChatLibrarySession[]>('list_chat_sessions', { query: query ?? null, origin: origin ?? null, limit: limit ?? 100 }),
+  renameChat: (id: string, title: string) => invoke<ChatLibrarySession>('rename_chat_session', { id, title }),
+  deleteChat: (id: string) => invoke<boolean>('delete_chat_session', { id }),
+  chatMessages: (sessionId: string, limit = 200, offset = 0) => invoke<ChatLibraryMessage[]>('get_chat_messages', { sessionId, limit, offset }),
+  appendChat: (sessionId: string, role: 'user' | 'assistant', content: string, metadata?: string | null) => invoke<ChatLibraryMessage>('append_chat_message', { sessionId, role, content, metadata: metadata ?? null }),
+  replaceTranscript: (sessionId: string, messages: Array<{ role: 'user' | 'assistant'; content: string; metadata?: string | null }>) => invoke<number>('replace_chat_transcript', { sessionId, messages: messages.map((m) => [m.role, m.content, m.metadata ?? null] as [string, string, string | null]) }),
+  linkNotebookChat: (notebookSessionId: string, title: string, notebookId?: string | null, sourceId?: string | null, model?: string | null) => invoke<ChatLibrarySession>('link_notebook_session', { notebookSessionId, title, notebookId: notebookId ?? null, sourceId: sourceId ?? null, model: model ?? null }),
+  unlinkNotebookChat: (notebookSessionId: string) => invoke<boolean>('unlink_notebook_session', { notebookSessionId }),
 };

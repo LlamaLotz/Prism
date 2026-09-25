@@ -8,7 +8,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def patch(runtime: Path):
-    for name in ("launcher.py", "prism_api.py", "prism_worker.py", "prism_gateway.py"):
+    for name in ("launcher.py", "prism_api.py", "prism_worker.py", "prism_gateway.py", "provider_profiles.py"):
         shutil.copy2(ROOT / "notebook" / name, runtime / name)
     target = runtime / "backend/commands/podcast_commands.py"
     text = (ROOT / "notebook/upstream/commands/podcast_commands.py").read_text()

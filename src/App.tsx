@@ -15,6 +15,7 @@ import { useIngestion } from './services/ingestionStore';
 import { AppSettings, SettingsApplyError, NoteFile, GraphNode, GraphLink, GraphPayload, tauriAPI } from './types';
 import { listen } from '@tauri-apps/api/event';
 import { linkerService } from './services/linkerService';
+import { knowledge, type ChatLibrarySession } from './services/knowledge';
 import { backfillEmbeddings, generateAndStoreEmbedding, generateAndStoreBlockEmbeddings } from './services/semantic';
 import { appLogger } from './services/appLogger';
 import { formatNote, noteTitleMatches } from './utils/formatter';
@@ -1444,6 +1445,44 @@ export default function App() {
     handleSaveContent(activeNote.path, newContent);
   };
 
+  // Cross-surface chat navigation for the shared library. Either side drops a
+  // request here; the target consumes it once (then clears it via callback).
+  const [copilotOpenRequest, setCopilotOpenRequest] = useState<{ sessionId: string; ts: number } | null>(null);
+  const [notebookChatRequest, setNotebookChatRequest] = useState<{
+    notebookId?: string; sourceId?: string; sessionId?: string;
+    seed?: { title: string; transcript: string }; ts: number;
+  } | null>(null);
+
+  // Continue a Notebook/session-library chat in Co-Pilot: ensure the panel is
+  // visible, then hand the library id over for opening.
+  const handleContinueInCopilot = (sessionId: string) => {
+    if (layout === 'graph' || layout === 'topics' || layout === 'notebook') setLayout('split');
+    setShowAICoPilot(true);
+    setCopilotOpenRequest({ sessionId, ts: Date.now() });
+  };
+
+  // Continue a Co-Pilot library chat in Notebook: load its transcript and ask
+  // Notebook to seed a backend session with it as opening context.
+  const handleOpenInNotebook = async (entry: ChatLibrarySession) => {
+    try {
+      const rows = await knowledge.chatMessages(entry.id, 500, 0);
+      const transcript = rows.map((m) => `${m.role === 'user' ? 'You' : 'Assistant'}: ${m.content}`).join('\n\n');
+      setLayout('notebook');
+      setNotebookChatRequest({ seed: { title: entry.title, transcript }, ts: Date.now() });
+    } catch (e) {
+      console.error('Could not load chat transcript:', e);
+    }
+  };
+
+  // An approved (or undone) agent edit mutated the vault outside the normal
+  // save flow: re-index the sidebar list and reload the graph, mirroring the
+  // vault-export refresh. fetchNotes reconciles the open note to a
+  // metadata-only entry, so the lazy content loader re-reads fresh text.
+  const handleAgentVaultChanged = async (_affectedPath?: string) => {
+    await fetchNotes();
+    await loadGraph();
+  };
+
   return (
     <RuntimeActivity>
       {/* Background environment layer (behind the app, viewport-level) */}
@@ -1585,7 +1624,7 @@ export default function App() {
           {(notebookVisited || layout === 'notebook') && (
             <div className="flex-1 min-w-0 h-full" style={{ display: layout === 'notebook' ? undefined : 'none' }}>
               <ErrorBoundary fallbackTitle="Notebook encountered an error">
-                <NotebookPage key={settings.vaultPath} active={layout === 'notebook'} vaultPath={settings.vaultPath} vaultNotes={notes} settings={settings} onSelectVault={handleSelectVault} onVaultExport={async () => { await fetchNotes(); await loadGraph(); }} />
+                <NotebookPage key={settings.vaultPath} active={layout === 'notebook'} vaultPath={settings.vaultPath} vaultNotes={notes} settings={settings} onSelectVault={handleSelectVault} onVaultExport={async () => { await fetchNotes(); await loadGraph(); }} openChatRequest={notebookChatRequest} onOpenChatRequestConsumed={() => setNotebookChatRequest(null)} onContinueInCopilot={handleContinueInCopilot} />
               </ErrorBoundary>
             </div>
           )}
@@ -1611,6 +1650,10 @@ export default function App() {
             config={settings.omniRoute}
             onOpenSettings={() => openSettings('ai')}
             onInsertText={handleInsertText}
+            onVaultChanged={handleAgentVaultChanged}
+            openRequest={copilotOpenRequest}
+            onOpenRequestConsumed={() => setCopilotOpenRequest(null)}
+            onOpenInNotebook={handleOpenInNotebook}
           />
         </LiquidGlass>
       )}

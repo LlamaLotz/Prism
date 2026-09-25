@@ -6,6 +6,7 @@ import App from './App.tsx';
 import { ReviewWindow } from './components/ReviewWindow.tsx';
 import { ErrorBoundary } from './components/ErrorBoundary.tsx';
 import { IngestionProvider } from './services/ingestionStore';
+import { ChatLibraryProvider } from './services/chatLibrary';
 import { DialogProvider } from './components/DialogProvider';
 import './index.css';
 import './linker-test';
@@ -24,9 +25,11 @@ createRoot(document.getElementById('root')!).render(
         <ReviewWindow />
       ) : (
         <IngestionProvider>
-          <DialogProvider>
-            <App />
-          </DialogProvider>
+          <ChatLibraryProvider>
+            <DialogProvider>
+              <App />
+            </DialogProvider>
+          </ChatLibraryProvider>
         </IngestionProvider>
       )}
     </ErrorBoundary>

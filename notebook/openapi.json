@@ -5541,7 +5541,22 @@
               "azure",
               "vertex",
               "openai_compatible",
-              "anthropic_compatible"
+              "anthropic_compatible",
+              "together",
+              "fireworks",
+              "cerebras",
+              "nvidia",
+              "siliconflow",
+              "huggingface",
+              "meta",
+              "agentrouter",
+              "bazaarlink",
+              "cloudflare",
+              "perplexity",
+              "pollinations",
+              "scaleway",
+              "lmstudio",
+              "omniroute"
             ],
             "title": "Provider",
             "description": "Provider name (openai, anthropic, etc.)"

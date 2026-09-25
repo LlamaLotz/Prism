@@ -611,6 +611,22 @@ SupportedProvider = Literal[
     "vertex",
     "openai_compatible",
     "anthropic_compatible",
+    # Prism addition: Co-Pilot provider parity (see provider_registry.py).
+    "together",
+    "fireworks",
+    "cerebras",
+    "nvidia",
+    "siliconflow",
+    "huggingface",
+    "meta",
+    "agentrouter",
+    "bazaarlink",
+    "cloudflare",
+    "perplexity",
+    "pollinations",
+    "scaleway",
+    "lmstudio",
+    "omniroute",
 ]
 
 

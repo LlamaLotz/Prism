@@ -85,6 +85,54 @@ PROVIDER_CONFIG = {
     "cohere": {
         "env_var": "COHERE_API_KEY",
     },
+    # Prism addition: Co-Pilot provider parity (see provider_registry.py).
+    # Keyless/local entries still map an env var so DB->env provisioning and
+    # env lookups have a stable name; absence is handled by callers.
+    "together": {
+        "env_var": "TOGETHER_API_KEY",
+    },
+    "fireworks": {
+        "env_var": "FIREWORKS_API_KEY",
+    },
+    "cerebras": {
+        "env_var": "CEREBRAS_API_KEY",
+    },
+    "nvidia": {
+        "env_var": "NVIDIA_API_KEY",
+    },
+    "siliconflow": {
+        "env_var": "SILICONFLOW_API_KEY",
+    },
+    "huggingface": {
+        "env_var": "HF_TOKEN",
+    },
+    "meta": {
+        "env_var": "LLAMA_API_KEY",
+    },
+    "agentrouter": {
+        "env_var": "AGENTROUTER_API_KEY",
+    },
+    "bazaarlink": {
+        "env_var": "BAZAARLINK_API_KEY",
+    },
+    "cloudflare": {
+        "env_var": "CLOUDFLARE_API_TOKEN",
+    },
+    "perplexity": {
+        "env_var": "PERPLEXITY_API_KEY",
+    },
+    "pollinations": {
+        "env_var": "POLLINATIONS_API_KEY",
+    },
+    "scaleway": {
+        "env_var": "SCALEWAY_API_KEY",
+    },
+    "lmstudio": {
+        "env_var": "LMSTUDIO_API_BASE",
+    },
+    "omniroute": {
+        "env_var": "OMNIROUTE_API_BASE",
+    },
 }
 
 

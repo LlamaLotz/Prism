@@ -6,6 +6,9 @@ import type { SourceListResponse, SourceResponse } from '../types/notebook-api';
 export const NOTEBOOK_SOURCE_PAGE_LIMIT = 100;
 /** Backend maximum for `GET /api/commands/jobs?limit` (`prism_api.py`). */
 export const NOTEBOOK_JOBS_PAGE_LIMIT = 100;
+/** Assistant chat responses longer than this collapse behind a
+ *  "View response" toggle (Co-Pilot sidebar + Notebook conversation). */
+export const CHAT_COLLAPSE_THRESHOLD = 50;
 /** Default Notebook worker concurrency (parallel background jobs). */
 export const DEFAULT_WORKER_CONCURRENCY = 2;
 /** Bounds for the user-configurable worker concurrency override. */

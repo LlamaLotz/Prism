@@ -286,6 +286,153 @@ _PROVIDER_SPECS: Tuple[ProviderSpec, ...] = (
             # Anthropic's GET /v1/models with x-api-key + anthropic-version headers
             # (bespoke), not the OpenAI-compatible GET /models discovery table.
         ),
+        # ------------------------------------------------------------------
+        # Prism addition: the same providers the Co-Pilot panel offers
+        # (src/services/apiProviders.ts). All are OpenAI-compatible chat
+        # endpoints, executed at runtime through esperanto
+        # OpenAICompatibleProfiles registered in notebook/provider_profiles.py
+        # (except perplexity, which esperanto supports first-class). Kept
+        # language-only: chat parity is the goal; the generic
+        # `openai_compatible` provider remains the route for other modalities.
+        # ------------------------------------------------------------------
+        ProviderSpec(
+            name="together",
+            display_name="Together AI",
+            modalities=_LANGUAGE_ONLY,
+            required_env=("TOGETHER_API_KEY",),
+            test_model="meta-llama/Llama-3.3-70B-Instruct-Turbo",
+            docs_url="https://api.together.ai",
+            openai_compat_discovery_url="https://api.together.xyz/v1/models",
+        ),
+        ProviderSpec(
+            name="fireworks",
+            display_name="Fireworks AI",
+            modalities=_LANGUAGE_ONLY,
+            required_env=("FIREWORKS_API_KEY",),
+            test_model="accounts/fireworks/models/llama-v3p3-70b-instruct",
+            docs_url="https://app.fireworks.ai",
+            openai_compat_discovery_url="https://api.fireworks.ai/inference/v1/models",
+        ),
+        ProviderSpec(
+            name="cerebras",
+            display_name="Cerebras",
+            modalities=_LANGUAGE_ONLY,
+            required_env=("CEREBRAS_API_KEY",),
+            test_model="llama-3.3-70b",
+            docs_url="https://cloud.cerebras.ai",
+            openai_compat_discovery_url="https://api.cerebras.ai/v1/models",
+        ),
+        ProviderSpec(
+            name="nvidia",
+            display_name="NVIDIA NIM",
+            modalities=_LANGUAGE_ONLY,
+            required_env=("NVIDIA_API_KEY",),
+            test_model="meta/llama-3.3-70b-instruct",
+            docs_url="https://build.nvidia.com",
+            openai_compat_discovery_url="https://integrate.api.nvidia.com/v1/models",
+        ),
+        ProviderSpec(
+            name="siliconflow",
+            display_name="SiliconFlow",
+            modalities=_LANGUAGE_ONLY,
+            required_env=("SILICONFLOW_API_KEY",),
+            test_model="deepseek-ai/DeepSeek-V3",
+            docs_url="https://siliconflow.cn",
+            openai_compat_discovery_url="https://api.siliconflow.cn/v1/models",
+        ),
+        ProviderSpec(
+            name="huggingface",
+            display_name="Hugging Face",
+            modalities=_LANGUAGE_ONLY,
+            required_env=("HF_TOKEN",),
+            test_model="meta-llama/Llama-3.3-70B-Instruct",
+            docs_url="https://huggingface.co/settings/tokens",
+            openai_compat_discovery_url="https://router.huggingface.co/v1/models",
+        ),
+        ProviderSpec(
+            name="meta",
+            display_name="Meta Llama",
+            modalities=_LANGUAGE_ONLY,
+            required_env=("LLAMA_API_KEY",),
+            test_model="meta-llama-3.3-70b-instruct",
+            docs_url="https://llama.com",
+            openai_compat_discovery_url="https://api.llama-api.com/v1/models",
+        ),
+        ProviderSpec(
+            name="agentrouter",
+            display_name="AgentRouter",
+            modalities=_LANGUAGE_ONLY,
+            required_env=("AGENTROUTER_API_KEY",),
+            test_model="gpt-4o",
+            docs_url="https://agentrouter.ai",
+            openai_compat_discovery_url="https://api.agentrouter.ai/v1/models",
+        ),
+        ProviderSpec(
+            name="bazaarlink",
+            display_name="BazaarLink",
+            modalities=_LANGUAGE_ONLY,
+            required_env=("BAZAARLINK_API_KEY",),
+            test_model="openai/gpt-4o",
+            docs_url="https://bazaarlink.ai",
+            openai_compat_discovery_url="https://bazaarlink.ai/api/v1/models",
+        ),
+        ProviderSpec(
+            name="cloudflare",
+            display_name="Cloudflare Workers AI",
+            modalities=_LANGUAGE_ONLY,
+            required_env=("CLOUDFLARE_API_TOKEN",),
+            test_model="@cf/meta/llama-3.3-70b-instruct",
+            docs_url="https://dash.cloudflare.com",
+            # No openai_compat_discovery_url: the endpoint embeds the user's
+            # account ID, so no fixed discovery URL exists. Register models
+            # manually after creating the credential with its full base URL.
+        ),
+        ProviderSpec(
+            name="perplexity",
+            display_name="Perplexity",
+            modalities=_LANGUAGE_ONLY,
+            required_env=("PERPLEXITY_API_KEY",),
+            test_model="sonar-pro",
+            docs_url="https://www.perplexity.ai/settings/api",
+            # No openai_compat_discovery_url: register models manually.
+        ),
+        ProviderSpec(
+            name="pollinations",
+            display_name="Pollinations",
+            modalities=_LANGUAGE_ONLY,
+            required_env=("POLLINATIONS_API_KEY",),
+            test_model="openai",
+            docs_url="https://pollinations.ai",
+            openai_compat_discovery_url="https://text.pollinations.ai/openai/models",
+        ),
+        ProviderSpec(
+            name="scaleway",
+            display_name="Scaleway AI",
+            modalities=_LANGUAGE_ONLY,
+            required_env=("SCALEWAY_API_KEY",),
+            test_model="llama-3.3-70b-instruct",
+            docs_url="https://console.scaleway.com",
+            # No openai_compat_discovery_url: register models manually.
+        ),
+        ProviderSpec(
+            name="lmstudio",
+            display_name="LM Studio (local)",
+            modalities=_LANGUAGE_ONLY,
+            test_model=None,  # Dynamic - local server decides the model list
+            docs_url="https://lmstudio.ai",
+            # No openai_compat_discovery_url: base URL is user-supplied
+            # (default http://localhost:1234/v1) and the key is optional —
+            # handled like openai_compatible, not the fixed-URL table.
+        ),
+        ProviderSpec(
+            name="omniroute",
+            display_name="OmniRoute (local gateway)",
+            modalities=_LANGUAGE_ONLY,
+            test_model=None,  # Dynamic - gateway routes `auto` itself
+            docs_url="https://github.com/diegosouzapw/OmniRoute",
+            # No openai_compat_discovery_url: base URL is user-supplied
+            # (default http://localhost:20128/v1) and no key is needed.
+        ),
 )
 
 

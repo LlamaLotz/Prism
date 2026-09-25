@@ -8,6 +8,7 @@ from pathlib import Path
 
 from fastapi import HTTPException, Query
 from api.main import app
+import provider_profiles  # noqa: F401 - registers Co-Pilot-parity model profiles
 from open_notebook.database.repository import ensure_record_id, repo_query
 
 app.router.routes = [r for r in app.router.routes if not (

@@ -3,6 +3,7 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use tauri::{AppHandle, Manager};
 
+pub mod chat;
 pub mod history;
 
 use crate::linker::LinkMention;
@@ -328,6 +329,39 @@ fn init_schema(conn: &Connection) -> Result<(), String> {
         );
         CREATE INDEX IF NOT EXISTS idx_note_history_deltas_path ON note_history_deltas(note_path);
         CREATE INDEX IF NOT EXISTS idx_note_history_deltas_path_id ON note_history_deltas(note_path, id ASC);
+
+        -- Unified chat library: Co-Pilot conversations persist here directly;
+        -- Notebook conversations live in the backend (SurrealDB + LangGraph)
+        -- and are surfaced here as linked entries (origin='notebook') so both
+        -- surfaces share one history list. Vault-scoped like everything else.
+        CREATE TABLE IF NOT EXISTS chat_sessions (
+            id TEXT PRIMARY KEY,
+            vault_id TEXT NOT NULL,
+            title TEXT NOT NULL DEFAULT 'Conversation',
+            origin TEXT NOT NULL DEFAULT 'copilot',
+            notebook_session_id TEXT,
+            notebook_id TEXT,
+            source_id TEXT,
+            model TEXT,
+            created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+            updated_at INTEGER NOT NULL DEFAULT (unixepoch()),
+            message_count INTEGER NOT NULL DEFAULT 0,
+            FOREIGN KEY(vault_id) REFERENCES knowledge_vaults(id) ON DELETE CASCADE,
+            UNIQUE(vault_id, notebook_session_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_chat_sessions_vault ON chat_sessions(vault_id, updated_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_chat_sessions_origin ON chat_sessions(vault_id, origin);
+
+        CREATE TABLE IF NOT EXISTS chat_messages (
+            id TEXT PRIMARY KEY,
+            session_id TEXT NOT NULL,
+            role TEXT NOT NULL,
+            content TEXT NOT NULL DEFAULT '',
+            metadata TEXT,
+            created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+            FOREIGN KEY(session_id) REFERENCES chat_sessions(id) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_chat_messages_session ON chat_messages(session_id, created_at ASC);
         "#,
     )
     .map_err(|e| e.to_string())

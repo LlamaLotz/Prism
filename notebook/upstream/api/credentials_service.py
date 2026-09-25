@@ -305,6 +305,21 @@ async def test_credential(credential_id: str) -> dict:
             )
             return {"provider": provider, "success": success, "message": message}
 
+        # Prism addition: local/dynamic Co-Pilot-parity providers with no fixed
+        # test model. A /models listing proves connectivity without invoking
+        # (and paying for) a model by name.
+        if provider in ("lmstudio", "omniroute"):
+            defaults = {
+                "lmstudio": "http://localhost:1234/v1",
+                "omniroute": "http://localhost:20128/v1",
+            }
+            base_url = config.get("base_url") or defaults[provider]
+            api_key = config.get("api_key")
+            success, message = await _test_openai_compatible_connection(
+                base_url, api_key
+            )
+            return {"provider": provider, "success": success, "message": message}
+
         if provider == "azure":
             success, message = await _test_azure_connection(
                 endpoint=config.get("endpoint"),
