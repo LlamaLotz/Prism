@@ -21,12 +21,11 @@ pub struct LinkMention {
 /// made of these (or single characters) are dropped from the mention
 /// dictionary so the Linker suggests real subjects, not noise.
 const STOP_WORDS: &[&str] = &[
-    "a", "an", "and", "are", "as", "at", "be", "but", "by", "can", "could", "do",
-    "does", "for", "from", "had", "has", "have", "he", "her", "his", "how", "i",
-    "if", "in", "is", "it", "its", "may", "me", "might", "must", "my", "no", "not",
-    "of", "on", "one", "or", "our", "out", "over", "she", "so", "some", "that",
-    "the", "their", "them", "then", "there", "these", "they", "this", "those", "to",
-    "too", "under", "up", "us", "was", "we", "were", "what", "when", "where",
+    "a", "an", "and", "are", "as", "at", "be", "but", "by", "can", "could", "do", "does", "for",
+    "from", "had", "has", "have", "he", "her", "his", "how", "i", "if", "in", "is", "it", "its",
+    "may", "me", "might", "must", "my", "no", "not", "of", "on", "one", "or", "our", "out", "over",
+    "she", "so", "some", "that", "the", "their", "them", "then", "there", "these", "they", "this",
+    "those", "to", "too", "under", "up", "us", "was", "we", "were", "what", "when", "where",
     "which", "who", "why", "will", "with", "would", "you", "your",
 ];
 
@@ -155,60 +154,88 @@ fn overlaps_ignored(ranges: &[TextRange], start: usize, end: usize) -> bool {
 
 pub fn extract_ignored_ranges(content: &str) -> Vec<TextRange> {
     let mut ranges = Vec::new();
-    
+
     // YAML frontmatter
     let re_yaml = Regex::new(r"(?m)^---[\s\S]*?---").unwrap();
     for mat in re_yaml.find_iter(content) {
-        ranges.push(TextRange { start: mat.start(), end: mat.end() });
+        ranges.push(TextRange {
+            start: mat.start(),
+            end: mat.end(),
+        });
     }
 
     // Fenced code blocks
     let re_code_block = Regex::new(r"(?m)^```[\s\S]*?```").unwrap();
     for mat in re_code_block.find_iter(content) {
-        ranges.push(TextRange { start: mat.start(), end: mat.end() });
+        ranges.push(TextRange {
+            start: mat.start(),
+            end: mat.end(),
+        });
     }
 
     // Inline code
     let re_inline_code = Regex::new(r"`[^`\n]+`").unwrap();
     for mat in re_inline_code.find_iter(content) {
-        ranges.push(TextRange { start: mat.start(), end: mat.end() });
+        ranges.push(TextRange {
+            start: mat.start(),
+            end: mat.end(),
+        });
     }
 
     // Existing wikilinks [[...]]
     let re_wikilinks = Regex::new(r"\[\[[^\]]*\]\]").unwrap();
     for mat in re_wikilinks.find_iter(content) {
-        ranges.push(TextRange { start: mat.start(), end: mat.end() });
+        ranges.push(TextRange {
+            start: mat.start(),
+            end: mat.end(),
+        });
     }
 
     // Machine-generated linker footer (approved links written by atomic_write)
-    let re_linker_footer = Regex::new(r"<!--\s*LINKER_START\s*-->[\s\S]*?(?:<!--\s*LINKER_END\s*-->|$)").unwrap();
+    let re_linker_footer =
+        Regex::new(r"<!--\s*LINKER_START\s*-->[\s\S]*?(?:<!--\s*LINKER_END\s*-->|$)").unwrap();
     for mat in re_linker_footer.find_iter(content) {
-        ranges.push(TextRange { start: mat.start(), end: mat.end() });
+        ranges.push(TextRange {
+            start: mat.start(),
+            end: mat.end(),
+        });
     }
 
     // Markdown headings (a title matching inside a heading is already
     // navigational context, not an unlinked mention worth suggesting)
     let re_headings = Regex::new(r"(?m)^#{1,6}\s.*$").unwrap();
     for mat in re_headings.find_iter(content) {
-        ranges.push(TextRange { start: mat.start(), end: mat.end() });
+        ranges.push(TextRange {
+            start: mat.start(),
+            end: mat.end(),
+        });
     }
 
     // Markdown links [text](url) — external links, never link targets
     let re_md_links = Regex::new(r"\[[^\]]*\]\([^)]*\)").unwrap();
     for mat in re_md_links.find_iter(content) {
-        ranges.push(TextRange { start: mat.start(), end: mat.end() });
+        ranges.push(TextRange {
+            start: mat.start(),
+            end: mat.end(),
+        });
     }
 
     // Bare URLs
     let re_urls = Regex::new(r"https?://[^\s)\]<>]+").unwrap();
     for mat in re_urls.find_iter(content) {
-        ranges.push(TextRange { start: mat.start(), end: mat.end() });
+        ranges.push(TextRange {
+            start: mat.start(),
+            end: mat.end(),
+        });
     }
 
     // HTML comments
     let re_html_comments = Regex::new(r"<!--[\s\S]*?-->").unwrap();
     for mat in re_html_comments.find_iter(content) {
-        ranges.push(TextRange { start: mat.start(), end: mat.end() });
+        ranges.push(TextRange {
+            start: mat.start(),
+            end: mat.end(),
+        });
     }
 
     ranges
@@ -256,7 +283,10 @@ mod tests {
     #[test]
     fn stop_words_are_not_matched() {
         // "The" is a stop word — only "Astrology" should match.
-        let found = mentions("The stars and Astrology", vec![("1", "The"), ("2", "Astrology")]);
+        let found = mentions(
+            "The stars and Astrology",
+            vec![("1", "The"), ("2", "Astrology")],
+        );
         assert_eq!(found, vec!["Astrology"]);
     }
 
@@ -294,7 +324,12 @@ mod tests {
         let start = std::time::Instant::now();
         let found = linker.find_mentions(&text, None);
         let elapsed = start.elapsed();
-        println!("big-note: {} MB, {} mentions, {:.2}s", text.len() / 1048576, found.len(), elapsed.as_secs_f64());
+        println!(
+            "big-note: {} MB, {} mentions, {:.2}s",
+            text.len() / 1048576,
+            found.len(),
+            elapsed.as_secs_f64()
+        );
         assert!(elapsed.as_secs_f64() < 10.0, "scan took {elapsed:?}");
         // The hard cap bounds giant notes instead of returning 80k+ mentions.
         assert_eq!(found.len(), MAX_MENTIONS_PER_NOTE);

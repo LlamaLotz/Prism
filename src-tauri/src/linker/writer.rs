@@ -10,11 +10,13 @@ pub fn atomic_write<P: AsRef<Path>>(path: P, content: &str, links: &[String]) ->
     // Mask this machine-generated write so the file watcher drops the resulting
     // events instead of re-indexing (and possibly re-writing) in a loop.
     suppress_self_write(path, SELF_WRITE_MASK_MS);
-    let dir = path.parent().ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "No parent directory"))?;
-    
+    let dir = path
+        .parent()
+        .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "No parent directory"))?;
+
     // Create a temp file in the same directory to ensure atomic rename
     let mut temp_file = NamedTempFile::new_in(dir)?;
-    
+
     // Construct the machine-generated footer
     let mut footer = String::from("\n\n<!-- LINKER_START -->\n");
     footer.push_str("Links:\n");
@@ -22,15 +24,17 @@ pub fn atomic_write<P: AsRef<Path>>(path: P, content: &str, links: &[String]) ->
         footer.push_str(&format!("- {}\n", link));
     }
     footer.push_str("<!-- LINKER_END -->");
-    
+
     // To avoid duplicating the footer, we must strip existing one from content
     let stripped_content = strip_footer(content);
-    
+
     let final_output = format!("{}{}", stripped_content, footer);
-    
+
     temp_file.write_all(final_output.as_bytes())?;
-    temp_file.persist(path).map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
-    
+    temp_file
+        .persist(path)
+        .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+
     Ok(())
 }
 

@@ -92,6 +92,21 @@ pub struct SystemConfig {
     pub version_retention_days: u64,
 }
 
+/// Built-in ingestion engine selector (production runtime switch).
+/// Python is the stable default; Rust is experimental and opt-in.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum IngestionEngine {
+    Python,
+    Rust,
+}
+
+impl Default for IngestionEngine {
+    fn default() -> Self {
+        Self::Python
+    }
+}
+
 /// Full runtime configuration, wire-compatible with the frontend
 /// `AppSettings` interface (camelCase keys).
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -103,6 +118,8 @@ pub struct RuntimeConfig {
     pub notebook: NotebookConfig,
     pub vault_path: String,
     pub ingestion_script: String,
+    #[serde(default)]
+    pub ingestion_engine: IngestionEngine,
     pub omni_route: OmniRouteConfig,
     pub appearance: AppearanceConfig,
     pub editor: EditorConfig,
@@ -216,7 +233,14 @@ pub struct NotebookConfig {
 }
 
 impl Default for NotebookConfig {
-    fn default() -> Self { Self { embed_by_default: false, source_panel_width: 260, notes_panel_width: 260, worker_concurrency: None } }
+    fn default() -> Self {
+        Self {
+            embed_by_default: false,
+            source_panel_width: 260,
+            notes_panel_width: 260,
+            worker_concurrency: None,
+        }
+    }
 }
 
 impl Default for RuntimeConfig {
@@ -226,6 +250,7 @@ impl Default for RuntimeConfig {
             notebook: NotebookConfig::default(),
             vault_path: String::new(),
             ingestion_script: "python \"/Users/Shiver/Documents/Prism/Extractor Final/master_extractor.py\" --vault {vault_path}".to_string(),
+            ingestion_engine: IngestionEngine::default(),
             omni_route: OmniRouteConfig::default(),
             appearance: AppearanceConfig::default(),
             editor: EditorConfig::default(),
@@ -263,7 +288,10 @@ pub struct SettingsSaveResult {
     pub runtime_warning: Option<String>,
 }
 
-pub fn save_runtime_config(app: &tauri::AppHandle, config: &RuntimeConfig) -> Result<RuntimeConfig, String> {
+pub fn save_runtime_config(
+    app: &tauri::AppHandle,
+    config: &RuntimeConfig,
+) -> Result<RuntimeConfig, String> {
     save_config_at(&config_path(app)?, config, migrate_key)
 }
 
@@ -277,19 +305,34 @@ fn save_config_at(
     }
     let mut config = config.clone();
     if config.omni_route.api_key.is_empty() && config.omni_route.credential_ref.is_empty() {
-        if let Some(previous) = std::fs::read_to_string(path).ok().and_then(|raw| serde_json::from_str::<RuntimeConfig>(&raw).ok()) {
-            if previous.omni_route.provider == config.omni_route.provider && previous.omni_route.base_url == config.omni_route.base_url { config.omni_route.credential_ref = previous.omni_route.credential_ref; }
+        if let Some(previous) = std::fs::read_to_string(path)
+            .ok()
+            .and_then(|raw| serde_json::from_str::<RuntimeConfig>(&raw).ok())
+        {
+            if previous.omni_route.provider == config.omni_route.provider
+                && previous.omni_route.base_url == config.omni_route.base_url
+            {
+                config.omni_route.credential_ref = previous.omni_route.credential_ref;
+            }
         }
     }
     store_key(&mut config.omni_route)?;
-    for provider in &mut config.models.providers { store_key(&mut provider.config)?; }
-    let raw =
-        serde_json::to_string_pretty(&config).map_err(|e| format!("Failed to serialize config: {e}"))?;
+    for provider in &mut config.models.providers {
+        store_key(&mut provider.config)?;
+    }
+    let raw = serde_json::to_string_pretty(&config)
+        .map_err(|e| format!("Failed to serialize config: {e}"))?;
     use std::io::Write;
-    let mut temporary = tempfile::NamedTempFile::new_in(path.parent().ok_or("Settings directory missing")?).map_err(|e|e.to_string())?;
-    temporary.write_all(raw.as_bytes()).map_err(|e|e.to_string())?;
-    temporary.as_file().sync_all().map_err(|e|e.to_string())?;
-    temporary.persist(&path).map_err(|e|format!("Failed to replace settings: {e}"))?;
+    let mut temporary =
+        tempfile::NamedTempFile::new_in(path.parent().ok_or("Settings directory missing")?)
+            .map_err(|e| e.to_string())?;
+    temporary
+        .write_all(raw.as_bytes())
+        .map_err(|e| e.to_string())?;
+    temporary.as_file().sync_all().map_err(|e| e.to_string())?;
+    temporary
+        .persist(&path)
+        .map_err(|e| format!("Failed to replace settings: {e}"))?;
     Ok(config)
 }
 
@@ -309,10 +352,14 @@ mod tests {
                 provider.api_key.clear();
             }
             Ok(())
-        }).unwrap();
+        })
+        .unwrap();
         let raw = std::fs::read_to_string(&path).unwrap();
         let loaded: RuntimeConfig = serde_json::from_str(&raw).unwrap();
-        assert_eq!(loaded.omni_route.credential_ref, saved.omni_route.credential_ref);
+        assert_eq!(
+            loaded.omni_route.credential_ref,
+            saved.omni_route.credential_ref
+        );
         assert!(!raw.contains("test-key"));
         let again = save_config_at(&path, &RuntimeConfig::default(), |_| Ok(())).unwrap();
         assert_eq!(again.omni_route.credential_ref, "test-reference");
@@ -326,7 +373,9 @@ mod tests {
         let before = std::fs::read(&path).unwrap();
         let mut changed = RuntimeConfig::default();
         changed.omni_route.api_key = "new-test-key".into();
-        assert!(save_config_at(&path, &changed, |_| Err("Credential store locked".into())).is_err());
+        assert!(
+            save_config_at(&path, &changed, |_| Err("Credential store locked".into())).is_err()
+        );
         assert_eq!(std::fs::read(&path).unwrap(), before);
     }
 
@@ -353,18 +402,30 @@ mod tests {
         assert!(!restored.notebook.embed_by_default);
         assert_eq!(restored.notebook.source_panel_width, 260);
         assert_eq!(restored.notebook.worker_concurrency, None);
-        assert_eq!(effective_worker_concurrency(None), DEFAULT_WORKER_CONCURRENCY);
+        assert_eq!(
+            effective_worker_concurrency(None),
+            DEFAULT_WORKER_CONCURRENCY
+        );
         assert_eq!(restored.appearance.startup_view, "graph");
     }
 
     #[test]
     fn worker_concurrency_override_clamps_to_safe_range() {
         // No override (incl. old settings files without the key) → default.
-        assert_eq!(effective_worker_concurrency(None), DEFAULT_WORKER_CONCURRENCY);
+        assert_eq!(
+            effective_worker_concurrency(None),
+            DEFAULT_WORKER_CONCURRENCY
+        );
         assert_eq!(effective_worker_concurrency(Some(4)), 4);
         // Out-of-range / zero values never break queue behavior.
-        assert_eq!(effective_worker_concurrency(Some(0)), DEFAULT_WORKER_CONCURRENCY);
-        assert_eq!(effective_worker_concurrency(Some(99)), DEFAULT_WORKER_CONCURRENCY);
+        assert_eq!(
+            effective_worker_concurrency(Some(0)),
+            DEFAULT_WORKER_CONCURRENCY
+        );
+        assert_eq!(
+            effective_worker_concurrency(Some(99)),
+            DEFAULT_WORKER_CONCURRENCY
+        );
         // Serde round-trip: missing key and explicit null both mean "no override".
         let missing: NotebookConfig = serde_json::from_value(serde_json::json!({})).unwrap();
         assert_eq!(missing.worker_concurrency, None);
@@ -374,13 +435,36 @@ mod tests {
     }
 
     #[test]
+    fn ingestion_engine_defaults_to_python_for_old_settings() {
+        let mut json = serde_json::to_value(RuntimeConfig::default()).unwrap();
+        json.as_object_mut().unwrap().remove("ingestionEngine");
+        let restored: RuntimeConfig = serde_json::from_value(json).unwrap();
+        assert_eq!(restored.ingestion_engine, IngestionEngine::Python);
+        let mut rust_json = serde_json::to_value(RuntimeConfig::default()).unwrap();
+        rust_json.as_object_mut().unwrap().insert(
+            "ingestionEngine".into(),
+            serde_json::Value::String("rust".into()),
+        );
+        let rust: RuntimeConfig = serde_json::from_value(rust_json).unwrap();
+        assert_eq!(rust.ingestion_engine, IngestionEngine::Rust);
+        let wire = serde_json::to_string(&RuntimeConfig::default()).unwrap();
+        assert!(
+            wire.contains("\"ingestionEngine\""),
+            "expected ingestionEngine key: {wire}"
+        );
+    }
+
+    #[test]
     fn runtime_config_roundtrips_camel_case() {
         let cfg = RuntimeConfig::default();
         let json = serde_json::to_string(&cfg).unwrap();
 
         // Wire format must use camelCase keys matching the TS AppSettings
         // interface exactly — no mapping layer on either side.
-        assert!(json.contains("\"vaultPath\""), "expected vaultPath key: {json}");
+        assert!(
+            json.contains("\"vaultPath\""),
+            "expected vaultPath key: {json}"
+        );
         assert!(json.contains("\"similarityThreshold\""));
         assert!(json.contains("\"embeddingThreads\""));
         assert!(json.contains("\"versionRetentionDays\""));
@@ -409,19 +493,33 @@ mod tests {
     }
 }
 
-
 pub fn provider_key(config: &OmniRouteConfig) -> Result<String, String> {
     if !config.credential_ref.is_empty() {
         keyring::Entry::new("com.prism.app.models", &config.credential_ref).map_err(|_| "Credential store unavailable")?
             .get_password().map_err(|_| "Provider credential unavailable; unlock the credential store or configure the provider again".into())
-    } else { Ok(config.api_key.clone()) }
+    } else {
+        Ok(config.api_key.clone())
+    }
 }
 
-fn migrate_key(config:&mut OmniRouteConfig)->Result<(),String>{
- if config.api_key.is_empty(){return Ok(());}
- let reference=uuid::Uuid::new_v4().to_string();
- let entry=keyring::Entry::new("com.prism.app.models",&reference).map_err(|_|"Credential store unavailable")?;
- entry.set_password(&config.api_key).map_err(|_|"Cannot save provider credential")?;
- if entry.get_password().map_err(|_|"Cannot verify provider credential")?!=config.api_key{return Err("Credential verification failed".into());}
- config.credential_ref=reference;config.api_key.clear();Ok(())
+fn migrate_key(config: &mut OmniRouteConfig) -> Result<(), String> {
+    if config.api_key.is_empty() {
+        return Ok(());
+    }
+    let reference = uuid::Uuid::new_v4().to_string();
+    let entry = keyring::Entry::new("com.prism.app.models", &reference)
+        .map_err(|_| "Credential store unavailable")?;
+    entry
+        .set_password(&config.api_key)
+        .map_err(|_| "Cannot save provider credential")?;
+    if entry
+        .get_password()
+        .map_err(|_| "Cannot verify provider credential")?
+        != config.api_key
+    {
+        return Err("Credential verification failed".into());
+    }
+    config.credential_ref = reference;
+    config.api_key.clear();
+    Ok(())
 }

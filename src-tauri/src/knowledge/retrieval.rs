@@ -131,9 +131,7 @@ fn explicit_targets(
 ) -> Result<HashSet<String>, String> {
     // Outgoing wiki/block edges from source
     let mut stmt = conn
-        .prepare(
-            "SELECT l.target_ref FROM knowledge_edges l WHERE l.source=?1",
-        )
+        .prepare("SELECT l.target_ref FROM knowledge_edges l WHERE l.source=?1")
         .map_err(|e| e.to_string())?;
     let refs: Vec<String> = stmt
         .query_map([source_id], |r| r.get(0))
@@ -206,7 +204,9 @@ fn same_folder(a: &str, b: &str) -> bool {
     }
 }
 
-fn get_engine(app: &tauri::AppHandle) -> Option<std::sync::Arc<crate::engine::embeddings::EmbeddingEngine>> {
+fn get_engine(
+    app: &tauri::AppHandle,
+) -> Option<std::sync::Arc<crate::engine::embeddings::EmbeddingEngine>> {
     // KnowledgeRuntime is the primary embedding cache since Phase 1. AppState
     // mirrors it for legacy search compatibility. Either may hold the loaded
     // engine; prefer the runtime cache.
@@ -260,7 +260,10 @@ fn build_plan_blocking(
 ) -> Result<RetrievalPlan, String> {
     let scope = super::current(&app)?;
     let conn = crate::db::init_db(&app)?;
-    let budget_chars = req.budget_chars.unwrap_or(DEFAULT_BUDGET_CHARS).clamp(1_000, 100_000);
+    let budget_chars = req
+        .budget_chars
+        .unwrap_or(DEFAULT_BUDGET_CHARS)
+        .clamp(1_000, 100_000);
     let query = req.query.trim().to_string();
 
     // Empty query -> no lexical/semantic candidates, but graph signals still valid if active note present
@@ -317,7 +320,8 @@ fn build_plan_blocking(
                     }
                 }
                 Err(_) => {
-                    degraded = Some("Semantic inference unavailable; showing lexical results".into());
+                    degraded =
+                        Some("Semantic inference unavailable; showing lexical results".into());
                 }
             }
         } else if !lex_hits.is_empty() || !query.is_empty() {
@@ -410,7 +414,11 @@ fn build_plan_blocking(
     // Tag neighbors: any note sharing at least one active tag
     let mut tag_neighbors: HashSet<String> = HashSet::new();
     if !active_tags.is_empty() {
-        let placeholders = active_tags.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+        let placeholders = active_tags
+            .iter()
+            .map(|_| "?")
+            .collect::<Vec<_>>()
+            .join(",");
         // tags.note_id is path; need to map to knowledge_notes.id
         // We query tags joined to knowledge_notes for vault isolation
         let sql = format!(
@@ -422,7 +430,10 @@ fn build_plan_blocking(
         let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
         let mut params_vec: Vec<String> = vec![scope.vault_id.clone()];
         params_vec.extend(active_tags.iter().cloned());
-        let param_refs: Vec<&dyn rusqlite::ToSql> = params_vec.iter().map(|s| s as &dyn rusqlite::ToSql).collect();
+        let param_refs: Vec<&dyn rusqlite::ToSql> = params_vec
+            .iter()
+            .map(|s| s as &dyn rusqlite::ToSql)
+            .collect();
         let rows = stmt
             .query_map(param_refs.as_slice(), |r| r.get(0))
             .map_err(|e| e.to_string())?
@@ -472,7 +483,9 @@ fn build_plan_blocking(
         let (rrf, lex, sem) = rrf_by_id.get(&nid).cloned().unwrap_or((0.0, None, None));
         // Fallbacks: if not in fused but has lex/sem individually, keep them for breakdown
         let lex_val = lex.or_else(|| lex_by_id.get(&nid).copied());
-        let sem_val = sem.or_else(|| sem_by_id.get(&nid).copied()).or_else(|| sem_neighbors.get(&nid).copied());
+        let sem_val = sem
+            .or_else(|| sem_by_id.get(&nid).copied())
+            .or_else(|| sem_neighbors.get(&nid).copied());
         let explicit = explicit_set.contains(&nid);
         let backlink = backlink_set.contains(&nid);
         // tag overlap computed below after fetching candidate tags
@@ -559,7 +572,9 @@ fn build_plan_blocking(
                 None
             }
         };
-        let (block_id, text, kind, heading_path_raw, anchor, _sl, _el) = if let Some(row) = block_row {
+        let (block_id, text, kind, heading_path_raw, anchor, _sl, _el) = if let Some(row) =
+            block_row
+        {
             row
         } else {
             // fallback to first block in note
@@ -575,7 +590,15 @@ fn build_plan_blocking(
                 Some(v) => v,
                 None => {
                     // Note has no blocks (empty). Use empty text but still citable.
-                    (String::new(), String::new(), "paragraph".into(), "[]".into(), None, 0, 0)
+                    (
+                        String::new(),
+                        String::new(),
+                        "paragraph".into(),
+                        "[]".into(),
+                        None,
+                        0,
+                        0,
+                    )
                 }
             }
         };
@@ -614,7 +637,11 @@ fn build_plan_blocking(
             note_id: c.note_id.clone(),
             path: c.path.clone(),
             title: c.title.clone(),
-            block_id: if block_id.is_empty() { None } else { Some(block_id) },
+            block_id: if block_id.is_empty() {
+                None
+            } else {
+                Some(block_id)
+            },
             anchor,
             text: text.clone(),
             kind,
@@ -672,7 +699,10 @@ fn build_plan_blocking(
         } else {
             format!(" ({})", heading_str)
         };
-        let block_header = format!("## Source: {} — {}{}\n", b.citation, b.title, heading_suffix);
+        let block_header = format!(
+            "## Source: {} — {}{}\n",
+            b.citation, b.title, heading_suffix
+        );
         let entry = format!("{}{}\n", block_header, b.text);
         if used + entry.len() > budget_chars {
             let remaining = budget_chars.saturating_sub(used);
@@ -715,7 +745,11 @@ fn build_plan_blocking(
 
     // Apply offset/limit if requested (for API parity, but context_text already packed)
     let offset = req.offset.min(blocks.len());
-    let limit = if req.limit == 0 { blocks.len() } else { req.limit.min(100) };
+    let limit = if req.limit == 0 {
+        blocks.len()
+    } else {
+        req.limit.min(100)
+    };
     let paged_blocks: Vec<RetrievedBlock> = blocks.into_iter().skip(offset).take(limit).collect();
     // citations correspond to paged blocks
     let paged_citations: Vec<Citation> = citations.into_iter().skip(offset).take(limit).collect();
@@ -821,15 +855,36 @@ mod tests {
         super::super::sync(&c, &a, "/vault/active.md", "Study of [[target]]").unwrap();
         super::super::sync(&c, &a, "/vault/target.md", "Target content about quantum").unwrap();
         super::super::sync(&c, &a, "/vault/random.md", "Quantum random unrelated").unwrap();
-        let explicit = explicit_targets(&c, &a, &c.query_row("SELECT id FROM knowledge_notes WHERE path='/vault/active.md'", [], |r| r.get::<_, String>(0)).unwrap()).unwrap();
-        assert!(explicit.contains(&c.query_row("SELECT id FROM knowledge_notes WHERE path='/vault/target.md'", [], |r| r.get::<_, String>(0)).unwrap()));
+        let explicit = explicit_targets(
+            &c,
+            &a,
+            &c.query_row(
+                "SELECT id FROM knowledge_notes WHERE path='/vault/active.md'",
+                [],
+                |r| r.get::<_, String>(0),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        assert!(explicit.contains(
+            &c.query_row(
+                "SELECT id FROM knowledge_notes WHERE path='/vault/target.md'",
+                [],
+                |r| r.get::<_, String>(0)
+            )
+            .unwrap()
+        ));
     }
 
     #[test]
     fn context_budget_truncates() {
         let text = "x".repeat(5000);
         let budget = 1000usize;
-        let truncated = if text.len() > budget { format!("{}…", &text[..budget-10]) } else { text.clone() };
-        assert!(truncated.len() <= budget+10);
+        let truncated = if text.len() > budget {
+            format!("{}…", &text[..budget - 10])
+        } else {
+            text.clone()
+        };
+        assert!(truncated.len() <= budget + 10);
     }
 }

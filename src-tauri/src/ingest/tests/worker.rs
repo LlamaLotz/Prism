@@ -146,3 +146,42 @@ fn missing_external_tool_is_fallback_eligible() {
         .unwrap_err();
     assert_eq!(error.kind, "unavailable");
 }
+#[test]
+fn runtime_dir_lookup_falls_back_to_path() {
+    let bin_key = "PRISM_INGEST_BIN";
+    let old_bin = std::env::var_os(bin_key);
+    let tool_key = "PRISM_INGEST_SOME_TOOL_XYZ";
+    let old_tool = std::env::var_os(tool_key);
+    // Runtime dir exists but does not bundle this tool: PATH fallback wins.
+    std::env::set_var(bin_key, "/nonexistent/prism-runtime-bin");
+    std::env::set_var(tool_key, "/explicit/tool");
+    assert_eq!(
+        prism_ingest::process::binary("some-tool-xyz"),
+        std::path::PathBuf::from("/explicit/tool")
+    );
+    std::env::remove_var(tool_key);
+    assert_eq!(
+        prism_ingest::process::binary("some-tool-xyz"),
+        std::path::PathBuf::from("some-tool-xyz")
+    );
+    match old_bin {
+        Some(v) => std::env::set_var(bin_key, v),
+        None => std::env::remove_var(bin_key),
+    }
+    match old_tool {
+        Some(v) => std::env::set_var(tool_key, v),
+        None => {}
+    }
+}
+#[test]
+fn failed_tool_reports_stderr_context() {
+    #[cfg(unix)]
+    {
+        let mut cmd = Command::new("sh");
+        cmd.args(["-c", "echo boom-message >&2; exit 3"]);
+        let error = prism_ingest::process::run(&mut cmd, std::time::Duration::from_secs(5), 1024)
+            .unwrap_err();
+        assert_eq!(error.kind, "extract");
+        assert!(error.message.contains("boom-message"), "{}", error.message);
+    }
+}

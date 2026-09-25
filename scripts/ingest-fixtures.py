@@ -39,5 +39,61 @@ def pdf(pages):
     data.extend(f'trailer\n<< /Size {len(objects)+1} /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF\n'.encode())
     (ROOT/f'text-{pages}.pdf').write_bytes(data)
 for n in (1, 101, 150):pdf(n)
+
+def wiki_page(title, heading, prose_paragraphs, table_name, table_rows, links):
+    """Synthetic long-form article modeled on a Wikipedia line article: nav
+    chrome, prose sections, one large station table, same-host links. All
+    content is authored filler; markers pin ordering/table assertions."""
+    prose = "\n".join(
+        f"<p>SECTION-{i:03d}-MARKER Fixture prose about the line corridor, its history "
+        f"and operations. Alpha beta gamma delta epsilon zeta eta theta iota kappa.</p>"
+        for i in range(prose_paragraphs)
+    )
+    header = "".join(f"<th>Column {c}</th>" for c in range(5))
+    rows = "\n".join(
+        "<tr>" + "".join(
+            f"<td>{'MID-TABLE-MARKER' if r == 20 and c == 2 else f'Cell {r}-{c}'}</td>"
+            for c in range(5)
+        ) + "</tr>"
+        for r in range(table_rows)
+    )
+    anchors = "\n".join(f'<a href="{href}">{label}</a>' for href, label in links)
+    return f"""<!DOCTYPE html>
+<html><head><title>{title}</title></head><body>
+<nav>CHROME-NAV-MARKER site navigation sidebar search login</nav>
+<main><h1>{heading}</h1>
+{prose}
+<h2>{table_name}</h2>
+<table><tr>{header}</tr>
+{rows}
+<tr><td>LAST-ROW-MARKER</td><td>Cell x-1</td><td>Cell x-2</td><td>Cell x-3</td><td>Cell x-4</td></tr>
+</table>
+{anchors}
+</main>
+<footer>CHROME-FOOTER-MARKER license text categories</footer>
+<script>CHROME-SCRIPT-MARKER var x = 1;</script>
+</body></html>"""
+
+(ROOT/'wiki_index.html').write_text(wiki_page(
+    "Fixture Line Index", "Fixture Line Index", 60, "Overview",
+    8, [("/a", "Station Alpha"), ("/b", "Station Beta")]))
+(ROOT/'wiki_a.html').write_text(wiki_page(
+    "Fixture Station Alpha", "Fixture Station Alpha", 1500, "Station facilities",
+    40, [("/b", "Station Beta")]))
+(ROOT/'wiki_b.html').write_text(wiki_page(
+    "Fixture Station Beta", "Fixture Station Beta", 600, "Exits",
+    12, []))
+(ROOT/'wiki_nested.html').write_text("""<!DOCTYPE html>
+<html><head><title>Fixture Nested Tables</title></head><body>
+<nav>CHROME-NAV-MARKER</nav>
+<main><h1>Fixture Nested Tables</h1>
+<p>TOP-PROSE-MARKER Fixture prose alpha beta gamma delta epsilon zeta eta theta iota kappa.</p>
+<table><tr><th>Name</th><th>Value</th></tr>
+<tr><td>TOP-CELL-MARKER</td><td>42</td></tr>
+<tr><td colspan="2"><table><tr><td>NESTED-LEVEL1-MARKER<table><tr><td>NESTED-LEVEL2-MARKER<table><tr><td>NESTED-LEVEL3-MARKER</td></tr></table></td></tr></table></td></tr></table></td></tr>
+</table>
+<p>TAIL-PROSE-MARKER Fixture closing prose lambda mu nu xi omicron pi rho sigma tau.</p>
+</main>
+</body></html>""")
 (ROOT/'LICENSE.txt').write_text('These synthetic fixtures were authored for Prism and are dedicated to the public domain under CC0-1.0. They contain no user documents.\n')
 print(ROOT)

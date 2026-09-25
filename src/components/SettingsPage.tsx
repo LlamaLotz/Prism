@@ -799,13 +799,22 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
   // Manual update-check state (Settings → System), driven by the same
   // plugin-backed updater service the startup banner uses.
   const [updateStatus, setUpdateStatus] = useState<UpdateStatus>({ state: 'idle' });
+  const [engineStatus, setEngineStatus] = useState<{ engine: string; rustAvailable: boolean; reason?: string } | null>(null);
+  useEffect(() => {
+    if (!isOpen) return;
+    if (!('__TAURI_INTERNALS__' in window)) return;
+    tauriAPI.getIngestionEngineStatus()
+      .then((s) => setEngineStatus(s))
+      .catch(() => setEngineStatus(null));
+  }, [isOpen, section]);
 
   // Re-seed the draft whenever the page is (re)opened with fresh settings.
   const [lastOpen, setLastOpen] = useState(isOpen);
   if (isOpen && !lastOpen) {
     setLastOpen(true);
-    setDraft(settings);
+    setDraft({ ...settings, ingestionEngine: settings.ingestionEngine ?? 'python' });
     setInstallLogs(null);
+    setEngineStatus(null);
     setSection(initialSection);
     setIsDirty(false);
     setShowUnsaved(false);
@@ -868,11 +877,12 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
   // Providers with a fixed endpoint (canEditBaseUrl unset) always save their
   // registry default, never a stale/custom URL from an older config.
   const normalizeDraft = (d: AppSettings): AppSettings => {
-    const provider = getApiProvider(d.omniRoute.provider);
-    if (provider && !provider.canEditBaseUrl && d.omniRoute.baseUrl !== provider.baseUrl) {
-      return { ...d, omniRoute: { ...d.omniRoute, baseUrl: provider.baseUrl } };
+    const withEngine = { ...d, ingestionEngine: d.ingestionEngine ?? 'python' as const };
+    const provider = getApiProvider(withEngine.omniRoute.provider);
+    if (provider && !provider.canEditBaseUrl && withEngine.omniRoute.baseUrl !== provider.baseUrl) {
+      return { ...withEngine, omniRoute: { ...withEngine.omniRoute, baseUrl: provider.baseUrl } };
     }
-    return d;
+    return withEngine;
   };
 
   const save = async (closeAfterSave: boolean) => {
@@ -1073,6 +1083,24 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                     <strong className="text-slate-300">Run Auto-Installer</strong> to set up FFmpeg,
                     Python 3.12, yt-dlp, faster-whisper and docling. <code>{'{vault_path}'}</code>{' '}
                     is replaced with the vault path at runtime.
+                  </div>
+                  <div className="flex items-center justify-between gap-4 mb-1.5">
+                    <label className="text-xs font-medium text-slate-300">Ingestion engine</label>
+                    <select
+                      value={draft.ingestionEngine ?? 'python'}
+                      onChange={(e) => patch('ingestionEngine', e.target.value as AppSettings['ingestionEngine'])}
+                      className="bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-brand-500"
+                    >
+                      <option value="python">Python (stable)</option>
+                      <option value="rust">Rust (experimental)</option>
+                    </select>
+                  </div>
+                  <div className="text-[11px] text-slate-500 mb-3 leading-relaxed">
+                    {(draft.ingestionEngine ?? 'python') === 'python'
+                      ? 'Stable default. Rust is not used.'
+                      : engineStatus && !engineStatus.rustAvailable
+                        ? `Rust runtime unavailable${engineStatus.reason ? ` — ${engineStatus.reason}` : ''} Ingestion will retry once with Python.`
+                        : 'Experimental native worker. Failures retry once with Python; cancellation never falls back.'}
                   </div>
                   <div className="flex items-center gap-1.5 text-[11px] text-slate-500 mb-1.5">
                     <Lock className="w-3 h-3 shrink-0" /> Read-only — the extractor & installer

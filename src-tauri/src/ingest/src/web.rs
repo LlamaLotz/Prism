@@ -6,24 +6,116 @@ use std::{
 };
 use url::Url;
 const CAP: u64 = 140 * 1024 * 1024;
-pub fn markdown(html: &str) -> String {
-    let doc = scraper::Html::parse_document(html);
-    let selector = scraper::Selector::parse("main, article").unwrap();
-    let content = doc
-        .select(&selector)
+/// Upper bound on HTML fed to the Markdown converter; larger pages are
+/// truncated at a char boundary after the main/article subtree is selected.
+const MAX_CONVERT_BYTES: usize = 2 * 1024 * 1024;
+/// Upper bound on links harvested per page; crawls only need discovery order.
+const MAX_LINKS_PER_PAGE: usize = 2000;
+/// Pages fetched concurrently per crawl round; output stays in BFS order.
+const CRAWL_WORKERS: usize = 4;
+fn main_selector() -> &'static scraper::Selector {
+    static SELECTOR: std::sync::OnceLock<scraper::Selector> = std::sync::OnceLock::new();
+    SELECTOR.get_or_init(|| scraper::Selector::parse("main, article").unwrap())
+}
+fn remove_selector() -> &'static scraper::Selector {
+    static SELECTOR: std::sync::OnceLock<scraper::Selector> = std::sync::OnceLock::new();
+    SELECTOR.get_or_init(|| {
+        scraper::Selector::parse("script, style, nav, footer, noscript, iframe, button").unwrap()
+    })
+}
+fn title_selector() -> &'static scraper::Selector {
+    static SELECTOR: std::sync::OnceLock<scraper::Selector> = std::sync::OnceLock::new();
+    SELECTOR.get_or_init(|| scraper::Selector::parse("title").unwrap())
+}
+fn link_selector() -> &'static scraper::Selector {
+    static SELECTOR: std::sync::OnceLock<scraper::Selector> = std::sync::OnceLock::new();
+    SELECTOR.get_or_init(|| scraper::Selector::parse("a[href]").unwrap())
+}
+fn nested_table_selector() -> &'static scraper::Selector {
+    static SELECTOR: std::sync::OnceLock<scraper::Selector> = std::sync::OnceLock::new();
+    SELECTOR.get_or_init(|| scraper::Selector::parse("table table").unwrap())
+}
+/// Largest main/article subtree serialized; falls back to the full document.
+fn content_html(doc: &scraper::Html, html: &str) -> String {
+    doc.select(main_selector())
         .max_by_key(|n| n.text().map(str::len).sum::<usize>())
         .map(|e| e.html())
-        .unwrap_or_else(|| html.into());
-    let mut fragment = scraper::Html::parse_fragment(&content);
-    let remove =
-        scraper::Selector::parse("script, style, nav, footer, noscript, iframe, button").unwrap();
-    let ids = fragment.select(&remove).map(|n| n.id()).collect::<Vec<_>>();
+        .unwrap_or_else(|| html.into())
+}
+fn truncate_bytes(mut content: String) -> String {
+    if content.len() > MAX_CONVERT_BYTES {
+        let mut end = MAX_CONVERT_BYTES;
+        while !content.is_char_boundary(end) {
+            end -= 1;
+        }
+        content.truncate(end);
+    }
+    content
+}
+fn fragment_to_markdown(content: &str) -> String {
+    let mut fragment = scraper::Html::parse_fragment(content);
+    let ids = fragment
+        .select(remove_selector())
+        .map(|n| n.id())
+        .collect::<Vec<_>>();
     for id in ids {
         if let Some(mut n) = fragment.tree.get_mut(id) {
             n.detach();
         }
     }
+    flatten_nested_tables(&mut fragment);
     html2md::parse_html(&fragment.html()).trim().into()
+}
+/// html2md never finishes on deeply nested tables (route maps, navboxes:
+/// hundreds of KB with dozens of nested tables). Flatten any table inside
+/// another table to div/p so its text survives in reading order without the
+/// nesting blowup. Top-level content tables are untouched.
+fn flatten_nested_tables(fragment: &mut scraper::Html) {
+    let nested: Vec<_> = fragment
+        .select(nested_table_selector())
+        .map(|n| n.id())
+        .collect();
+    for id in nested {
+        let members: Vec<_> = fragment
+            .tree
+            .get(id)
+            .map(|n| n.descendants().map(|d| d.id()).collect())
+            .unwrap_or_default();
+        for member in members {
+            let action = fragment.tree.get(member).and_then(|n| match n.value() {
+                scraper::node::Node::Element(el) => {
+                    let tag: &str = &el.name.local;
+                    match tag {
+                        "table" | "thead" | "tbody" | "tfoot" | "tr" | "colgroup" => Some("div"),
+                        "td" | "th" | "caption" => Some("p"),
+                        "col" => Some(""),
+                        _ => None,
+                    }
+                }
+                _ => None,
+            });
+            match action {
+                // col carries no text; drop it.
+                Some("") => {
+                    if let Some(mut node) = fragment.tree.get_mut(member) {
+                        node.detach();
+                    }
+                }
+                Some(name) => {
+                    if let Some(mut node) = fragment.tree.get_mut(member) {
+                        if let scraper::node::Node::Element(el) = node.value() {
+                            el.name.local = name.into();
+                        }
+                    }
+                }
+                None => {}
+            }
+        }
+    }
+}
+pub fn markdown(html: &str) -> String {
+    let doc = scraper::Html::parse_document(html);
+    fragment_to_markdown(&truncate_bytes(content_html(&doc, html)))
 }
 pub fn client(host: Option<String>) -> Result<reqwest::blocking::Client> {
     reqwest::blocking::Client::builder()
@@ -155,25 +247,35 @@ fn page(
     client: &reqwest::blocking::Client,
     host: Option<String>,
 ) -> Result<(Extraction, Vec<String>)> {
-    let mut html = fetch(client, url)?;
-    let mut body = markdown(&html);
-    if crate::meaningful(&body) < 10 {
-        html = render(url, host)?;
-        body = markdown(&html);
+    crate::event("progress", format!("Fetching {url}"));
+    let html = fetch(client, url)?;
+    crate::event(
+        "progress",
+        format!("Fetched {} bytes from {url}, parsing", html.len()),
+    );
+    // Single DOM parse: title, links, and body all come from one document.
+    if let Some(result) = convert(&html)? {
+        let (title, links, body) = result;
+        return Ok((
+            Extraction {
+                stem: title.clone(),
+                title,
+                body,
+                source: url.into(),
+                engine: "Prism Web".into(),
+                kind: "web".into(),
+            },
+            links,
+        ));
     }
-    if crate::meaningful(&body) < 10 {
-        return Err(Error::new("quality", "Insufficient webpage content"));
-    }
-    let doc = scraper::Html::parse_document(&html);
-    let title = doc
-        .select(&scraper::Selector::parse("title").unwrap())
-        .next()
-        .map(|n| n.text().collect::<String>())
-        .unwrap_or_else(|| "Web Page".into());
-    let links = doc
-        .select(&scraper::Selector::parse("a[href]").unwrap())
-        .filter_map(|n| n.value().attr("href").map(str::to_owned))
-        .collect();
+    // Thin content falls back to rendering; a second parse covers that HTML.
+    crate::event(
+        "progress",
+        format!("Content thin, trying rendered page {url}"),
+    );
+    let html = render(url, host)?;
+    let (title, links, body) =
+        convert(&html)?.ok_or_else(|| Error::new("quality", "Insufficient webpage content"))?;
     Ok((
         Extraction {
             stem: title.clone(),
@@ -186,6 +288,26 @@ fn page(
         links,
     ))
 }
+/// Parse once and return title, capped links, and Markdown body.
+/// `Ok(None)` means the page is too thin (caller may try rendering).
+fn convert(html: &str) -> Result<Option<(String, Vec<String>, String)>> {
+    let doc = scraper::Html::parse_document(html);
+    let title = doc
+        .select(title_selector())
+        .next()
+        .map(|n| n.text().collect::<String>())
+        .unwrap_or_else(|| "Web Page".into());
+    let links = doc
+        .select(link_selector())
+        .take(MAX_LINKS_PER_PAGE)
+        .filter_map(|n| n.value().attr("href").map(str::to_owned))
+        .collect();
+    let body = fragment_to_markdown(&truncate_bytes(content_html(&doc, html)));
+    if crate::meaningful(&body) < 10 {
+        return Ok(None);
+    }
+    Ok(Some((title, links, body)))
+}
 pub fn extract(url: &str) -> Result<Extraction> {
     Ok(page(url, &client(None)?, None)?.0)
 }
@@ -195,36 +317,66 @@ pub fn canonical(base: &Url, link: &str) -> Option<Url> {
     (matches!(url.scheme(), "http" | "https") && url.host_str() == base.host_str()).then_some(url)
 }
 pub fn crawl(source: &str, max: usize) -> Result<Extraction> {
+    let max = max.max(1);
     let start = Url::parse(source).map_err(|e| Error::new("input", e))?;
     let client = client(start.host_str().map(str::to_owned))?;
     let mut queue = VecDeque::from([start.clone()]);
     let mut seen = HashSet::from([start.to_string()]);
     let mut sections = Vec::new();
     let mut attempted = 0;
-    while let Some(url) = queue.pop_front() {
-        if attempted >= max.max(1) {
-            break;
+    // Rounds of up to CRAWL_WORKERS concurrent fetches; results are joined
+    // in discovery order so output stays deterministic BFS.
+    while !queue.is_empty() && attempted < max {
+        let take = (max - attempted).min(CRAWL_WORKERS).min(queue.len());
+        let batch: Vec<Url> = queue.drain(..take).collect();
+        for url in &batch {
+            attempted += 1;
+            crate::event("progress", format!("{attempted}/{max} Crawling {url}"));
         }
-        attempted += 1;
-        crate::event(
-            "progress",
-            format!("{attempted}/{} Crawling {url}", max.max(1)),
-        );
-        match page(url.as_str(), &client, start.host_str().map(str::to_owned)) {
-            Ok((e, links)) => {
-                sections.push(format!("## {}\n\nURL: {}\n\n{}", e.title, url, e.body));
-                for href in links {
-                    if let Some(next) = canonical(
-                        &start,
-                        &url.join(&href).map(|u| u.to_string()).unwrap_or_default(),
-                    ) {
-                        if seen.len() < max.max(1) && seen.insert(next.to_string()) {
-                            queue.push_back(next);
+        let host = start.host_str().map(str::to_owned);
+        let mut results = std::thread::scope(|scope| {
+            batch
+                .into_iter()
+                .enumerate()
+                .map(|(i, url)| {
+                    let host = host.clone();
+                    let client = client.clone();
+                    let handle = scope.spawn(move || {
+                        let result = page(url.as_str(), &client, host);
+                        (i, url, result)
+                    });
+                    handle
+                })
+                .collect::<Vec<_>>()
+                .into_iter()
+                .map(|handle| match handle.join() {
+                    Ok(done) => done,
+                    Err(_) => (
+                        usize::MAX,
+                        start.clone(),
+                        Err(Error::new("extract", "Crawl worker panicked")),
+                    ),
+                })
+                .collect::<Vec<_>>()
+        });
+        results.sort_by_key(|(i, _, _)| *i);
+        for (_, url, result) in results {
+            match result {
+                Ok((e, links)) => {
+                    sections.push(format!("## {}\n\nURL: {}\n\n{}", e.title, url, e.body));
+                    for href in links {
+                        if seen.len() >= max {
+                            break;
+                        }
+                        if let Some(next) = canonical(&start, &href) {
+                            if seen.insert(next.to_string()) {
+                                queue.push_back(next);
+                            }
                         }
                     }
                 }
+                Err(e) => crate::event("diagnostic", e),
             }
-            Err(e) => crate::event("diagnostic", e),
         }
     }
     if sections.is_empty() {

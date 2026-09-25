@@ -6,6 +6,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   notebook: { embedByDefault: false, sourcePanelWidth: 260, notesPanelWidth: 260 },
   vaultPath: '',
   ingestionScript: 'python "/Users/Shiver/Documents/Prism/Extractor Final/master_extractor.py" --vault {vault_path}',
+  ingestionEngine: 'python',
   omniRoute: {
     provider: '', // none — user picks a provider in Settings
     apiKey: '',

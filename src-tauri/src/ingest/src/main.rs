@@ -1,10 +1,65 @@
 use clap::Parser;
 use prism_ingest::{cli::Args, event, Error, Result};
-use std::io::BufRead;
+use std::{
+    io::BufRead,
+    sync::mpsc,
+    time::{Duration, Instant},
+};
+/// Backstop for stages without their own deadline (notably CPU-bound HTML
+/// parsing, which runs much slower in unoptimized dev builds). The worker
+/// thread cannot be cancelled mid-parse, so on expiry it is abandoned and
+/// the source fails over; the thread exits on its own and process-level
+/// cancellation stays with the Tauri adapter.
+const SOURCE_DEADLINE: Duration = Duration::from_secs(600);
 fn answer() -> Result<serde_json::Value> {
     let mut line = String::new();
     std::io::stdin().lock().read_line(&mut line)?;
     serde_json::from_str(&line).map_err(|e| Error::new("protocol", e))
+}
+/// Run one source with a backstop deadline. Blocking extraction stages
+/// (network with timeouts, CPU-bound parsing) normally finish far inside
+/// it; expiry yields a fallback-eligible timeout instead of a silent stall.
+fn extract_one(
+    source: &str,
+    ocr: prism_ingest::cli::Ocr,
+    method: &str,
+    follow_links: bool,
+    max_pages: usize,
+    scratch: &std::path::Path,
+) -> Result<prism_ingest::Extraction> {
+    let (tx, rx) = mpsc::channel();
+    let task_source = source.to_owned();
+    let task_method = method.to_owned();
+    let task_scratch = scratch.to_owned();
+    std::thread::spawn(move || {
+        let result = if follow_links && task_source.starts_with("http") {
+            prism_ingest::web::crawl(&task_source, max_pages)
+        } else {
+            prism_ingest::extract(&task_source, ocr, &task_method, &task_scratch)
+        };
+        let _ = tx.send(result);
+    });
+    let start = Instant::now();
+    loop {
+        match rx.recv_timeout(Duration::from_millis(100)) {
+            Ok(result) => return result,
+            Err(mpsc::RecvTimeoutError::Timeout) => {
+                if start.elapsed() > SOURCE_DEADLINE {
+                    event(
+                        "diagnostic",
+                        format!("Source deadline exceeded for {source}; abandoning native attempt"),
+                    );
+                    return Err(Error::new(
+                        "timeout",
+                        "Per-source extraction deadline exceeded",
+                    ));
+                }
+            }
+            Err(mpsc::RecvTimeoutError::Disconnected) => {
+                return Err(Error::new("extract", "Extraction worker thread died"))
+            }
+        }
+    }
 }
 fn run(args: Args) -> Result<()> {
     if let Some(path) = &args.pdf_chunk {
@@ -41,11 +96,14 @@ fn run(args: Args) -> Result<()> {
         let scratch = tempfile::Builder::new().prefix("job-").tempdir_in(&work)?;
         let stage = scratch.path().join("staged");
         std::fs::create_dir(&stage)?;
-        let result = if args.follow_links && source.starts_with("http") {
-            prism_ingest::web::crawl(source, args.max_pages)
-        } else {
-            prism_ingest::extract(source, *ocr, &args.yt_method, scratch.path())
-        };
+        let result = extract_one(
+            source,
+            *ocr,
+            &args.yt_method,
+            args.follow_links,
+            args.max_pages,
+            scratch.path(),
+        );
         let staged = match result {
             Ok(e) => {
                 let raw = data.join("raw_service_files").join(format!(

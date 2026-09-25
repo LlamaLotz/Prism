@@ -112,8 +112,12 @@ fn process_batch(app_handle: &AppHandle, batch: HashMap<PathBuf, EventKind>) {
 
     // Split events have no reliable pairing after coalescing. Never guess based
     // on HashMap iteration order; canonical content matching handles unique moves.
-    for p in &rename_from { handle_remove(app_handle, p); }
-    for p in &rename_to { handle_change(app_handle, p); }
+    for p in &rename_from {
+        handle_remove(app_handle, p);
+    }
+    for p in &rename_to {
+        handle_change(app_handle, p);
+    }
 
     for p in &removes {
         handle_remove(app_handle, p);
@@ -144,14 +148,18 @@ fn handle_change(app_handle: &AppHandle, path: &Path) {
         return;
     };
 
-    if let Err(error) = crate::knowledge::sync_file(app_handle, path, &content) { log::error!("Knowledge update: {error}"); }
+    if let Err(error) = crate::knowledge::sync_file(app_handle, path, &content) {
+        log::error!("Knowledge update: {error}");
+    }
     let aliases = extract_aliases(&content);
     if db::upsert_note(&conn, &path_str, &title, &path_str, &aliases).is_err() {
         return;
     }
     let _ = db::sync_note_tags(&conn, &path_str, &content);
 
-    if let Ok(dictionary) = crate::knowledge::current(app_handle).and_then(|s|crate::knowledge::dictionary(&conn,&s.vault_id)) {
+    if let Ok(dictionary) = crate::knowledge::current(app_handle)
+        .and_then(|s| crate::knowledge::dictionary(&conn, &s.vault_id))
+    {
         let linker = {
             let state = app_handle.state::<crate::AppState>();
             crate::cached_linker(&state, dictionary)
@@ -219,7 +227,9 @@ fn handle_rename(app_handle: &AppHandle, from: &Path, to: &Path) {
 
     // 1. Find every source note that links to the old note
     let mut sources: Vec<String> = Vec::new();
-    if let Ok(mut stmt) = conn.prepare("SELECT DISTINCT source_path FROM backlinks WHERE target_path = ?1") {
+    if let Ok(mut stmt) =
+        conn.prepare("SELECT DISTINCT source_path FROM backlinks WHERE target_path = ?1")
+    {
         if let Ok(rows) = stmt.query_map(params![old_path], |row| row.get::<_, String>(0)) {
             for row in rows.flatten() {
                 sources.push(row);

@@ -66,7 +66,11 @@ pub fn create_session(
         return Err("origin must be 'copilot' or 'notebook'".into());
     }
     let title = title.trim();
-    let title = if title.is_empty() { "Conversation" } else { title };
+    let title = if title.is_empty() {
+        "Conversation"
+    } else {
+        title
+    };
     // Cap titles so a pasted paragraph can't become a session name.
     let title: String = title.chars().take(120).collect();
     let id = uuid::Uuid::new_v4().to_string();
@@ -166,7 +170,11 @@ pub fn link_notebook_session(
     model: Option<&str>,
 ) -> Result<ChatSession, String> {
     let title = title.trim();
-    let title: String = if title.is_empty() { "Conversation".into() } else { title.chars().take(120).collect() };
+    let title: String = if title.is_empty() {
+        "Conversation".into()
+    } else {
+        title.chars().take(120).collect()
+    };
     conn.execute(
         "INSERT INTO chat_sessions(id, vault_id, title, origin, notebook_session_id, notebook_id, source_id, model)
          VALUES (?1, ?2, ?3, 'notebook', ?4, ?5, ?6, ?7)
@@ -185,7 +193,9 @@ pub fn link_notebook_session(
     )
     .map_err(|e| e.to_string())?;
     conn.query_row(
-        &format!("SELECT {SESSION_COLS} FROM chat_sessions WHERE vault_id=?1 AND notebook_session_id=?2"),
+        &format!(
+            "SELECT {SESSION_COLS} FROM chat_sessions WHERE vault_id=?1 AND notebook_session_id=?2"
+        ),
         params![vault_id, notebook_session_id],
         row_session,
     )
@@ -314,8 +324,11 @@ pub fn replace_messages(
         return Err("Transcript too large".into());
     }
     let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
-    tx.execute("DELETE FROM chat_messages WHERE session_id=?1", params![session_id])
-        .map_err(|e| e.to_string())?;
+    tx.execute(
+        "DELETE FROM chat_messages WHERE session_id=?1",
+        params![session_id],
+    )
+    .map_err(|e| e.to_string())?;
     let mut count = 0;
     for (role, content, metadata) in messages {
         if !matches!(role.as_str(), "user" | "assistant") {
@@ -365,8 +378,11 @@ mod tests {
                FOREIGN KEY(session_id) REFERENCES chat_sessions(id) ON DELETE CASCADE);",
         )
         .unwrap();
-        conn.execute("INSERT INTO knowledge_vaults(id, root) VALUES ('v1', '/vault')", [])
-            .unwrap();
+        conn.execute(
+            "INSERT INTO knowledge_vaults(id, root) VALUES ('v1', '/vault')",
+            [],
+        )
+        .unwrap();
         conn
     }
 
@@ -376,7 +392,15 @@ mod tests {
         let s = create_session(&conn, "v1", "Hello", "copilot").unwrap();
         assert_eq!(s.message_count, 0);
         append_message(&conn, "v1", &s.id, "user", "hi", None).unwrap();
-        append_message(&conn, "v1", &s.id, "assistant", "hello", Some("{\"model\":\"x\"}")).unwrap();
+        append_message(
+            &conn,
+            "v1",
+            &s.id,
+            "assistant",
+            "hello",
+            Some("{\"model\":\"x\"}"),
+        )
+        .unwrap();
         let msgs = get_messages(&conn, "v1", &s.id, 50, 0).unwrap();
         assert_eq!(msgs.len(), 2);
         assert_eq!(msgs[1].metadata.as_deref(), Some("{\"model\":\"x\"}"));
@@ -385,20 +409,27 @@ mod tests {
         rename_session(&conn, "v1", &s.id, "Renamed").unwrap();
         assert!(delete_session(&conn, "v1", &s.id).unwrap());
         assert!(get_messages(&conn, "v1", &s.id, 50, 0).unwrap().is_empty());
-        assert!(list_sessions(&conn, "v1", None, None, 50).unwrap().is_empty());
+        assert!(list_sessions(&conn, "v1", None, None, 50)
+            .unwrap()
+            .is_empty());
     }
 
     #[test]
     fn vault_isolation_and_validation() {
         let conn = memory_db();
-        conn.execute("INSERT INTO knowledge_vaults(id, root) VALUES ('v2', '/other')", [])
-            .unwrap();
+        conn.execute(
+            "INSERT INTO knowledge_vaults(id, root) VALUES ('v2', '/other')",
+            [],
+        )
+        .unwrap();
         let s = create_session(&conn, "v1", "A", "copilot").unwrap();
         assert!(append_message(&conn, "v2", &s.id, "user", "x", None).is_err());
         assert!(append_message(&conn, "v1", &s.id, "system", "x", None).is_err());
         assert!(create_session(&conn, "v1", "B", "alien").is_err());
         assert!(rename_session(&conn, "v1", &s.id, "   ").is_err());
-        assert!(list_sessions(&conn, "v2", None, None, 50).unwrap().is_empty());
+        assert!(list_sessions(&conn, "v2", None, None, 50)
+            .unwrap()
+            .is_empty());
         assert!(!delete_session(&conn, "v2", &s.id).unwrap());
     }
 
@@ -416,17 +447,28 @@ mod tests {
         // Replacing again does not duplicate.
         assert_eq!(replace_messages(&conn, "v1", &n.id, &msgs).unwrap(), 2);
         // Other vaults and other sessions are untouched and unreachable.
-        conn.execute("INSERT INTO knowledge_vaults(id, root) VALUES ('v2', '/o')", [])
-            .unwrap();
+        conn.execute(
+            "INSERT INTO knowledge_vaults(id, root) VALUES ('v2', '/o')",
+            [],
+        )
+        .unwrap();
         assert!(replace_messages(&conn, "v2", &n.id, &msgs).is_err());
-        assert!(replace_messages(&conn, "v1", &s.id, &[("system".to_string(), "x".to_string(), None)]).is_err());
+        assert!(replace_messages(
+            &conn,
+            "v1",
+            &s.id,
+            &[("system".to_string(), "x".to_string(), None)]
+        )
+        .is_err());
     }
 
     #[test]
     fn notebook_link_upsert_and_search() {
         let conn = memory_db();
-        let a = link_notebook_session(&conn, "v1", "nb:1", "Research", Some("nb1"), None, None).unwrap();
-        let b = link_notebook_session(&conn, "v1", "nb:1", "Research v2", Some("nb1"), None, None).unwrap();
+        let a = link_notebook_session(&conn, "v1", "nb:1", "Research", Some("nb1"), None, None)
+            .unwrap();
+        let b = link_notebook_session(&conn, "v1", "nb:1", "Research v2", Some("nb1"), None, None)
+            .unwrap();
         assert_eq!(a.id, b.id);
         assert_eq!(b.title, "Research v2");
         create_session(&conn, "v1", "Research notes", "copilot").unwrap();

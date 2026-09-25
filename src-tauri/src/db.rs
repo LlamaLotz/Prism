@@ -1,4 +1,4 @@
-use rusqlite::{Connection, params};
+use rusqlite::{params, Connection};
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use tauri::{AppHandle, Manager};
@@ -95,7 +95,9 @@ impl Database {
             .conn
             .prepare("SELECT target FROM links WHERE source = ?")
             .map_err(|e| e.to_string())?;
-        let rows = stmt.query_map([source], |row| row.get(0)).map_err(|e| e.to_string())?;
+        let rows = stmt
+            .query_map([source], |row| row.get(0))
+            .map_err(|e| e.to_string())?;
 
         let mut links = Vec::new();
         for link in rows {
@@ -125,8 +127,11 @@ impl Database {
             .map_err(|e| e.to_string())?;
 
         for target in targets {
-            tx.execute("INSERT INTO links (source, target) VALUES (?, ?)", [source, target])
-                .map_err(|e| e.to_string())?;
+            tx.execute(
+                "INSERT INTO links (source, target) VALUES (?, ?)",
+                [source, target],
+            )
+            .map_err(|e| e.to_string())?;
         }
 
         tx.commit().map_err(|e| e.to_string())
@@ -135,13 +140,19 @@ impl Database {
 
 /// Resolves the canonical database path inside the app data directory.
 pub fn db_path(app_handle: &AppHandle) -> Result<PathBuf, String> {
-    let data_dir = app_handle.path().app_data_dir().map_err(|e| e.to_string())?;
+    let data_dir = app_handle
+        .path()
+        .app_data_dir()
+        .map_err(|e| e.to_string())?;
     Ok(data_dir.join(DB_FILENAME))
 }
 
 /// Initializes (or connects to) `prism_vault.db` in the app data directory.
 pub fn init_db(app_handle: &AppHandle) -> Result<Connection, String> {
-    let data_dir = app_handle.path().app_data_dir().map_err(|e| e.to_string())?;
+    let data_dir = app_handle
+        .path()
+        .app_data_dir()
+        .map_err(|e| e.to_string())?;
     std::fs::create_dir_all(&data_dir).map_err(|e| e.to_string())?;
 
     let conn = Connection::open(data_dir.join(DB_FILENAME)).map_err(|e| e.to_string())?;
@@ -229,7 +240,8 @@ fn migrate_backlinks(conn: &Connection) -> Result<(), String> {
 }
 
 fn init_schema(conn: &Connection) -> Result<(), String> {
-    conn.execute_batch("PRAGMA busy_timeout = 5000").map_err(|e| e.to_string())?;
+    conn.execute_batch("PRAGMA busy_timeout = 5000")
+        .map_err(|e| e.to_string())?;
     crate::knowledge::schema::migrate(conn)?;
     migrate_backlinks(conn)?;
 
@@ -404,9 +416,7 @@ pub fn sync_note_tags(conn: &Connection, note_id: &str, content: &str) -> Result
 
 /// All topic groups: `(tag_name, [(note_id, title)])`, sorted by tag then
 /// title, ready for the Topics tab.
-pub fn get_topic_groups(
-    conn: &Connection,
-) -> Result<Vec<(String, Vec<(String, String)>)>, String> {
+pub fn get_topic_groups(conn: &Connection) -> Result<Vec<(String, Vec<(String, String)>)>, String> {
     let mut stmt = conn
         .prepare(
             "SELECT t.tag_name, t.note_id, n.title
@@ -523,7 +533,8 @@ pub fn rename_folder_paths(
     let old_prefix = format!("{}/", old_prefix.trim_end_matches('/'));
     let new_prefix = format!("{}/", new_prefix.trim_end_matches('/'));
     let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
-    tx.execute_batch("PRAGMA defer_foreign_keys = ON").map_err(|e| e.to_string())?;
+    tx.execute_batch("PRAGMA defer_foreign_keys = ON")
+        .map_err(|e| e.to_string())?;
 
     // Prefix-match without LIKE (paths can contain `%`/`_`).
     let re_point = |tx: &rusqlite::Transaction, table: &str, col: &str| -> Result<(), String> {
@@ -539,11 +550,17 @@ pub fn rename_folder_paths(
     };
 
     let paths: Vec<String> = {
-        let mut stmt=tx.prepare("SELECT path FROM knowledge_notes WHERE instr(path,?1)=1 AND deleted=0").map_err(|e|e.to_string())?;
-        let rows=stmt.query_map([&old_prefix],|r|r.get(0)).map_err(|e|e.to_string())?;
-        rows.collect::<Result<_,_>>().map_err(|e|e.to_string())?
+        let mut stmt = tx
+            .prepare("SELECT path FROM knowledge_notes WHERE instr(path,?1)=1 AND deleted=0")
+            .map_err(|e| e.to_string())?;
+        let rows = stmt
+            .query_map([&old_prefix], |r| r.get(0))
+            .map_err(|e| e.to_string())?;
+        rows.collect::<Result<_, _>>().map_err(|e| e.to_string())?
     };
-    for path in paths { crate::knowledge::record_path_change(&tx,&path,"note_moved")?; }
+    for path in paths {
+        crate::knowledge::record_path_change(&tx, &path, "note_moved")?;
+    }
     tx.execute("UPDATE knowledge_notes SET revision=revision+1,updated_at=unixepoch() WHERE instr(path,?1)=1",[&old_prefix]).map_err(|e|e.to_string())?;
     re_point(&tx, "knowledge_notes", "path")?;
     re_point(&tx, "knowledge_embedding_provenance", "path")?;
@@ -563,7 +580,8 @@ pub fn rename_folder_paths(
     re_point(&tx, "note_history_base", "note_path")?;
     re_point(&tx, "note_history_deltas", "note_path")?;
 
-    tx.execute_batch("PRAGMA foreign_keys = ON").map_err(|e| e.to_string())?;
+    tx.execute_batch("PRAGMA foreign_keys = ON")
+        .map_err(|e| e.to_string())?;
     tx.commit().map_err(|e| e.to_string())
 }
 
@@ -586,7 +604,9 @@ pub fn purge_stale_notes(conn: &Connection, existing: &HashSet<String>) -> Resul
             let mut q = tx
                 .prepare("SELECT id FROM notes")
                 .map_err(|e| e.to_string())?;
-            let rows = q.query_map([], |row| row.get(0)).map_err(|e| e.to_string())?;
+            let rows = q
+                .query_map([], |row| row.get(0))
+                .map_err(|e| e.to_string())?;
             let mut out = Vec::new();
             for r in rows {
                 out.push(r.map_err(|e| e.to_string())?);
@@ -611,7 +631,9 @@ pub fn purge_stale_notes(conn: &Connection, existing: &HashSet<String>) -> Resul
                      UNION SELECT DISTINCT target_path FROM backlinks",
                 )
                 .map_err(|e| e.to_string())?;
-            let rows = q.query_map([], |row| row.get(0)).map_err(|e| e.to_string())?;
+            let rows = q
+                .query_map([], |row| row.get(0))
+                .map_err(|e| e.to_string())?;
             let mut out = Vec::new();
             for r in rows {
                 out.push(r.map_err(|e| e.to_string())?);
@@ -636,7 +658,9 @@ pub fn purge_stale_notes(conn: &Connection, existing: &HashSet<String>) -> Resul
             let mut q = tx
                 .prepare("SELECT DISTINCT source FROM links")
                 .map_err(|e| e.to_string())?;
-            let rows = q.query_map([], |row| row.get(0)).map_err(|e| e.to_string())?;
+            let rows = q
+                .query_map([], |row| row.get(0))
+                .map_err(|e| e.to_string())?;
             let mut out = Vec::new();
             for r in rows {
                 out.push(r.map_err(|e| e.to_string())?);
@@ -658,7 +682,9 @@ pub fn purge_stale_notes(conn: &Connection, existing: &HashSet<String>) -> Resul
             let mut q = tx
                 .prepare("SELECT DISTINCT note_path FROM denied_links")
                 .map_err(|e| e.to_string())?;
-            let rows = q.query_map([], |row| row.get(0)).map_err(|e| e.to_string())?;
+            let rows = q
+                .query_map([], |row| row.get(0))
+                .map_err(|e| e.to_string())?;
             let mut out = Vec::new();
             for r in rows {
                 out.push(r.map_err(|e| e.to_string())?);
@@ -735,7 +761,9 @@ pub fn update_backlinks(
         if total >= MAX_BACKLINKS_PER_NOTE {
             break;
         }
-        let count = per_target.entry(mention.target_note_id.clone()).or_insert(0);
+        let count = per_target
+            .entry(mention.target_note_id.clone())
+            .or_insert(0);
         if *count >= MAX_BACKLINKS_PER_TARGET {
             continue;
         }
@@ -1202,8 +1230,11 @@ pub fn get_note_embedding(conn: &Connection, note_id: &str) -> Result<Option<Vec
 /// empty (an empty string embeds to a meaningless token-average vector that
 /// cosine-matches *anything*), so it can never be suggested as related again.
 pub fn clear_note_embedding(conn: &Connection, note_id: &str) -> Result<(), String> {
-    conn.execute("DELETE FROM embeddings WHERE note_id = ?1", params![note_id])
-        .map_err(|e| e.to_string())?;
+    conn.execute(
+        "DELETE FROM embeddings WHERE note_id = ?1",
+        params![note_id],
+    )
+    .map_err(|e| e.to_string())?;
     Ok(())
 }
 
@@ -1239,7 +1270,9 @@ pub fn get_note_block_vectors(
         )
         .map_err(|e| e.to_string())?;
     let rows = stmt
-        .query_map(params![note_id, limit as i64], |row| row.get::<_, Vec<u8>>(0))
+        .query_map(params![note_id, limit as i64], |row| {
+            row.get::<_, Vec<u8>>(0)
+        })
         .map_err(|e| e.to_string())?;
 
     let mut vectors = Vec::new();
@@ -1381,26 +1414,62 @@ mod tests {
 
     #[test]
     fn runtime_moves_and_deletes_advance_snapshot_without_retargeting_siblings() {
-        let db=Database::open(":memory:").unwrap();
-        let c=&db.conn;
-        let v=crate::knowledge::vault(c,std::path::Path::new("/vault")).unwrap();
-        let (id,_)=crate::knowledge::sync(c,&v,"/vault/a/a/n.md","first note").unwrap();
-        let (sibling,_)=crate::knowledge::sync(c,&v,"/vault/ab/n.md","sibling").unwrap();
-        c.execute("INSERT INTO knowledge_embedding_provenance VALUES (?1,'note','hash','model')",["/vault/a/a/n.md"]).unwrap();
-        rename_folder_paths(c,"/vault/a","/vault/b").unwrap();
-        let path=|id:&str| c.query_row("SELECT path FROM knowledge_notes WHERE id=?1",[id],|r|r.get::<_,String>(0)).unwrap();
-        assert_eq!(path(&id),"/vault/b/a/n.md");
-        assert_eq!(path(&sibling),"/vault/ab/n.md");
-        assert_eq!(c.query_row("SELECT path FROM knowledge_embedding_provenance",[],|r|r.get::<_,String>(0)).unwrap(),"/vault/b/a/n.md");
-        crate::knowledge::move_path(c,"/vault/b/a/n.md","/vault/b/a/new.md").unwrap();
-        assert_eq!(path(&id),"/vault/b/a/new.md");
-        crate::knowledge::remove(c,"/vault/b/a/new.md").unwrap();
-        crate::knowledge::remove(c,"/vault/b/a/new.md").unwrap();
-        assert_eq!(c.query_row("SELECT revision FROM knowledge_vaults WHERE id=?1",[&v],|r|r.get::<_,i64>(0)).unwrap(),5);
-        let mut stmt=c.prepare("SELECT kind FROM knowledge_events WHERE entity_id=?1 ORDER BY sequence").unwrap();
-        let events=stmt.query_map([&id],|r|r.get::<_,String>(0)).unwrap().collect::<Result<Vec<_>,_>>().unwrap();
-        assert_eq!(events,vec!["note_moved","note_moved","note_deleted"]);
-        assert_eq!(c.query_row("SELECT count(*) FROM knowledge_fts WHERE note_id=?1",[&id],|r|r.get::<_,i64>(0)).unwrap(),0);
+        let db = Database::open(":memory:").unwrap();
+        let c = &db.conn;
+        let v = crate::knowledge::vault(c, std::path::Path::new("/vault")).unwrap();
+        let (id, _) = crate::knowledge::sync(c, &v, "/vault/a/a/n.md", "first note").unwrap();
+        let (sibling, _) = crate::knowledge::sync(c, &v, "/vault/ab/n.md", "sibling").unwrap();
+        c.execute(
+            "INSERT INTO knowledge_embedding_provenance VALUES (?1,'note','hash','model')",
+            ["/vault/a/a/n.md"],
+        )
+        .unwrap();
+        rename_folder_paths(c, "/vault/a", "/vault/b").unwrap();
+        let path = |id: &str| {
+            c.query_row("SELECT path FROM knowledge_notes WHERE id=?1", [id], |r| {
+                r.get::<_, String>(0)
+            })
+            .unwrap()
+        };
+        assert_eq!(path(&id), "/vault/b/a/n.md");
+        assert_eq!(path(&sibling), "/vault/ab/n.md");
+        assert_eq!(
+            c.query_row("SELECT path FROM knowledge_embedding_provenance", [], |r| r
+                .get::<_, String>(0))
+                .unwrap(),
+            "/vault/b/a/n.md"
+        );
+        crate::knowledge::move_path(c, "/vault/b/a/n.md", "/vault/b/a/new.md").unwrap();
+        assert_eq!(path(&id), "/vault/b/a/new.md");
+        crate::knowledge::remove(c, "/vault/b/a/new.md").unwrap();
+        crate::knowledge::remove(c, "/vault/b/a/new.md").unwrap();
+        assert_eq!(
+            c.query_row(
+                "SELECT revision FROM knowledge_vaults WHERE id=?1",
+                [&v],
+                |r| r.get::<_, i64>(0)
+            )
+            .unwrap(),
+            5
+        );
+        let mut stmt = c
+            .prepare("SELECT kind FROM knowledge_events WHERE entity_id=?1 ORDER BY sequence")
+            .unwrap();
+        let events = stmt
+            .query_map([&id], |r| r.get::<_, String>(0))
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+        assert_eq!(events, vec!["note_moved", "note_moved", "note_deleted"]);
+        assert_eq!(
+            c.query_row(
+                "SELECT count(*) FROM knowledge_fts WHERE note_id=?1",
+                [&id],
+                |r| r.get::<_, i64>(0)
+            )
+            .unwrap(),
+            0
+        );
     }
 
     #[test]
@@ -1409,7 +1478,12 @@ mod tests {
         db.conn
             .execute(
                 "INSERT INTO notes (id, title, path, updated_at) VALUES (?1, ?2, ?3, ?4)",
-                params!["note_1", "Artificial Intelligence", "/path/ai.md", 12345678i64],
+                params![
+                    "note_1",
+                    "Artificial Intelligence",
+                    "/path/ai.md",
+                    12345678i64
+                ],
             )
             .unwrap();
 
@@ -1473,7 +1547,13 @@ mod tests {
             start: 10,
             end: 21,
         };
-        update_backlinks(&db.conn, "src", &[mention], "line one\nline two\nline three").unwrap();
+        update_backlinks(
+            &db.conn,
+            "src",
+            &[mention],
+            "line one\nline two\nline three",
+        )
+        .unwrap();
 
         let backlinks = get_incoming_backlinks(&db.conn, "dst").unwrap();
         assert_eq!(backlinks.len(), 1);
@@ -1532,20 +1612,16 @@ mod tests {
     fn test_extract_applied_links() {
         let content = "See [[Alpha]], [[Beta|alias]] and [[Gamma#^block-1]].\n[[alpha]] again.";
         let links = extract_applied_links(content);
-        assert_eq!(links, vec!["Alpha".to_string(), "Beta".to_string(), "Gamma".to_string()]);
+        assert_eq!(
+            links,
+            vec!["Alpha".to_string(), "Beta".to_string(), "Gamma".to_string()]
+        );
     }
 
     #[test]
     fn test_denied_links_scope_by_note() {
         let db = Database::open(":memory:").unwrap();
-        add_denied_link(
-            &db.conn,
-            "/a.md",
-            "keyword",
-            "dst",
-            Some("Target Note"),
-        )
-        .unwrap();
+        add_denied_link(&db.conn, "/a.md", "keyword", "dst", Some("Target Note")).unwrap();
         add_denied_link(&db.conn, "/a.md", "semantic", "/b.md", None).unwrap();
 
         let for_a = get_denied_links(&db.conn, "/a.md").unwrap();
@@ -1554,14 +1630,7 @@ mod tests {
         let for_b = get_denied_links(&db.conn, "/b.md").unwrap();
         assert!(for_b.is_empty());
 
-        add_denied_link(
-            &db.conn,
-            "/a.md",
-            "keyword",
-            "dst",
-            Some("Target Note"),
-        )
-        .unwrap();
+        add_denied_link(&db.conn, "/a.md", "keyword", "dst", Some("Target Note")).unwrap();
         assert_eq!(get_denied_links(&db.conn, "/a.md").unwrap().len(), 2);
     }
 

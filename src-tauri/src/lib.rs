@@ -1,26 +1,26 @@
 #[cfg(feature = "ingest-rust")]
 mod native_ingest;
-use std::fs;
-use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
-use tauri::{Manager, Window, Emitter};
 use rusqlite::params;
 use scraper::{Html, Selector};
-#[cfg(windows)]
-use windows_core::Interface;
+use std::fs;
 #[cfg(target_os = "windows")]
 use std::os::windows::process::CommandExt;
+use std::path::{Path, PathBuf};
+use std::process::{Command, Stdio};
+use tauri::{Emitter, Manager, Window};
+#[cfg(windows)]
+use windows_core::Interface;
 
-mod knowledge;
 mod config;
 mod db;
 mod engine;
+mod knowledge;
 pub mod linker;
 pub mod menu;
-mod watcher;
 mod notebook;
+mod watcher;
 
-use linker::{LinkerEngine, NoteLinker, LinkMention};
+use linker::{LinkMention, LinkerEngine, NoteLinker};
 use std::sync::{Arc, Mutex};
 use tokio::sync::oneshot;
 
@@ -96,7 +96,7 @@ fn scan_unlinked_mentions(
 fn init_linker(
     state: tauri::State<'_, AppState>,
     app_handle: tauri::AppHandle,
-    patterns: Vec<String>
+    patterns: Vec<String>,
 ) -> Result<(), String> {
     // Ensure the canonical app-data database exists, then point the engine at it
     let conn = db::init_db(&app_handle)?;
@@ -124,10 +124,13 @@ fn get_topic_groups(
     app_handle: tauri::AppHandle,
 ) -> Result<Vec<(String, Vec<(String, String)>)>, String> {
     let conn = db::init_db(&app_handle)?;
-    let scope=knowledge::current(&app_handle)?;
-    let mut groups=db::get_topic_groups(&conn)?;
-    for (_,notes) in &mut groups {notes.retain(|(path,_)|Path::new(path).starts_with(&scope.root));}
-    groups.retain(|(_,notes)|!notes.is_empty());Ok(groups)
+    let scope = knowledge::current(&app_handle)?;
+    let mut groups = db::get_topic_groups(&conn)?;
+    for (_, notes) in &mut groups {
+        notes.retain(|(path, _)| Path::new(path).starts_with(&scope.root));
+    }
+    groups.retain(|(_, notes)| !notes.is_empty());
+    Ok(groups)
 }
 
 /// Model repo + files required by `fastembed` for `bge-base-en-v1.5`
@@ -205,9 +208,7 @@ fn resolve_embedding_cache_dir(app_handle: &tauri::AppHandle) -> Result<PathBuf,
         .map_err(|e| e.to_string())?
         .join(".prism")
         .join("models");
-    if !new_dir.join(EMBEDDING_REPO_DIR).exists()
-        && legacy_dir.join(EMBEDDING_REPO_DIR).exists()
-    {
+    if !new_dir.join(EMBEDDING_REPO_DIR).exists() && legacy_dir.join(EMBEDDING_REPO_DIR).exists() {
         return Ok(legacy_dir);
     }
     Ok(new_dir)
@@ -252,7 +253,10 @@ fn get_embedding_engine(
     state: &tauri::State<'_, AppState>,
     app_handle: &tauri::AppHandle,
 ) -> Result<Arc<EmbeddingEngine>, String> {
-    let mut guard = state.embeddings.lock().map_err(|_| "Embedding engine is unavailable; restart Prism")?;
+    let mut guard = state
+        .embeddings
+        .lock()
+        .map_err(|_| "Embedding engine is unavailable; restart Prism")?;
     if let Some(result) = guard.as_ref() {
         return result.clone();
     }
@@ -267,12 +271,18 @@ fn get_embedding_engine(
     // Runtime-tunable embedding parameters (similarity threshold, threads,
     // batch size) come from the persisted config.
     let mut runtime_config = config::load_runtime_config(app_handle).unwrap_or_default();
-    runtime_config.vault_path = knowledge::current(app_handle)?.root.to_string_lossy().to_string();
+    runtime_config.vault_path = knowledge::current(app_handle)?
+        .root
+        .to_string_lossy()
+        .to_string();
     // ort can panic when a bundled library is missing or unloadable. Catch it
     // inside the mutex lifetime so a model failure cannot poison app state.
     let result = engine::embeddings::initialize_safely(|| {
         verify_model_cache(&cache_dir)
-            .and_then(|_| EmbeddingEngine::new(&conn, cache_dir, &runtime_config).map_err(sanitize_embedding_error))
+            .and_then(|_| {
+                EmbeddingEngine::new(&conn, cache_dir, &runtime_config)
+                    .map_err(sanitize_embedding_error)
+            })
             .map(Arc::new)
     });
 
@@ -289,10 +299,7 @@ fn get_embedding_engine(
 /// Returns a `NoteLinker` for `dictionary`, reusing the cached Aho-Corasick
 /// automaton when the dictionary is unchanged (building it is the expensive
 /// part, and `scan_unlinked_mentions`/`write_file` run it on every save).
-pub fn cached_linker(
-    state: &AppState,
-    dictionary: Vec<(String, String)>,
-) -> Arc<NoteLinker> {
+pub fn cached_linker(state: &AppState, dictionary: Vec<(String, String)>) -> Arc<NoteLinker> {
     let mut cache = state.linker_cache.lock().unwrap();
     if let Some((cached_dict, linker)) = cache.as_ref() {
         if *cached_dict == dictionary {
@@ -311,25 +318,53 @@ pub fn embed_guard(state: &AppState) -> std::sync::MutexGuard<'_, ()> {
 
 /// Generates and stores a semantic embedding for a note (fire-and-forget on save).
 #[tauri::command]
-async fn generate_and_store_embedding(app_handle: tauri::AppHandle, note_id: String, content: String) -> Result<(), String> {
+async fn generate_and_store_embedding(
+    app_handle: tauri::AppHandle,
+    note_id: String,
+    content: String,
+) -> Result<(), String> {
     schedule_embedding(app_handle, note_id, content, false).await
 }
-async fn schedule_embedding(app: tauri::AppHandle, note_id: String, content: String, blocks: bool) -> Result<(), String> {
+async fn schedule_embedding(
+    app: tauri::AppHandle,
+    note_id: String,
+    content: String,
+    blocks: bool,
+) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || {
-        let key = format!("embed:{blocks}:{note_id}:{}", knowledge::blocks::hash(&content));
-        knowledge::jobs::run(&app, "EMBED", 10, &key, serde_json::json!({"path": note_id, "blocks": blocks}), |job| {
-            job.check()?;
-            let path = fs::canonicalize(&note_id).map_err(|e| e.to_string())?;
-            if !path.starts_with(&job.scope.root) { return Err("Note is outside the active vault".into()); }
-            if fs::read_to_string(&path).map_err(|e|e.to_string())? != content {return Err("Note changed before embedding".into());}
-            let state = app.state::<AppState>();
-            let engine = get_embedding_engine(&state, &app)?;
-            let conn = db::init_db(&app)?;
-            if blocks { engine.generate_and_store_blocks(&conn, &note_id, &content)?; }
-            else { engine.generate_and_store(&conn, &note_id, &content)?; }
-            job.progress(1.0)
-        })
-    }).await.map_err(|e|e.to_string())?
+        let key = format!(
+            "embed:{blocks}:{note_id}:{}",
+            knowledge::blocks::hash(&content)
+        );
+        knowledge::jobs::run(
+            &app,
+            "EMBED",
+            10,
+            &key,
+            serde_json::json!({"path": note_id, "blocks": blocks}),
+            |job| {
+                job.check()?;
+                let path = fs::canonicalize(&note_id).map_err(|e| e.to_string())?;
+                if !path.starts_with(&job.scope.root) {
+                    return Err("Note is outside the active vault".into());
+                }
+                if fs::read_to_string(&path).map_err(|e| e.to_string())? != content {
+                    return Err("Note changed before embedding".into());
+                }
+                let state = app.state::<AppState>();
+                let engine = get_embedding_engine(&state, &app)?;
+                let conn = db::init_db(&app)?;
+                if blocks {
+                    engine.generate_and_store_blocks(&conn, &note_id, &content)?;
+                } else {
+                    engine.generate_and_store(&conn, &note_id, &content)?;
+                }
+                job.progress(1.0)
+            },
+        )
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 /// Returns the top-K conceptually related notes for a note (HNSW vector search).
@@ -347,7 +382,11 @@ async fn find_semantic_related_notes(
 
 /// Generates and stores block-level embeddings for a note (fire-and-forget).
 #[tauri::command]
-async fn generate_and_store_block_embeddings(app_handle: tauri::AppHandle, note_id: String, content: String) -> Result<(), String> {
+async fn generate_and_store_block_embeddings(
+    app_handle: tauri::AppHandle,
+    note_id: String,
+    content: String,
+) -> Result<(), String> {
     schedule_embedding(app_handle, note_id, content, true).await
 }
 
@@ -464,7 +503,7 @@ fn stop_watching_vault(state: tauri::State<'_, AppState>) -> Result<(), String> 
 #[tauri::command]
 fn linker_scan(
     state: tauri::State<'_, AppState>,
-    file_path: String
+    file_path: String,
 ) -> Result<Vec<String>, String> {
     let linker = state.linker.lock().unwrap();
     let engine = linker.as_ref().ok_or("Linker engine not initialized")?;
@@ -474,7 +513,7 @@ fn linker_scan(
 #[tauri::command]
 fn linker_diff(
     state: tauri::State<'_, AppState>,
-    file_path: String
+    file_path: String,
 ) -> Result<Option<Delta>, String> {
     let linker = state.linker.lock().unwrap();
     let engine = linker.as_ref().ok_or("Linker engine not initialized")?;
@@ -483,10 +522,7 @@ fn linker_diff(
 }
 
 #[tauri::command]
-fn linker_apply(
-    state: tauri::State<'_, AppState>,
-    file_path: String
-) -> Result<bool, String> {
+fn linker_apply(state: tauri::State<'_, AppState>, file_path: String) -> Result<bool, String> {
     let mut linker = state.linker.lock().unwrap();
     let engine = linker.as_mut().ok_or("Linker engine not initialized")?;
     engine.apply_file(&file_path).map_err(|e| e.to_string())
@@ -496,7 +532,7 @@ fn linker_apply(
 fn apply_approved_links(
     state: tauri::State<'_, AppState>,
     file_path: String,
-    approved_links: Vec<LinkMention>
+    approved_links: Vec<LinkMention>,
 ) -> Result<(), String> {
     let mut linker = state.linker.lock().unwrap();
     let engine = linker.as_mut().ok_or("Linker engine not initialized")?;
@@ -528,11 +564,11 @@ fn apply_approved_links(
     }
 
     // Perform atomic write (footer lists the applied targets once each)
-    linker::writer::atomic_write(path, &content, &targets)
-        .map_err(|e| e.to_string())?;
+    linker::writer::atomic_write(path, &content, &targets).map_err(|e| e.to_string())?;
 
     // Update DB
-    engine.update_db_links(&file_path, &targets)
+    engine
+        .update_db_links(&file_path, &targets)
         .map_err(|e| e.to_string())?;
 
     Ok(())
@@ -572,13 +608,19 @@ fn remove_denied_link(
     matched_text: Option<String>,
 ) -> Result<(), String> {
     let conn = db::init_db(&app_handle)?;
-    db::remove_denied_link(&conn, &note_path, kind.as_deref(), target.as_deref(), matched_text.as_deref())
+    db::remove_denied_link(
+        &conn,
+        &note_path,
+        kind.as_deref(),
+        target.as_deref(),
+        matched_text.as_deref(),
+    )
 }
 
 #[tauri::command]
 fn setup_omniroute_environment(_app: tauri::AppHandle) -> Result<String, String> {
     println!("Initializing OmniRoute environment check...");
-    
+
     let mut output = String::new();
 
     // 1. Check/Install Node.js (via Homebrew for Mac as a baseline)
@@ -589,7 +631,10 @@ fn setup_omniroute_environment(_app: tauri::AppHandle) -> Result<String, String>
             output.push_str("Node.js not found. Attempting installation via brew...\n");
             let install_node = Command::new("brew").args(["install", "node"]).output();
             if install_node.is_err() || !install_node.unwrap().status.success() {
-                return Err("Failed to install Node.js. Please install it manually from https://nodejs.org".to_string());
+                return Err(
+                    "Failed to install Node.js. Please install it manually from https://nodejs.org"
+                        .to_string(),
+                );
             }
             output.push_str("Node.js installed successfully.\n");
         } else {
@@ -601,9 +646,14 @@ fn setup_omniroute_environment(_app: tauri::AppHandle) -> Result<String, String>
     let omniroute_check = Command::new("omniroute").arg("--version").output();
     if omniroute_check.is_err() {
         output.push_str("OmniRoute not found. Installing via npm...\n");
-        let install_omni = Command::new("npm").args(["install", "-g", "omniroute"]).output();
+        let install_omni = Command::new("npm")
+            .args(["install", "-g", "omniroute"])
+            .output();
         if install_omni.is_err() || !install_omni.unwrap().status.success() {
-            return Err("Failed to install OmniRoute. Please run 'npm install -g omniroute' manually.".to_string());
+            return Err(
+                "Failed to install OmniRoute. Please run 'npm install -g omniroute' manually."
+                    .to_string(),
+            );
         }
         output.push_str("OmniRoute installed successfully.\n");
     } else {
@@ -620,7 +670,7 @@ fn setup_omniroute_environment(_app: tauri::AppHandle) -> Result<String, String>
         .spawn();
 
     output.push_str("OmniRoute server started in background.\n");
-    
+
     Ok(output)
 }
 
@@ -628,7 +678,13 @@ fn setup_omniroute_environment(_app: tauri::AppHandle) -> Result<String, String>
 fn select_file() -> Option<String> {
     rfd::FileDialog::new()
         .set_title("Select File to Ingest")
-        .add_filter("All Supported Files", &["pdf", "docx", "pptx", "xlsx", "mp3", "wav", "m4a", "mp4", "mov", "png", "jpg", "jpeg", "html"])
+        .add_filter(
+            "All Supported Files",
+            &[
+                "pdf", "docx", "pptx", "xlsx", "mp3", "wav", "m4a", "mp4", "mov", "png", "jpg",
+                "jpeg", "html",
+            ],
+        )
         .pick_file()
         .map(|p| p.to_string_lossy().to_string())
 }
@@ -655,12 +711,23 @@ async fn index_vault(
 ) -> Result<engine::indexer::IndexedVault, String> {
     tauri::async_runtime::spawn_blocking(move || {
         knowledge::activate(&app_handle, Path::new(&vault_path))?;
-        knowledge::jobs::run(&app_handle, "INDEX", 80, "index-vault", serde_json::json!({"root":vault_path}), |job| {
-            job.check()?;
-            let result = engine::indexer::index_vault(Path::new(&vault_path), app_handle.clone(), Some(job))?;
-            knowledge::jobs::resume_embeddings(app_handle.clone());
-            Ok(result)
-        })
+        knowledge::jobs::run(
+            &app_handle,
+            "INDEX",
+            80,
+            "index-vault",
+            serde_json::json!({"root":vault_path}),
+            |job| {
+                job.check()?;
+                let result = engine::indexer::index_vault(
+                    Path::new(&vault_path),
+                    app_handle.clone(),
+                    Some(job),
+                )?;
+                knowledge::jobs::resume_embeddings(app_handle.clone());
+                Ok(result)
+            },
+        )
     })
     .await
     .map_err(|e| e.to_string())?
@@ -695,7 +762,7 @@ fn write_file(
     content: String,
 ) -> Result<(), String> {
     let path = Path::new(&file_path);
-    knowledge::validate_path(&app_handle,path)?;
+    knowledge::validate_path(&app_handle, path)?;
     if let Some(parent) = path.parent() {
         if !parent.exists() {
             fs::create_dir_all(parent).map_err(|e| e.to_string())?;
@@ -735,7 +802,9 @@ fn write_file(
         // autosave is pure CPU + write churn. The full vault index on open
         // still rebuilds their backlinks.
         if content.len() <= LARGE_NOTE_CHARS {
-            if let Ok(dictionary) = knowledge::current(&app_handle).and_then(|s|knowledge::dictionary(&conn,&s.vault_id)) {
+            if let Ok(dictionary) = knowledge::current(&app_handle)
+                .and_then(|s| knowledge::dictionary(&conn, &s.vault_id))
+            {
                 let linker = cached_linker(&state, dictionary);
                 let mentions = linker.find_mentions(&content, Some(&file_path));
                 let _ = db::update_backlinks(&conn, &file_path, &mentions, &content);
@@ -765,11 +834,14 @@ fn validate_vault_relative_path(relative_path: &str, is_file: bool) -> Result<Pa
         return Err("Path must be relative to the vault".to_string());
     }
 
-    let parts: Vec<&str> = normalized.split('/').filter(|part| !part.is_empty()).collect();
+    let parts: Vec<&str> = normalized
+        .split('/')
+        .filter(|part| !part.is_empty())
+        .collect();
     if parts.is_empty()
-        || parts.iter().any(|part| {
-            *part == "." || *part == ".." || part.contains('\0') || part.contains(':')
-        })
+        || parts
+            .iter()
+            .any(|part| *part == "." || *part == ".." || part.contains('\0') || part.contains(':'))
     {
         return Err("Invalid vault path".to_string());
     }
@@ -789,11 +861,15 @@ fn validate_vault_relative_path(relative_path: &str, is_file: bool) -> Result<Pa
 }
 
 #[tauri::command]
-fn create_file(vault_path: String, relative_path: String, content: Option<String>) -> Result<String, String> {
+fn create_file(
+    vault_path: String,
+    relative_path: String,
+    content: Option<String>,
+) -> Result<String, String> {
     let root = Path::new(&vault_path);
     let validated_relative_path = validate_vault_relative_path(&relative_path, true)?;
     let mut file_path = root.join(validated_relative_path);
-    
+
     // Ensure extension is .md
     if let Some(ext) = file_path.extension() {
         if ext != "md" && ext != "markdown" {
@@ -924,7 +1000,10 @@ fn rename_folder(
     }
     // The new path must not collide with an existing entry.
     if new_dir.exists() {
-        return Err(format!("A folder named '{}' already exists", new_relative_path));
+        return Err(format!(
+            "A folder named '{}' already exists",
+            new_relative_path
+        ));
     }
     if let Some(parent) = new_dir.parent() {
         if !parent.exists() {
@@ -970,21 +1049,33 @@ fn delete_file(app_handle: tauri::AppHandle, file_path: String) -> Result<(), St
             "DELETE FROM links WHERE source = ?1 OR target = ?1",
             params![file_path],
         );
-        let _ = conn.execute("DELETE FROM denied_links WHERE note_path = ?1", params![file_path]);
+        let _ = conn.execute(
+            "DELETE FROM denied_links WHERE note_path = ?1",
+            params![file_path],
+        );
         let _ = crate::db::clear_block_embeddings(&conn, &file_path);
-        let _ = conn.execute("DELETE FROM embeddings WHERE note_id = ?1", params![file_path]);
+        let _ = conn.execute(
+            "DELETE FROM embeddings WHERE note_id = ?1",
+            params![file_path],
+        );
     }
     Ok(())
 }
 
 #[tauri::command]
-fn rename_file(app_handle: tauri::AppHandle, old_path: String, new_path: String) -> Result<(), String> {
+fn rename_file(
+    app_handle: tauri::AppHandle,
+    old_path: String,
+    new_path: String,
+) -> Result<(), String> {
     let old = Path::new(&old_path);
     let new = Path::new(&new_path);
-    knowledge::validate_path(&app_handle,old)?;
-    knowledge::validate_path(&app_handle,new)?;
+    knowledge::validate_path(&app_handle, old)?;
+    knowledge::validate_path(&app_handle, new)?;
 
-    if new.exists() { return Err("A note already exists at the destination".into()); }
+    if new.exists() {
+        return Err("A note already exists at the destination".into());
+    }
     if !old.exists() {
         return Err(format!("Source file not found: {old_path}"));
     }
@@ -998,45 +1089,134 @@ fn rename_file(app_handle: tauri::AppHandle, old_path: String, new_path: String)
     let conn = db::init_db(&app_handle)?;
     knowledge::move_path(&conn, &old_path, &new_path)?;
     knowledge::publish_path_change(&app_handle, &conn, &new_path)?;
-    if new.extension().and_then(|ext| ext.to_str()).is_some_and(|ext| ext.eq_ignore_ascii_case("md")) {
-        knowledge::sync_file(&app_handle, new, &fs::read_to_string(new).map_err(|e|e.to_string())?)?;
+    if new
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("md"))
+    {
+        knowledge::sync_file(
+            &app_handle,
+            new,
+            &fs::read_to_string(new).map_err(|e| e.to_string())?,
+        )?;
     }
     Ok(())
 }
 
 #[tauri::command]
-async fn run_ingestion_script(app: tauri::AppHandle, script_command: String, vault_path: String) -> Result<String, String> {
+async fn run_ingestion_script(
+    app: tauri::AppHandle,
+    script_command: String,
+    vault_path: String,
+) -> Result<String, String> {
     tauri::async_runtime::spawn_blocking(move || {
-        let key=knowledge::blocks::hash(&script_command);
-        knowledge::jobs::run(&app,"EXTRACT",10,&key,serde_json::json!({"custom":true}),|job| {
-            knowledge::models::authorize(&app,"Custom ingestion subprocess","EXTRACT",&script_command,false,false)?;
-            if script_command.trim().is_empty(){return Err("No script command provided".into());}
-            knowledge::validate_path(&app,Path::new(&vault_path))?;
-            let formatted=script_command.replace("{vault_path}",&vault_path);
-            #[cfg(windows)] let mut cmd={let mut c=Command::new("cmd");c.args(["/C",&formatted]).creation_flags(0x08000000);c};
-            #[cfg(not(windows))] let mut cmd={let mut c=Command::new("sh");c.args(["-c",&formatted]);c};
-            #[cfg(unix)] {use std::os::unix::process::CommandExt;cmd.process_group(0);}
-            let mut child=cmd.current_dir(&vault_path).stdout(Stdio::piped()).stderr(Stdio::piped()).spawn().map_err(|e|e.to_string())?;
-            let stdout=capture_ingestion_output(child.stdout.take().unwrap());
-            let stderr=capture_ingestion_output(child.stderr.take().unwrap());
-            let status=loop {
-                if job.check().is_err() || config::load_runtime_config(&app).unwrap_or_default().models.privacy==knowledge::models::PrivacyMode::StrictLocal {stop_ingestion_child(&mut child);return Err("Extraction cancelled".into());}
-                if let Some(status)=child.try_wait().map_err(|e|e.to_string())?{break status;}
-                std::thread::sleep(std::time::Duration::from_millis(100));
-            };
-            let out=String::from_utf8_lossy(&stdout.join().unwrap_or_default()).to_string();
-            let err=String::from_utf8_lossy(&stderr.join().unwrap_or_default()).to_string();
-            if status.success(){Ok(out)}else{Err(format!("Extraction failed: {out}\n{err}"))}
-        })
-    }).await.map_err(|e|e.to_string())?
+        let key = knowledge::blocks::hash(&script_command);
+        knowledge::jobs::run(
+            &app,
+            "EXTRACT",
+            10,
+            &key,
+            serde_json::json!({"custom":true}),
+            |job| {
+                knowledge::models::authorize(
+                    &app,
+                    "Custom ingestion subprocess",
+                    "EXTRACT",
+                    &script_command,
+                    false,
+                    false,
+                )?;
+                if script_command.trim().is_empty() {
+                    return Err("No script command provided".into());
+                }
+                knowledge::validate_path(&app, Path::new(&vault_path))?;
+                let formatted = script_command.replace("{vault_path}", &vault_path);
+                #[cfg(windows)]
+                let mut cmd = {
+                    let mut c = Command::new("cmd");
+                    c.args(["/C", &formatted]).creation_flags(0x08000000);
+                    c
+                };
+                #[cfg(not(windows))]
+                let mut cmd = {
+                    let mut c = Command::new("sh");
+                    c.args(["-c", &formatted]);
+                    c
+                };
+                #[cfg(unix)]
+                {
+                    use std::os::unix::process::CommandExt;
+                    cmd.process_group(0);
+                }
+                let mut child = cmd
+                    .current_dir(&vault_path)
+                    .stdout(Stdio::piped())
+                    .stderr(Stdio::piped())
+                    .spawn()
+                    .map_err(|e| e.to_string())?;
+                let stdout = capture_ingestion_output(child.stdout.take().unwrap());
+                let stderr = capture_ingestion_output(child.stderr.take().unwrap());
+                let status = loop {
+                    if job.check().is_err()
+                        || config::load_runtime_config(&app)
+                            .unwrap_or_default()
+                            .models
+                            .privacy
+                            == knowledge::models::PrivacyMode::StrictLocal
+                    {
+                        stop_ingestion_child(&mut child);
+                        return Err("Extraction cancelled".into());
+                    }
+                    if let Some(status) = child.try_wait().map_err(|e| e.to_string())? {
+                        break status;
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(100));
+                };
+                let out = String::from_utf8_lossy(&stdout.join().unwrap_or_default()).to_string();
+                let err = String::from_utf8_lossy(&stderr.join().unwrap_or_default()).to_string();
+                if status.success() {
+                    Ok(out)
+                } else {
+                    Err(format!("Extraction failed: {out}\n{err}"))
+                }
+            },
+        )
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
-fn capture_ingestion_output(mut pipe:impl std::io::Read+Send+'static)->std::thread::JoinHandle<Vec<u8>> {
-    std::thread::spawn(move||{let mut output=Vec::new();let mut bytes=[0;8192];loop{match pipe.read(&mut bytes){Ok(0)|Err(_)=>break,Ok(n)=>{let remaining=(4*1024*1024usize).saturating_sub(output.len());output.extend_from_slice(&bytes[..n.min(remaining)]);}}}output})
+fn capture_ingestion_output(
+    mut pipe: impl std::io::Read + Send + 'static,
+) -> std::thread::JoinHandle<Vec<u8>> {
+    std::thread::spawn(move || {
+        let mut output = Vec::new();
+        let mut bytes = [0; 8192];
+        loop {
+            match pipe.read(&mut bytes) {
+                Ok(0) | Err(_) => break,
+                Ok(n) => {
+                    let remaining = (4 * 1024 * 1024usize).saturating_sub(output.len());
+                    output.extend_from_slice(&bytes[..n.min(remaining)]);
+                }
+            }
+        }
+        output
+    })
 }
-fn stop_ingestion_child(child:&mut std::process::Child){
-    #[cfg(unix)] unsafe{libc::kill(-(child.id() as i32),libc::SIGTERM);}
-    #[cfg(windows)] {let _=Command::new("taskkill").args(["/PID",&child.id().to_string(),"/T","/F"]).creation_flags(0x08000000).status();}
-    let _=child.kill();let _=child.wait();
+fn stop_ingestion_child(child: &mut std::process::Child) {
+    #[cfg(unix)]
+    unsafe {
+        libc::kill(-(child.id() as i32), libc::SIGTERM);
+    }
+    #[cfg(windows)]
+    {
+        let _ = Command::new("taskkill")
+            .args(["/PID", &child.id().to_string(), "/T", "/F"])
+            .creation_flags(0x08000000)
+            .status();
+    }
+    let _ = child.kill();
+    let _ = child.wait();
 }
 
 fn python_candidates() -> Vec<String> {
@@ -1067,8 +1247,14 @@ fn python_candidates() -> Vec<String> {
 
 fn expand_python_candidate(candidate: &str) -> String {
     candidate
-        .replace("%LOCALAPPDATA%", &std::env::var("LOCALAPPDATA").unwrap_or_default())
-        .replace("%ProgramFiles%", &std::env::var("ProgramFiles").unwrap_or_default())
+        .replace(
+            "%LOCALAPPDATA%",
+            &std::env::var("LOCALAPPDATA").unwrap_or_default(),
+        )
+        .replace(
+            "%ProgramFiles%",
+            &std::env::var("ProgramFiles").unwrap_or_default(),
+        )
 }
 
 fn python_version(command: &str) -> Option<(u32, u32)> {
@@ -1143,7 +1329,11 @@ fn find_python() -> String {
 fn find_prism_python(app: &tauri::AppHandle) -> String {
     if let Ok(home) = app.path().home_dir() {
         #[cfg(target_os = "windows")]
-        let candidate = home.join(".prism").join("env").join("Scripts").join("python.exe");
+        let candidate = home
+            .join(".prism")
+            .join("env")
+            .join("Scripts")
+            .join("python.exe");
         #[cfg(not(target_os = "windows"))]
         let candidate = home.join(".prism").join("env").join("bin").join("python");
 
@@ -1162,28 +1352,47 @@ fn resolve_resource_file(app: &tauri::AppHandle, relative_subpath: &str) -> Path
     if let Ok(resource_dir) = app.path().resource_dir() {
         // 1. Try the full relative subpath (e.g. "Extractor Final/master_extractor.py")
         let p1 = resource_dir.join(relative_subpath);
-        if p1.exists() { return p1; }
+        if p1.exists() {
+            return p1;
+        }
         // 2. Try inside the _up_ staging directory (dev builds)
         let p2 = resource_dir.join("_up_").join(relative_subpath);
-        if p2.exists() { return p2; }
+        if p2.exists() {
+            return p2;
+        }
         // 3. Tauri may flatten globs — also try just the filename at the resource root
         if let Some(filename) = std::path::Path::new(relative_subpath).file_name() {
             let p3 = resource_dir.join(filename);
-            if p3.exists() { return p3; }
+            if p3.exists() {
+                return p3;
+            }
             let p4 = resource_dir.join("_up_").join(filename);
-            if p4.exists() { return p4; }
+            if p4.exists() {
+                return p4;
+            }
         }
     }
 
     // Dev fallback: walk up from cwd looking for the directory
     if let Ok(cwd) = std::env::current_dir() {
         let p1 = cwd.join(relative_subpath);
-        if p1.exists() { return p1; }
+        if p1.exists() {
+            return p1;
+        }
         let p2 = cwd.parent().unwrap_or(&cwd).join(relative_subpath);
-        if p2.exists() { return p2; }
+        if p2.exists() {
+            return p2;
+        }
         // Also try one more level up (e.g. cwd might be src-tauri)
-        let p3 = cwd.parent().unwrap_or(&cwd).parent().unwrap_or(&cwd).join(relative_subpath);
-        if p3.exists() { return p3; }
+        let p3 = cwd
+            .parent()
+            .unwrap_or(&cwd)
+            .parent()
+            .unwrap_or(&cwd)
+            .join(relative_subpath);
+        if p3.exists() {
+            return p3;
+        }
     }
 
     PathBuf::from(relative_subpath)
@@ -1196,124 +1405,208 @@ async fn run_builtin_extractor_async(
     vault_path: String,
     ingest_type: String,
     value: String,
-    yt_method: String
+    yt_method: String,
 ) -> Result<String, String> {
     tauri::async_runtime::spawn_blocking(move || {
-        let key=knowledge::blocks::hash(&format!("{ingest_type}:{value}:{yt_method}"));
-        knowledge::jobs::run(&app,"EXTRACT",10,&key,serde_json::json!({"type":ingest_type}),|job| {
-    if vault_path.trim().is_empty() {
-        return Err("Please select a note vault folder first.".to_string());
-    }
+        let key = knowledge::blocks::hash(&format!("{ingest_type}:{value}:{yt_method}"));
+        knowledge::jobs::run(
+            &app,
+            "EXTRACT",
+            10,
+            &key,
+            serde_json::json!({"type":ingest_type}),
+            |job| {
+                if vault_path.trim().is_empty() {
+                    return Err("Please select a note vault folder first.".to_string());
+                }
 
-    knowledge::validate_path(&app,Path::new(&vault_path))?;
-    knowledge::models::authorize(&app,"Document extractor subprocess","EXTRACT",&value,false,false)?;
-    #[cfg(feature = "ingest-rust")]
-    return native_ingest::run(&app, &window, &vault_path, &ingest_type, &value, &yt_method, || {
-        job.check().map_err(|e| e.to_string())?;
-        if config::load_runtime_config(&app).unwrap_or_default().models.privacy == knowledge::models::PrivacyMode::StrictLocal {
-            return Err("Extraction cancelled".into());
-        }
-        Ok(())
-    });
+                knowledge::validate_path(&app, Path::new(&vault_path))?;
+                knowledge::models::authorize(
+                    &app,
+                    "Document extractor subprocess",
+                    "EXTRACT",
+                    &value,
+                    false,
+                    false,
+                )?;
+                // Production runtime switch (Python default). The `ingest-rust` feature
+                // only controls whether the native worker is compiled in; the persisted
+                // `ingestionEngine` setting controls which path runs. Rust failures fall
+                // through once to Python; cancellation never falls back.
+                #[cfg(feature = "ingest-rust")]
+                if config::load_runtime_config(&app)
+                    .unwrap_or_default()
+                    .ingestion_engine
+                    == config::IngestionEngine::Rust
+                {
+                    match native_ingest::run(
+                        &app,
+                        &window,
+                        &vault_path,
+                        &ingest_type,
+                        &value,
+                        &yt_method,
+                        || {
+                            job.check().map_err(|e| e.to_string())?;
+                            if config::load_runtime_config(&app)
+                                .unwrap_or_default()
+                                .models
+                                .privacy
+                                == knowledge::models::PrivacyMode::StrictLocal
+                            {
+                                return Err("Extraction cancelled".into());
+                            }
+                            Ok(())
+                        },
+                    ) {
+                        Ok(ok) => return Ok(ok),
+                        Err(e) if e == "Extraction cancelled" || job.check().is_err() => {
+                            return Err(e)
+                        }
+                        Err(e) => {
+                            let _ = window.emit(
+                                "ingestion-progress",
+                                format!(
+                                    "[Prism] Rust engine failed ({e}); retrying once with Python."
+                                ),
+                            );
+                        }
+                    }
+                }
 
-    #[cfg(not(feature = "ingest-rust"))]
-    {
-    let script_path = resolve_resource_file(&app, "Extractor Final/master_extractor.py");
-    if !script_path.exists() {
-        return Err(format!("Extractor script not found at path: {:?}", script_path));
-    }
+                {
+                    let script_path =
+                        resolve_resource_file(&app, "Extractor Final/master_extractor.py");
+                    if !script_path.exists() {
+                        return Err(format!(
+                            "Extractor script not found at path: {:?}",
+                            script_path
+                        ));
+                    }
 
-    let env_python = if cfg!(target_os = "windows") {
-        app.path().home_dir().ok().map(|home| home.join(".prism").join("env").join("Scripts").join("python.exe"))
-    } else {
-        app.path().home_dir().ok().map(|home| home.join(".prism").join("env").join("bin").join("python"))
-    };
+                    let env_python = if cfg!(target_os = "windows") {
+                        app.path().home_dir().ok().map(|home| {
+                            home.join(".prism")
+                                .join("env")
+                                .join("Scripts")
+                                .join("python.exe")
+                        })
+                    } else {
+                        app.path()
+                            .home_dir()
+                            .ok()
+                            .map(|home| home.join(".prism").join("env").join("bin").join("python"))
+                    };
 
-    // If no supported Python is available, install the platform prerequisites
-    // before launching the extractor. This is only reached on first setup (or
-    // after an old environment was removed), so normal ingestion is unchanged.
-    let needs_installer = env_python.as_ref().map_or(true, |path| {
-        !path.exists()
-            || python_version(&path.to_string_lossy()).map_or(true, |(major, minor)| (major, minor) < (3, 10))
-    }) && find_supported_python().is_none();
-    if needs_installer {
-        let installer_output = run_extractor_installer(app.clone())?;
-        for line in installer_output.lines() {
-            let _ = window.emit("ingestion-progress", format!("[Prism Installer] {line}"));
-        }
-    }
+                    // If no supported Python is available, install the platform prerequisites
+                    // before launching the extractor. This is only reached on first setup (or
+                    // after an old environment was removed), so normal ingestion is unchanged.
+                    let needs_installer = env_python.as_ref().map_or(true, |path| {
+                        !path.exists()
+                            || python_version(&path.to_string_lossy())
+                                .map_or(true, |(major, minor)| (major, minor) < (3, 10))
+                    }) && find_supported_python().is_none();
+                    if needs_installer {
+                        let installer_output = run_extractor_installer(app.clone())?;
+                        for line in installer_output.lines() {
+                            let _ = window
+                                .emit("ingestion-progress", format!("[Prism Installer] {line}"));
+                        }
+                    }
 
-    let python_cmd = find_prism_python(&app);
+                    let python_cmd = find_prism_python(&app);
 
-    let clean_script_path = script_path.to_string_lossy()
-        .trim_start_matches(r"\\?\")
-        .to_string();
+                    let clean_script_path = script_path
+                        .to_string_lossy()
+                        .trim_start_matches(r"\\?\")
+                        .to_string();
 
-    let mut cmd = Command::new(&python_cmd);
-    cmd.arg(clean_script_path);
-    cmd.arg("--vault");
-    cmd.arg(&vault_path);
-    cmd.arg("--yt_method");
-    cmd.arg(&yt_method);
+                    let mut cmd = Command::new(&python_cmd);
+                    // Unbuffered so extractor progress streams to the panel instead of
+                    // arriving in one block on exit (block-buffered pipe symptom: frozen %).
+                    cmd.env("PYTHONUNBUFFERED", "1").arg("-u");
+                    cmd.arg(clean_script_path);
+                    cmd.arg("--vault");
+                    cmd.arg(&vault_path);
+                    cmd.arg("--yt_method");
+                    cmd.arg(&yt_method);
 
-    if ingest_type == "url" {
-        cmd.arg("--urls");
-        cmd.arg(&value);
-    } else {
-        cmd.arg("--files");
-        cmd.arg(&value);
-    }
+                    if ingest_type == "url" {
+                        cmd.arg("--urls");
+                        cmd.arg(&value);
+                    } else {
+                        cmd.arg("--files");
+                        cmd.arg(&value);
+                    }
 
-    #[cfg(target_os = "windows")]
-    cmd.creation_flags(0x08000000);
+                    #[cfg(target_os = "windows")]
+                    cmd.creation_flags(0x08000000);
 
-    #[cfg(unix)] {use std::os::unix::process::CommandExt;cmd.process_group(0);}
-    let mut child = cmd
-        .current_dir(&vault_path)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .map_err(|e| format!("Failed to launch extractor: {}", e))?;
+                    #[cfg(unix)]
+                    {
+                        use std::os::unix::process::CommandExt;
+                        cmd.process_group(0);
+                    }
+                    let mut child = cmd
+                        .current_dir(&vault_path)
+                        .stdout(Stdio::piped())
+                        .stderr(Stdio::piped())
+                        .spawn()
+                        .map_err(|e| format!("Failed to launch extractor: {}", e))?;
 
-    let stdout = child.stdout.take().unwrap();
-    let stderr = child.stderr.take().unwrap();
+                    let stdout = child.stdout.take().unwrap();
+                    let stderr = child.stderr.take().unwrap();
 
-    let window_clone = window.clone();
-    std::thread::spawn(move || {
-        use std::io::{BufRead, BufReader};
-        let reader = BufReader::new(stdout);
-        for line in reader.lines() {
-            if let Ok(l) = line {
-                let _ = window_clone.emit("ingestion-progress", l);
-            }
-        }
-    });
+                    let window_clone = window.clone();
+                    std::thread::spawn(move || {
+                        use std::io::{BufRead, BufReader};
+                        let reader = BufReader::new(stdout);
+                        for line in reader.lines() {
+                            if let Ok(l) = line {
+                                let _ = window_clone.emit("ingestion-progress", l);
+                            }
+                        }
+                    });
 
-    let window_clone_err = window.clone();
-    std::thread::spawn(move || {
-        use std::io::{BufRead, BufReader};
-        let reader = BufReader::new(stderr);
-        for line in reader.lines() {
-            if let Ok(l) = line {
-                let _ = window_clone_err.emit("ingestion-error", l);
-            }
-        }
-    });
+                    let window_clone_err = window.clone();
+                    std::thread::spawn(move || {
+                        use std::io::{BufRead, BufReader};
+                        let reader = BufReader::new(stderr);
+                        for line in reader.lines() {
+                            if let Ok(l) = line {
+                                let _ = window_clone_err.emit("ingestion-error", l);
+                            }
+                        }
+                    });
 
-    let status=loop {
-        if job.check().is_err() || config::load_runtime_config(&app).unwrap_or_default().models.privacy==knowledge::models::PrivacyMode::StrictLocal {stop_ingestion_child(&mut child);return Err("Extraction cancelled".into());}
-        if let Some(status)=child.try_wait().map_err(|e|e.to_string())?{break status;}
-        std::thread::sleep(std::time::Duration::from_millis(100));
-    };
-    
-    if status.success() {
-        Ok("Extraction completed successfully.".to_string())
-    } else {
-        Err("Extraction failed. Check logs for details.".to_string())
-    }
-    }
-        })
-    }).await.map_err(|e|e.to_string())?
+                    let status = loop {
+                        if job.check().is_err()
+                            || config::load_runtime_config(&app)
+                                .unwrap_or_default()
+                                .models
+                                .privacy
+                                == knowledge::models::PrivacyMode::StrictLocal
+                        {
+                            stop_ingestion_child(&mut child);
+                            return Err("Extraction cancelled".into());
+                        }
+                        if let Some(status) = child.try_wait().map_err(|e| e.to_string())? {
+                            break status;
+                        }
+                        std::thread::sleep(std::time::Duration::from_millis(100));
+                    };
+
+                    if status.success() {
+                        Ok("Extraction completed successfully.".to_string())
+                    } else {
+                        Err("Extraction failed. Check logs for details.".to_string())
+                    }
+                }
+            },
+        )
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
@@ -1327,11 +1620,15 @@ fn run_extractor_installer(app: tauri::AppHandle) -> Result<String, String> {
 
     let installer_path = resolve_resource_file(&app, script_name);
     if !installer_path.exists() {
-        return Err(format!("Installer script not found at path: {:?}", installer_path));
+        return Err(format!(
+            "Installer script not found at path: {:?}",
+            installer_path
+        ));
     }
 
     #[cfg(target_os = "windows")]
-    let clean_installer_path = installer_path.to_string_lossy()
+    let clean_installer_path = installer_path
+        .to_string_lossy()
         .trim_start_matches(r"\\?\")
         .to_string();
 
@@ -1357,14 +1654,21 @@ fn run_extractor_installer(app: tauri::AppHandle) -> Result<String, String> {
     let stderr = String::from_utf8_lossy(&output.stderr).to_string();
 
     if output.status.success() {
-        Ok(format!("Extractor Installation Succeeded:\n\n{}\n{}", stdout, stderr))
+        Ok(format!(
+            "Extractor Installation Succeeded:\n\n{}\n{}",
+            stdout, stderr
+        ))
     } else {
         Err(format!("Installer Error:\n{}\n{}", stdout, stderr))
     }
 }
 
 #[tauri::command]
-fn append_ingestion_log(app: tauri::AppHandle, level: String, message: String) -> Result<(), String> {
+fn append_ingestion_log(
+    app: tauri::AppHandle,
+    level: String,
+    message: String,
+) -> Result<(), String> {
     use std::io::Write;
     use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -1533,15 +1837,66 @@ async fn get_all_reconstructed_versions(
 
 // --- Runtime config bridge --------------------------------------------------
 
+/// Which built-in ingestion engine is selected, and whether the native Rust
+/// worker is present in this install. Python default; Rust is opt-in and
+/// reports unavailable when the runtime was not bundled.
+#[tauri::command]
+fn get_ingestion_engine_status(app: tauri::AppHandle) -> serde_json::Value {
+    let engine = config::load_runtime_config(&app)
+        .unwrap_or_default()
+        .ingestion_engine;
+    let engine_name = match engine {
+        config::IngestionEngine::Rust => "rust",
+        config::IngestionEngine::Python => "python",
+    };
+    #[cfg(feature = "ingest-rust")]
+    {
+        match native_ingest::executable(&app) {
+            Some(path) => serde_json::json!({
+                "engine": engine_name,
+                "rustAvailable": true,
+                "rustPath": path.to_string_lossy(),
+            }),
+            None => serde_json::json!({
+                "engine": engine_name,
+                "rustAvailable": false,
+                "rustPath": null,
+                "reason": "Rust runtime not bundled; use Python or stage ingest-runtime.",
+            }),
+        }
+    }
+    #[cfg(not(feature = "ingest-rust"))]
+    {
+        serde_json::json!({
+            "engine": engine_name,
+            "rustAvailable": false,
+            "rustPath": null,
+            "reason": "This build excludes the Rust worker; use Python.",
+        })
+    }
+}
+
 /// Returns the persisted runtime config, or `None` on first run (no
 /// `~/.prism/settings.json` yet) so the frontend can migrate legacy
 /// localStorage settings before saving.
 #[tauri::command]
 fn get_runtime_config(app: tauri::AppHandle) -> Option<config::RuntimeConfig> {
     let mut cfg = config::load_runtime_config(&app)?;
-    if !cfg.omni_route.api_key.is_empty() || cfg.models.providers.iter().any(|p|!p.config.api_key.is_empty()) {
-        if config::save_runtime_config(&app, &cfg).is_ok() { cfg = config::load_runtime_config(&app)?; }
-        else { cfg.omni_route.api_key.clear(); for provider in &mut cfg.models.providers {provider.config.api_key.clear();} }
+    if !cfg.omni_route.api_key.is_empty()
+        || cfg
+            .models
+            .providers
+            .iter()
+            .any(|p| !p.config.api_key.is_empty())
+    {
+        if config::save_runtime_config(&app, &cfg).is_ok() {
+            cfg = config::load_runtime_config(&app)?;
+        } else {
+            cfg.omni_route.api_key.clear();
+            for provider in &mut cfg.models.providers {
+                provider.config.api_key.clear();
+            }
+        }
     }
     Some(cfg)
 }
@@ -1557,9 +1912,17 @@ async fn save_runtime_config(
     tauri::async_runtime::spawn_blocking(move || {
         let settings = config::save_runtime_config(&app, &config)?;
         let state = app.state::<AppState>();
-        let runtime_warning = crate::engine::embeddings::apply_embedding_runtime_config(&state, &settings).err();
-        Ok(config::SettingsSaveResult { settings, runtime_warning })
-    }).await.map_err(|_| "Settings save task failed; reopen Settings to check the persisted values".to_string())?
+        let runtime_warning =
+            crate::engine::embeddings::apply_embedding_runtime_config(&state, &settings).err();
+        Ok(config::SettingsSaveResult {
+            settings,
+            runtime_warning,
+        })
+    })
+    .await
+    .map_err(|_| {
+        "Settings save task failed; reopen Settings to check the persisted values".to_string()
+    })?
 }
 
 /// Purges version-history rows older than `retention_days` (0 = keep all).
@@ -1602,7 +1965,13 @@ async fn list_chat_sessions(
     tauri::async_runtime::spawn_blocking(move || {
         let scope = knowledge::current(&app_handle)?;
         let conn = db::init_db(&app_handle)?;
-        db::chat::list_sessions(&conn, &scope.vault_id, query.as_deref(), origin.as_deref(), limit.unwrap_or(100))
+        db::chat::list_sessions(
+            &conn,
+            &scope.vault_id,
+            query.as_deref(),
+            origin.as_deref(),
+            limit.unwrap_or(100),
+        )
     })
     .await
     .map_err(|e| e.to_string())?
@@ -1624,10 +1993,7 @@ async fn rename_chat_session(
 }
 
 #[tauri::command]
-async fn delete_chat_session(
-    app_handle: tauri::AppHandle,
-    id: String,
-) -> Result<bool, String> {
+async fn delete_chat_session(app_handle: tauri::AppHandle, id: String) -> Result<bool, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let scope = knowledge::current(&app_handle)?;
         let conn = db::init_db(&app_handle)?;
@@ -1647,7 +2013,13 @@ async fn get_chat_messages(
     tauri::async_runtime::spawn_blocking(move || {
         let scope = knowledge::current(&app_handle)?;
         let conn = db::init_db(&app_handle)?;
-        db::chat::get_messages(&conn, &scope.vault_id, &session_id, limit.unwrap_or(200), offset.unwrap_or(0))
+        db::chat::get_messages(
+            &conn,
+            &scope.vault_id,
+            &session_id,
+            limit.unwrap_or(200),
+            offset.unwrap_or(0),
+        )
     })
     .await
     .map_err(|e| e.to_string())?
@@ -1664,7 +2036,14 @@ async fn append_chat_message(
     tauri::async_runtime::spawn_blocking(move || {
         let scope = knowledge::current(&app_handle)?;
         let conn = db::init_db(&app_handle)?;
-        db::chat::append_message(&conn, &scope.vault_id, &session_id, &role, &content, metadata.as_deref())
+        db::chat::append_message(
+            &conn,
+            &scope.vault_id,
+            &session_id,
+            &role,
+            &content,
+            metadata.as_deref(),
+        )
     })
     .await
     .map_err(|e| e.to_string())?
@@ -1730,16 +2109,19 @@ async fn unlink_notebook_session(
 /// process so anything initialized at startup (watcher, DB caches, etc.) is
 /// rebuilt. The new process is detached so it survives the exit of this one.
 #[tauri::command]
-async fn relaunch_app(app: tauri::AppHandle, notebook_state: tauri::State<'_, notebook::NotebookState>) -> Result<(), String> {
+async fn relaunch_app(
+    app: tauri::AppHandle,
+    notebook_state: tauri::State<'_, notebook::NotebookState>,
+) -> Result<(), String> {
     notebook::shutdown(&notebook_state).await;
-    let exe = std::env::current_exe()
-        .map_err(|e| format!("Failed to resolve executable: {e}"))?;
+    let exe = std::env::current_exe().map_err(|e| format!("Failed to resolve executable: {e}"))?;
     std::process::Command::new(exe)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .spawn()
-        .map_err(|e| format!("Failed to relaunch: {e}"))?;    app.exit(0);
+        .map_err(|e| format!("Failed to relaunch: {e}"))?;
+    app.exit(0);
     Ok(())
 }
 
@@ -1749,7 +2131,18 @@ async fn relaunch_app(app: tauri::AppHandle, notebook_state: tauri::State<'_, no
 #[tauri::command]
 async fn web_search(app: tauri::AppHandle, query: String) -> Result<Vec<WebSearchResult>, String> {
     let consent_query = query.clone();
-    tauri::async_runtime::spawn_blocking(move || knowledge::models::authorize(&app, "https://html.duckduckgo.com", "WEB_SEARCH", &consent_query, false, false)).await.map_err(|e|e.to_string())??;
+    tauri::async_runtime::spawn_blocking(move || {
+        knowledge::models::authorize(
+            &app,
+            "https://html.duckduckgo.com",
+            "WEB_SEARCH",
+            &consent_query,
+            false,
+            false,
+        )
+    })
+    .await
+    .map_err(|e| e.to_string())??;
     let url = format!(
         "https://html.duckduckgo.com/html/?q={}",
         urlencoding::encode(&query)
@@ -1787,7 +2180,11 @@ async fn web_search(app: tauri::AppHandle, query: String) -> Result<Vec<WebSearc
             .unwrap_or_default();
 
         if !title.is_empty() {
-            results.push(WebSearchResult { title, url, snippet });
+            results.push(WebSearchResult {
+                title,
+                url,
+                snippet,
+            });
         }
         if results.len() >= 5 {
             break;
@@ -1796,7 +2193,6 @@ async fn web_search(app: tauri::AppHandle, query: String) -> Result<Vec<WebSearc
 
     Ok(results)
 }
-
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -1946,6 +2342,7 @@ pub fn run() {
             get_all_reconstructed_versions,
             get_runtime_config,
             save_runtime_config,
+            get_ingestion_engine_status,
             purge_expired_history,
             create_chat_session,
             list_chat_sessions,

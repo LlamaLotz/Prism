@@ -96,7 +96,9 @@ pub fn error_event(error: &Error) {
     );
 }
 pub fn meaningful(text: &str) -> usize {
-    let marker = regex::Regex::new(r"(?i)^\s*(page|p\.?)\s*[-.]?\s*\d+\s*$").unwrap();
+    static MARKER: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    let marker =
+        MARKER.get_or_init(|| regex::Regex::new(r"(?i)^\s*(page|p\.?)\s*[-.]?\s*\d+\s*$").unwrap());
     text.lines()
         .filter(|l| !marker.is_match(l))
         .map(|l| l.split_whitespace().count())

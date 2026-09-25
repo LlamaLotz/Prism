@@ -70,7 +70,10 @@ pub fn clear_self_write(path: &Path) {
 pub fn suppress_self_write(path: &Path, delay_ms: u64) {
     mark_self_write(path);
     let deadline = Instant::now() + Duration::from_millis(delay_ms);
-    pending_clears().lock().unwrap().push((path.to_path_buf(), deadline));
+    pending_clears()
+        .lock()
+        .unwrap()
+        .push((path.to_path_buf(), deadline));
     SWEEPER_STARTED.get_or_init(|| {
         std::thread::spawn(|| loop {
             std::thread::sleep(Duration::from_millis(50));
@@ -133,7 +136,11 @@ fn is_markdown(path: &Path) -> bool {
 /// paths are held — no file contents are buffered here.
 fn collect_markdown_paths(vault_path: &Path) -> Vec<PathBuf> {
     let mut paths: Vec<PathBuf> = Vec::new();
-    for entry in WalkDir::new(vault_path).into_iter().filter_entry(|e| e.depth() == 0 || !is_hidden(e.path())).filter_map(Result::ok) {
+    for entry in WalkDir::new(vault_path)
+        .into_iter()
+        .filter_entry(|e| e.depth() == 0 || !is_hidden(e.path()))
+        .filter_map(Result::ok)
+    {
         let path = entry.path().to_path_buf();
         if !path.is_file() || is_hidden(&path) || !is_markdown(&path) {
             continue;
@@ -150,7 +157,11 @@ fn collect_markdown_paths(vault_path: &Path) -> Vec<PathBuf> {
 /// real folder tree even when a folder has no notes yet.
 fn collect_folder_paths(vault_path: &Path) -> Vec<String> {
     let mut folders: Vec<String> = Vec::new();
-    for entry in WalkDir::new(vault_path).into_iter().filter_entry(|e| e.depth() == 0 || !is_hidden(e.path())).filter_map(Result::ok) {
+    for entry in WalkDir::new(vault_path)
+        .into_iter()
+        .filter_entry(|e| e.depth() == 0 || !is_hidden(e.path()))
+        .filter_map(Result::ok)
+    {
         let path = entry.path();
         if !path.is_dir() || is_hidden(path) {
             continue;
@@ -196,11 +207,8 @@ fn file_metadata(vault_path: &Path, path: &Path) -> Option<IndexedFile> {
 /// workers, back-pressuring the producer through a bounded channel so only a
 /// handful of paths are ever in flight. Every worker owns a single SQLite
 /// connection reused across all the files it processes.
-fn run_pool_with_conn<F>(
-    paths: &[PathBuf],
-    app_handle: &tauri::AppHandle,
-    work: F,
-) where
+fn run_pool_with_conn<F>(paths: &[PathBuf], app_handle: &tauri::AppHandle, work: F)
+where
     F: Fn(&rusqlite::Connection, &Path) + Send + Sync + 'static,
 {
     if paths.is_empty() {
@@ -276,7 +284,9 @@ pub fn index_vault(
         let existing = existing.clone();
         let vault_root = vault_root.clone();
         move |conn, path| {
-            if job.as_ref().is_some_and(|j| j.check().is_err()) { return; }
+            if job.as_ref().is_some_and(|j| j.check().is_err()) {
+                return;
+            }
             let Ok(content) = std::fs::read_to_string(path) else {
                 return;
             };
@@ -287,7 +297,12 @@ pub fn index_vault(
                 .unwrap_or_default();
             let aliases = crate::watcher::extract_aliases(&content);
             if db::upsert_note(conn, &path_str, &title, &path_str, &aliases).is_ok() {
-                if let Err(error) = crate::knowledge::sync(conn, &scope.vault_id, &path_str, &content) { errors.lock().unwrap().push(error); return; }
+                if let Err(error) =
+                    crate::knowledge::sync(conn, &scope.vault_id, &path_str, &content)
+                {
+                    errors.lock().unwrap().push(error);
+                    return;
+                }
                 // Reconcile topic tags with disk on every full scan: renamed or
                 // moved notes get a fresh id (path) here, and their tag rows
                 // would otherwise point at the old id until the next write or
@@ -301,14 +316,33 @@ pub fn index_vault(
         }
     });
 
-    if let Some(error) = errors.lock().unwrap().first() { return Err(error.clone()); }
-    if let Some(job) = job { job.check()?; job.progress(0.5)?; }
+    if let Some(error) = errors.lock().unwrap().first() {
+        return Err(error.clone());
+    }
+    if let Some(job) = job {
+        job.check()?;
+        job.progress(0.5)?;
+    }
     // ---- Phase 2: purge index rows for notes missing from disk ----
     {
         let conn = db::init_db(&app_handle)?;
         let mut set = existing.lock().unwrap().clone();
-        let paths: Vec<String> = {let mut stmt = conn.prepare("SELECT path FROM notes").map_err(|e|e.to_string())?;let rows=stmt.query_map([],|r|r.get(0)).map_err(|e|e.to_string())?;rows.collect::<Result<_,_>>().map_err(|e|e.to_string())?};
-        for path in paths {if !Path::new(&path).starts_with(&vault_root) {set.insert(path);}else if !set.contains(&path) {crate::knowledge::remove(&conn,&path)?;}}
+        let paths: Vec<String> = {
+            let mut stmt = conn
+                .prepare("SELECT path FROM notes")
+                .map_err(|e| e.to_string())?;
+            let rows = stmt
+                .query_map([], |r| r.get(0))
+                .map_err(|e| e.to_string())?;
+            rows.collect::<Result<_, _>>().map_err(|e| e.to_string())?
+        };
+        for path in paths {
+            if !Path::new(&path).starts_with(&vault_root) {
+                set.insert(path);
+            } else if !set.contains(&path) {
+                crate::knowledge::remove(&conn, &path)?;
+            }
+        }
         db::purge_stale_notes(&conn, &set)?;
     }
 
@@ -316,7 +350,7 @@ pub fn index_vault(
     {
         let dictionary = db::init_db(&app_handle)
             .ok()
-            .and_then(|conn| crate::knowledge::dictionary(&conn,&scope.vault_id).ok())
+            .and_then(|conn| crate::knowledge::dictionary(&conn, &scope.vault_id).ok())
             .unwrap_or_default();
         let linker = Arc::new(NoteLinker::new(dictionary));
 
@@ -341,7 +375,10 @@ pub fn index_vault(
         });
     }
 
-    if let Some(job) = job { job.check()?; job.progress(1.0)?; }
+    if let Some(job) = job {
+        job.check()?;
+        job.progress(1.0)?;
+    }
     let mut out = results.lock().unwrap();
     out.sort_by(|a, b| a.title.to_lowercase().cmp(&b.title.to_lowercase()));
     Ok(IndexedVault {
@@ -382,7 +419,9 @@ mod tests {
         assert!(is_hidden(Path::new("/vault/.obsidian/plugins/x.md")));
         assert!(is_hidden(Path::new("/vault/.hidden.md")));
         // The extractor's sidecar folder is skipped regardless of case.
-        assert!(is_hidden(Path::new("/vault/Books/note metadata/foo.md.meta.json")));
+        assert!(is_hidden(Path::new(
+            "/vault/Books/note metadata/foo.md.meta.json"
+        )));
         assert!(is_hidden(Path::new("/vault/note metadata/foo.md")));
         assert!(is_hidden(Path::new("/vault/Note Metadata/foo.md")));
         // Normal notes are not.

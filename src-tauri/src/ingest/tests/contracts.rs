@@ -162,3 +162,40 @@ fn pdf_off_recovers_text_in_page_order() {
     assert!(s.find("Prism fixture page 50.").unwrap() < s.find("Prism fixture page 51.").unwrap());
     assert!(!s.contains("Prism fixture page 49."));
 }
+#[test]
+fn huge_pages_truncate_before_markdown() {
+    let filler = "word ".repeat(700_000);
+    let html = format!("<html><body><main><p>HEAD-MARKER</p><p>{filler}</p><p>TAIL-MARKER</p></main></body></html>");
+    let md = web::markdown(&html);
+    assert!(!md.is_empty());
+    assert!(md.len() < html.len());
+    // Converter input is capped (2MB): head survives, tail past the cut does not.
+    assert!(md.contains("HEAD-MARKER"));
+    assert!(!md.contains("TAIL-MARKER"));
+}
+#[test]
+fn nested_tables_flatten_without_losing_text() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
+    let html = std::fs::read_to_string(root.join("wiki_nested.html")).unwrap();
+    let start = std::time::Instant::now();
+    let md = web::markdown(&html);
+    assert!(
+        start.elapsed() < std::time::Duration::from_secs(10),
+        "nested-table conversion took {:?}",
+        start.elapsed()
+    );
+    let (top_prose, top_cell, nested, tail) = (
+        md.find("TOP-PROSE-MARKER").unwrap(),
+        md.find("TOP-CELL-MARKER").unwrap(),
+        md.find("NESTED-LEVEL1-MARKER").unwrap(),
+        md.find("TAIL-PROSE-MARKER").unwrap(),
+    );
+    assert!(top_prose < top_cell && top_cell < nested && nested < tail);
+    assert!(md.contains("NESTED-LEVEL2-MARKER"));
+    assert!(md.contains("NESTED-LEVEL3-MARKER"));
+    // Top-level table survives as a real Markdown table with padded cells.
+    let header = md.lines().find(|l| l.contains("Name") && l.starts_with('|')).unwrap();
+    assert!(header.contains("Value"), "{header}");
+    assert!(md.lines().any(|l| l.starts_with('|') && l.contains("TOP-CELL-MARKER")));
+    assert!(!md.contains("CHROME-NAV-MARKER"));
+}

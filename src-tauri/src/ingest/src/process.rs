@@ -7,13 +7,19 @@ use std::{
 };
 pub fn binary(name: &str) -> PathBuf {
     let key = format!("PRISM_INGEST_{}", name.replace('-', "_").to_uppercase());
-    std::env::var_os(key)
-        .map(PathBuf::from)
-        .or_else(|| {
-            std::env::var_os("PRISM_INGEST_BIN")
-                .map(|p| PathBuf::from(p).join(format!("{name}{}", std::env::consts::EXE_SUFFIX)))
-        })
-        .unwrap_or_else(|| PathBuf::from(name))
+    // An explicit per-tool override is authoritative (tests/fixture scripts).
+    if let Some(path) = std::env::var_os(key).map(PathBuf::from) {
+        return path;
+    }
+    // Prefer the staged runtime directory, but fall back to PATH when the
+    // runtime does not bundle this tool (dev runtimes ship only the worker).
+    if let Some(dir) = std::env::var_os("PRISM_INGEST_BIN") {
+        let candidate = PathBuf::from(dir).join(format!("{name}{}", std::env::consts::EXE_SUFFIX));
+        if candidate.is_file() {
+            return candidate;
+        }
+    }
+    PathBuf::from(name)
 }
 pub fn run(cmd: &mut Command, timeout: Duration, cap: u64) -> Result<Vec<u8>> {
     run_inner(cmd, timeout, cap, false)
@@ -76,7 +82,13 @@ fn run_inner(cmd: &mut Command, timeout: Duration, cap: u64, logged: bool) -> Re
                 break if status.success() {
                     Ok(())
                 } else {
-                    Err(Error::new("extract", format!("Tool exited with {status}")))
+                    Err(Error::new(
+                        "extract",
+                        format!(
+                            "Tool exited with {status}: {}",
+                            stderr_tail(err.as_file_mut())
+                        ),
+                    ))
                 };
             }
             Ok(None) => std::thread::sleep(Duration::from_millis(50)),
@@ -183,6 +195,35 @@ impl Drop for Job {
         unsafe {
             windows_sys::Win32::Foundation::CloseHandle(self.0);
         }
+    }
+}
+
+/// Last lines of a tool's stderr for error context (bounded, lossy).
+fn stderr_tail(file: &mut std::fs::File) -> String {
+    use std::io::{Seek, SeekFrom};
+    let len = file.metadata().map(|m| m.len()).unwrap_or(0);
+    let start = len.saturating_sub(2048);
+    if file.seek(SeekFrom::Start(start)).is_err() {
+        return "no stderr captured".into();
+    }
+    let mut bytes = Vec::new();
+    if file.read_to_end(&mut bytes).is_err() {
+        return "no stderr captured".into();
+    }
+    let text = String::from_utf8_lossy(&bytes);
+    let lines: Vec<&str> = text.lines().filter(|l| !l.trim().is_empty()).collect();
+    let tail = lines
+        .iter()
+        .rev()
+        .take(3)
+        .rev()
+        .cloned()
+        .collect::<Vec<_>>()
+        .join(" | ");
+    if tail.is_empty() {
+        "no stderr captured".into()
+    } else {
+        tail
     }
 }
 

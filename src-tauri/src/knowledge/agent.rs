@@ -182,7 +182,10 @@ fn ensure_inside_vault(scope: &super::Scope, path: &Path) -> Result<PathBuf, Str
         scope.root.join(path)
     };
     // Reject traversal components
-    if abs.components().any(|c| matches!(c, std::path::Component::ParentDir)) {
+    if abs
+        .components()
+        .any(|c| matches!(c, std::path::Component::ParentDir))
+    {
         return Err("Path contains '..'".into());
     }
     // Find nearest existing ancestor
@@ -217,7 +220,11 @@ fn extract_frontmatter(content: &str) -> (String, String) {
     if lines.first() != Some(&"---") {
         return (String::new(), content.to_string());
     }
-    if let Some(end) = lines.iter().skip(1).position(|l| *l == "---" || *l == "...") {
+    if let Some(end) = lines
+        .iter()
+        .skip(1)
+        .position(|l| *l == "---" || *l == "...")
+    {
         let end_idx = end + 1;
         // Include frontmatter block + trailing newline
         let prefix_lines = &lines[..=end_idx];
@@ -243,15 +250,37 @@ fn extract_frontmatter(content: &str) -> (String, String) {
 #[derive(Deserialize, Debug, Clone)]
 #[serde(rename_all = "camelCase", rename_all_fields = "camelCase", tag = "op")]
 pub enum EditOp {
-    ReplaceBlock { block_id: String, text: String },
-    InsertAfter { block_id: String, text: String },
-    InsertBefore { block_id: String, text: String },
-    DeleteBlock { block_id: String },
-    AddTag { tag: String },
-    RemoveTag { tag: String },
-    AddWikilink { block_id: Option<String>, target: String },
-    Append { text: String },
-    ReplaceAll { text: String },
+    ReplaceBlock {
+        block_id: String,
+        text: String,
+    },
+    InsertAfter {
+        block_id: String,
+        text: String,
+    },
+    InsertBefore {
+        block_id: String,
+        text: String,
+    },
+    DeleteBlock {
+        block_id: String,
+    },
+    AddTag {
+        tag: String,
+    },
+    RemoveTag {
+        tag: String,
+    },
+    AddWikilink {
+        block_id: Option<String>,
+        target: String,
+    },
+    Append {
+        text: String,
+    },
+    ReplaceAll {
+        text: String,
+    },
 }
 
 // For JSON input where op is like "replaceBlock" lowerCamelCase — serde tag handles it.
@@ -262,7 +291,11 @@ fn normalize_op_value(mut v: serde_json::Value) -> serde_json::Value {
     // The enum expects "replaceBlock", "insertAfter", etc. Frontend may send
     // "replace_block" or "replaceBlock". Map common aliases.
     if let Some(obj) = v.as_object_mut() {
-        if let Some(op) = obj.get("op").and_then(|o| o.as_str()).map(|s| s.to_string()) {
+        if let Some(op) = obj
+            .get("op")
+            .and_then(|o| o.as_str())
+            .map(|s| s.to_string())
+        {
             let normalized = match op.as_str() {
                 "replace_block" | "replace" | "replaceBlock" => "replaceBlock",
                 "insert_after" | "insertAfter" => "insertAfter",
@@ -297,11 +330,7 @@ struct DbBlock {
     // kind not needed for edit but kept for future heading_path recompute
 }
 
-fn apply_edits(
-    old_content: &str,
-    db_blocks: &[DbBlock],
-    ops: &[EditOp],
-) -> Result<String, String> {
+fn apply_edits(old_content: &str, db_blocks: &[DbBlock], ops: &[EditOp]) -> Result<String, String> {
     if ops.is_empty() {
         return Err("No edit operations provided".into());
     }
@@ -314,7 +343,10 @@ fn apply_edits(
         // Fallback: parse body to seed blocks (no ids)
         crate::knowledge::blocks::parse(&body)
             .into_iter()
-            .map(|b| DbBlock { id: uuid::Uuid::new_v4().to_string(), text: b.text })
+            .map(|b| DbBlock {
+                id: uuid::Uuid::new_v4().to_string(),
+                text: b.text,
+            })
             .collect()
     } else {
         db_blocks.to_vec()
@@ -331,7 +363,10 @@ fn apply_edits(
                     return Err(format!("Block not found: {block_id}"));
                 }
             }
-            EditOp::AddWikilink { block_id: Some(bid), .. } => {
+            EditOp::AddWikilink {
+                block_id: Some(bid),
+                ..
+            } => {
                 if !blocks.iter().any(|b| &b.id == bid) {
                     return Err(format!("Block not found for wikilink: {bid}"));
                 }
@@ -348,14 +383,28 @@ fn apply_edits(
             }
             EditOp::InsertAfter { block_id, text } => {
                 let idx = blocks.iter().position(|b| &b.id == block_id).unwrap();
-                let new_id = extract_anchor(text).unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+                let new_id =
+                    extract_anchor(text).unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
                 // If text ends with ^anchor, keep anchor as id for citability; otherwise uuid
-                blocks.insert(idx + 1, DbBlock { id: new_id, text: text.clone() });
+                blocks.insert(
+                    idx + 1,
+                    DbBlock {
+                        id: new_id,
+                        text: text.clone(),
+                    },
+                );
             }
             EditOp::InsertBefore { block_id, text } => {
                 let idx = blocks.iter().position(|b| &b.id == block_id).unwrap();
-                let new_id = extract_anchor(text).unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
-                blocks.insert(idx, DbBlock { id: new_id, text: text.clone() });
+                let new_id =
+                    extract_anchor(text).unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+                blocks.insert(
+                    idx,
+                    DbBlock {
+                        id: new_id,
+                        text: text.clone(),
+                    },
+                );
             }
             EditOp::DeleteBlock { block_id } => {
                 let idx = blocks.iter().position(|b| &b.id == block_id).unwrap();
@@ -363,7 +412,11 @@ fn apply_edits(
             }
             EditOp::AddTag { tag } => {
                 let clean = tag.trim().trim_start_matches('@').trim().to_string();
-                if clean.is_empty() || !clean.chars().all(|c| c.is_alphanumeric() || c == '-' || c == '_') {
+                if clean.is_empty()
+                    || !clean
+                        .chars()
+                        .all(|c| c.is_alphanumeric() || c == '-' || c == '_')
+                {
                     return Err(format!("Invalid tag: {tag}"));
                 }
                 let needle = format!("@{clean}");
@@ -373,7 +426,10 @@ fn apply_edits(
                     if let Some(last) = blocks.last_mut() {
                         last.text = format!("{} {}", last.text.trim_end(), needle);
                     } else {
-                        blocks.push(DbBlock { id: uuid::Uuid::new_v4().to_string(), text: needle });
+                        blocks.push(DbBlock {
+                            id: uuid::Uuid::new_v4().to_string(),
+                            text: needle,
+                        });
                     }
                 }
             }
@@ -384,7 +440,9 @@ fn apply_edits(
                 }
                 // Also remove empty trailing whitespace-only blocks after removal?
                 let len = blocks.len();
-                if len > 1 { blocks.retain(|b| !b.text.trim().is_empty()); }
+                if len > 1 {
+                    blocks.retain(|b| !b.text.trim().is_empty());
+                }
             }
             EditOp::AddWikilink { block_id, target } => {
                 let t = target.trim();
@@ -406,13 +464,20 @@ fn apply_edits(
                         last.text = format!("{} {}", last.text.trim_end(), link);
                     }
                 } else {
-                    blocks.push(DbBlock { id: uuid::Uuid::new_v4().to_string(), text: link });
+                    blocks.push(DbBlock {
+                        id: uuid::Uuid::new_v4().to_string(),
+                        text: link,
+                    });
                 }
             }
             EditOp::Append { text } => {
                 if !text.trim().is_empty() {
-                    let new_id = extract_anchor(text).unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
-                    blocks.push(DbBlock { id: new_id, text: text.clone() });
+                    let new_id =
+                        extract_anchor(text).unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+                    blocks.push(DbBlock {
+                        id: new_id,
+                        text: text.clone(),
+                    });
                 }
             }
             EditOp::ReplaceAll { text } => {
@@ -434,20 +499,34 @@ fn apply_edits(
         }
     }
 
-    let body = blocks.iter().map(|b| b.text.clone()).collect::<Vec<_>>().join("\n\n");
+    let body = blocks
+        .iter()
+        .map(|b| b.text.clone())
+        .collect::<Vec<_>>()
+        .join("\n\n");
     if body.is_empty() && frontmatter.is_empty() {
         Ok(String::new())
     } else if frontmatter.is_empty() {
         Ok(body + "\n")
     } else {
-        Ok(format!("{}{}\n", frontmatter, body.trim_start_matches('\n')))
+        Ok(format!(
+            "{}{}\n",
+            frontmatter,
+            body.trim_start_matches('\n')
+        ))
     }
 }
 
 fn extract_anchor(text: &str) -> Option<String> {
     text.split_whitespace()
         .last()
-        .filter(|s| s.starts_with('^') && s.len() > 1 && s[1..].chars().all(|c| c.is_alphanumeric() || c == '-' || c == '_'))
+        .filter(|s| {
+            s.starts_with('^')
+                && s.len() > 1
+                && s[1..]
+                    .chars()
+                    .all(|c| c.is_alphanumeric() || c == '-' || c == '_')
+        })
         .map(|s| s[1..].to_string())
 }
 
@@ -461,7 +540,10 @@ fn contains_tag(text: &str, tag: &str) -> bool {
         };
         let after_ok = {
             let end = pos + needle.len();
-            text[end..].chars().next().map_or(true, |c| !(c.is_alphanumeric() || c == '-' || c == '_'))
+            text[end..]
+                .chars()
+                .next()
+                .map_or(true, |c| !(c.is_alphanumeric() || c == '-' || c == '_'))
         };
         before_ok && after_ok
     } else {
@@ -484,37 +566,63 @@ fn remove_tag_occurrences(text: &str, tag: &str) -> String {
         };
         let after_ok = {
             let end = abs + needle.len();
-            result[end..].chars().next().map_or(true, |c| !(c.is_alphanumeric() || c == '-' || c == '_'))
+            result[end..]
+                .chars()
+                .next()
+                .map_or(true, |c| !(c.is_alphanumeric() || c == '-' || c == '_'))
         };
         if before_ok && after_ok {
             // Remove with one surrounding space if present to avoid double spaces
-            let remove_start = if abs > 0 && result.as_bytes()[abs - 1] == b' ' { abs - 1 } else { abs };
+            let remove_start = if abs > 0 && result.as_bytes()[abs - 1] == b' ' {
+                abs - 1
+            } else {
+                abs
+            };
             let remove_end = {
                 let end = abs + needle.len();
-                if end < result.len() && result.as_bytes()[end] == b' ' { end + 1 } else { end }
+                if end < result.len() && result.as_bytes()[end] == b' ' {
+                    end + 1
+                } else {
+                    end
+                }
             };
             result.replace_range(remove_start..remove_end, "");
             search_start = remove_start;
         } else {
             search_start = abs + needle.len();
         }
-        if search_start >= result.len() { break; }
+        if search_start >= result.len() {
+            break;
+        }
     }
-    result.split_whitespace().collect::<Vec<_>>().join(" ").trim().to_string().is_empty().then(|| String::new()).unwrap_or_else(|| {
-        // Preserve original line breaks? For tag removal within block, single line is fine.
-        // But we collapsed whitespace — reconstruct with single spaces within block.
-        // To keep original block's line breaks, we just return result with collapsed double spaces.
-        let mut cleaned = result;
-        while cleaned.contains("  ") { cleaned = cleaned.replace("  ", " "); }
-        cleaned
-    })
+    result
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .trim()
+        .to_string()
+        .is_empty()
+        .then(|| String::new())
+        .unwrap_or_else(|| {
+            // Preserve original line breaks? For tag removal within block, single line is fine.
+            // But we collapsed whitespace — reconstruct with single spaces within block.
+            // To keep original block's line breaks, we just return result with collapsed double spaces.
+            let mut cleaned = result;
+            while cleaned.contains("  ") {
+                cleaned = cleaned.replace("  ", " ");
+            }
+            cleaned
+        })
 }
 
 // ---------------------------------------------------------------------------
 // Read tool implementations (auto-approved, vault-scoped)
 // ---------------------------------------------------------------------------
 
-fn read_note_blocking(app: tauri::AppHandle, note_ref: String) -> Result<serde_json::Value, String> {
+fn read_note_blocking(
+    app: tauri::AppHandle,
+    note_ref: String,
+) -> Result<serde_json::Value, String> {
     let scope = super::current(&app)?;
     let conn = crate::db::init_db(&app)?;
     let (id, path) = resolve_note(&conn, &scope.vault_id, &note_ref)?;
@@ -523,7 +631,11 @@ fn read_note_blocking(app: tauri::AppHandle, note_ref: String) -> Result<serde_j
         return Err("Note is outside the active vault".into());
     }
     let content = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
-    let title = Path::new(&path).file_stem().unwrap_or_default().to_string_lossy().to_string();
+    let title = Path::new(&path)
+        .file_stem()
+        .unwrap_or_default()
+        .to_string_lossy()
+        .to_string();
     // Blocks from knowledge_blocks
     let mut stmt = conn.prepare("SELECT id, text, kind, heading_path, anchor, hash, ordinal, start_line, end_line FROM knowledge_blocks WHERE note_id=?1 AND deleted=0 ORDER BY ordinal").map_err(|e| e.to_string())?;
     let blocks = stmt.query_map([&id], |r| {
@@ -549,7 +661,10 @@ fn read_note_blocking(app: tauri::AppHandle, note_ref: String) -> Result<serde_j
     }))
 }
 
-fn read_block_blocking(app: tauri::AppHandle, block_id: String) -> Result<serde_json::Value, String> {
+fn read_block_blocking(
+    app: tauri::AppHandle,
+    block_id: String,
+) -> Result<serde_json::Value, String> {
     let scope = super::current(&app)?;
     let conn = crate::db::init_db(&app)?;
     let (bid, note_id, note_path) = resolve_block(&conn, &scope.vault_id, &block_id)?;
@@ -573,11 +688,29 @@ fn read_block_blocking(app: tauri::AppHandle, block_id: String) -> Result<serde_
     Ok(row)
 }
 
-fn search_vault_blocking(app: tauri::AppHandle, input: serde_json::Value) -> Result<serde_json::Value, String> {
-    let text = input.get("query").or_else(|| input.get("text")).and_then(|v| v.as_str()).unwrap_or("").to_string();
-    let mode = input.get("mode").and_then(|v| v.as_str()).unwrap_or("hybrid").to_string();
-    let folder = input.get("folder").and_then(|v| v.as_str()).map(|s| s.to_string());
-    let tag = input.get("tag").and_then(|v| v.as_str()).map(|s| s.to_string());
+fn search_vault_blocking(
+    app: tauri::AppHandle,
+    input: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    let text = input
+        .get("query")
+        .or_else(|| input.get("text"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+    let mode = input
+        .get("mode")
+        .and_then(|v| v.as_str())
+        .unwrap_or("hybrid")
+        .to_string();
+    let folder = input
+        .get("folder")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
+    let tag = input
+        .get("tag")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
     let offset = input.get("offset").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
     let limit = input.get("limit").and_then(|v| v.as_u64()).unwrap_or(20) as usize;
     let scope = super::current(&app)?;
@@ -585,30 +718,61 @@ fn search_vault_blocking(app: tauri::AppHandle, input: serde_json::Value) -> Res
     if !["", "lexical", "semantic", "hybrid"].contains(&mode.as_str()) {
         return Err("Unsupported search mode".into());
     }
-    let q = super::search::SearchQuery { text, mode: mode.clone(), folder, tag, offset, limit };
+    let q = super::search::SearchQuery {
+        text,
+        mode: mode.clone(),
+        folder,
+        tag,
+        offset,
+        limit,
+    };
     let lex = super::search::lexical(&conn, &scope.vault_id, &q)?;
     let mut sem = vec![];
     let mut degraded = None;
     if mode == "semantic" || mode == "hybrid" {
         let state = app.state::<crate::AppState>();
-        let engine = state.embeddings.lock().unwrap().as_ref().and_then(|r| r.as_ref().ok()).cloned();
+        let engine = state
+            .embeddings
+            .lock()
+            .unwrap()
+            .as_ref()
+            .and_then(|r| r.as_ref().ok())
+            .cloned();
         if let Some(engine) = engine {
             let _lock = crate::embed_guard(&state);
             match engine.search_text(&q.text, 1000) {
                 Ok(matches) => {
                     for m in matches {
-                        if let Some((id, title)) = super::search::eligible(&conn, &m.note_id, &scope.vault_id, &q)? {
-                            sem.push(super::search::SearchHit { note_id: id, block_id: None, path: m.note_id, title, snippet: String::new(), lexical: None, semantic: Some(m.score), score: 0.0 });
+                        if let Some((id, title)) =
+                            super::search::eligible(&conn, &m.note_id, &scope.vault_id, &q)?
+                        {
+                            sem.push(super::search::SearchHit {
+                                note_id: id,
+                                block_id: None,
+                                path: m.note_id,
+                                title,
+                                snippet: String::new(),
+                                lexical: None,
+                                semantic: Some(m.score),
+                                score: 0.0,
+                            });
                         }
                     }
                 }
-                Err(_) => degraded = Some("Semantic inference unavailable; showing lexical results".to_string()),
+                Err(_) => {
+                    degraded =
+                        Some("Semantic inference unavailable; showing lexical results".to_string())
+                }
             }
         } else {
             degraded = Some("Local embeddings are not loaded; showing lexical results".to_string());
         }
     }
-    let items = if mode == "semantic" && degraded.is_none() { super::search::fuse(vec![], sem) } else { super::search::fuse(lex, sem) };
+    let items = if mode == "semantic" && degraded.is_none() {
+        super::search::fuse(vec![], sem)
+    } else {
+        super::search::fuse(lex, sem)
+    };
     let start = q.offset.min(1000);
     let lim = if q.limit == 0 { 50 } else { q.limit.min(100) };
     let next = (items.len() > start + lim).then_some(start + lim);
@@ -618,14 +782,25 @@ fn search_vault_blocking(app: tauri::AppHandle, input: serde_json::Value) -> Res
     Ok(serde_json::json!({ "items": page_items, "degraded": degraded, "nextOffset": next }))
 }
 
-fn get_related_blocking(app: tauri::AppHandle, note_ref: String, kinds: Vec<String>) -> Result<serde_json::Value, String> {
+fn get_related_blocking(
+    app: tauri::AppHandle,
+    note_ref: String,
+    kinds: Vec<String>,
+) -> Result<serde_json::Value, String> {
     let scope = super::current(&app)?;
     let conn = crate::db::init_db(&app)?;
     let (id, path) = if !note_ref.trim().is_empty() {
         let (i, p) = resolve_note(&conn, &scope.vault_id, &note_ref)?;
         (Some(i), Some(p))
-    } else { (None, None) };
-    let q = super::search::RelationQuery { note_id: id.clone(), kinds: kinds.clone(), offset: 0, limit: 100 };
+    } else {
+        (None, None)
+    };
+    let q = super::search::RelationQuery {
+        note_id: id.clone(),
+        kinds: kinds.clone(),
+        offset: 0,
+        limit: 100,
+    };
     // Handle semantic separately (it requires engine and special path like get_relations)
     let include_sem = kinds.iter().any(|k| k == "semantic");
     let relations = if include_sem {
@@ -633,15 +808,42 @@ fn get_related_blocking(app: tauri::AppHandle, note_ref: String, kinds: Vec<Stri
         // Reuse existing search::get_relations logic via direct call pattern
         // Instead of calling the Tauri command (which re-checks scope), duplicate minimal logic here
         // For simplicity, delegate to search::relations + manual semantic if available
-        let mut out = super::search::relations(&conn, &scope.vault_id, &super::search::RelationQuery { note_id: id.clone(), kinds: kinds.iter().filter(|k| *k != "semantic").cloned().collect(), offset: 0, limit: 100 })?;
+        let mut out = super::search::relations(
+            &conn,
+            &scope.vault_id,
+            &super::search::RelationQuery {
+                note_id: id.clone(),
+                kinds: kinds.iter().filter(|k| *k != "semantic").cloned().collect(),
+                offset: 0,
+                limit: 100,
+            },
+        )?;
         if let Some(ref p) = path {
-            if let Ok(runtime) = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| app.state::<super::KnowledgeRuntime>().embeddings.lock().unwrap().as_ref().and_then(|r| r.as_ref().ok()).cloned())) {
+            if let Ok(runtime) = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                app.state::<super::KnowledgeRuntime>()
+                    .embeddings
+                    .lock()
+                    .unwrap()
+                    .as_ref()
+                    .and_then(|r| r.as_ref().ok())
+                    .cloned()
+            })) {
                 if let Some(engine) = runtime {
                     if let Ok(hits) = engine.find_related(&conn, p, 20) {
                         for hit in hits {
                             let target: Option<String> = conn.query_row("SELECT id FROM knowledge_notes WHERE path=?1 AND vault_id=?2 AND deleted=0", params![hit.note_id, scope.vault_id], |r| r.get(0)).optional().map_err(|e| e.to_string())?;
                             if let Some(target) = target {
-                                out.push(super::search::Relation { source: id.clone().unwrap_or_default(), target, relation_type: "semantic".into(), source_block: None, target_block: None, target_anchor: None, timestamp: 0, confidence: hit.score, origin: "semantic-engine".into() });
+                                out.push(super::search::Relation {
+                                    source: id.clone().unwrap_or_default(),
+                                    target,
+                                    relation_type: "semantic".into(),
+                                    source_block: None,
+                                    target_block: None,
+                                    target_anchor: None,
+                                    timestamp: 0,
+                                    confidence: hit.score,
+                                    origin: "semantic-engine".into(),
+                                });
                             }
                         }
                     }
@@ -660,7 +862,10 @@ fn get_related_blocking(app: tauri::AppHandle, note_ref: String, kinds: Vec<Stri
     Ok(serde_json::json!(items))
 }
 
-fn get_backlinks_blocking(app: tauri::AppHandle, note_ref: String) -> Result<serde_json::Value, String> {
+fn get_backlinks_blocking(
+    app: tauri::AppHandle,
+    note_ref: String,
+) -> Result<serde_json::Value, String> {
     let scope = super::current(&app)?;
     let conn = crate::db::init_db(&app)?;
     let (_, path) = resolve_note(&conn, &scope.vault_id, &note_ref)?;
@@ -694,10 +899,19 @@ fn create_pending(
         }
     } else {
         // Truncate preview to 8000 chars to keep IPC bounded
-        if patch.len() > 8000 { format!("{}…[truncated]", &patch[..8000]) } else { patch }
+        if patch.len() > 8000 {
+            format!("{}…[truncated]", &patch[..8000])
+        } else {
+            patch
+        }
     };
     // Log agent pending creation for audit (actor = AI)
-    println!("[agent] pending {tool} for {} ({} bytes → {} bytes)", vault_relative(&scope, &note_path), old_content.len(), new_content.len());
+    println!(
+        "[agent] pending {tool} for {} ({} bytes → {} bytes)",
+        vault_relative(&scope, &note_path),
+        old_content.len(),
+        new_content.len()
+    );
     Ok(PendingEdit {
         id: uuid::Uuid::new_v4().to_string(),
         tool: tool.into(),
@@ -709,7 +923,10 @@ fn create_pending(
         old_content,
         new_content,
         expires: Instant::now() + Duration::from_secs(600),
-        created_at: std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs() as i64,
+        created_at: std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs() as i64,
         input,
     })
 }
@@ -721,24 +938,54 @@ fn store_pending(pending: PendingEdit) -> String {
 }
 
 // edit_note preview
-fn preview_edit_note(app: tauri::AppHandle, input: serde_json::Value) -> Result<PendingEdit, String> {
+fn preview_edit_note(
+    app: tauri::AppHandle,
+    input: serde_json::Value,
+) -> Result<PendingEdit, String> {
     let scope = super::current(&app)?;
     let conn = crate::db::init_db(&app)?;
-    let note_ref = input.get("noteId").or_else(|| input.get("note_id")).or_else(|| input.get("path")).and_then(|v| v.as_str()).ok_or("edit_note requires noteId")?.to_string();
+    let note_ref = input
+        .get("noteId")
+        .or_else(|| input.get("note_id"))
+        .or_else(|| input.get("path"))
+        .and_then(|v| v.as_str())
+        .ok_or("edit_note requires noteId")?
+        .to_string();
     let (note_id, note_path) = resolve_note(&conn, &scope.vault_id, &note_ref)?;
     ensure_inside_vault(&scope, Path::new(&note_path))?;
     let old_content = std::fs::read_to_string(&note_path).unwrap_or_default();
     // Load db blocks for this note
-    let mut stmt = conn.prepare("SELECT id, text FROM knowledge_blocks WHERE note_id=?1 AND deleted=0 ORDER BY ordinal").map_err(|e| e.to_string())?;
-    let db_blocks = stmt.query_map([&note_id], |r| Ok(DbBlock { id: r.get(0)?, text: r.get(1)? })).map_err(|e| e.to_string())?.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())?;
-    let ops_raw = input.get("operations").or_else(|| input.get("ops")).ok_or("edit_note requires operations[]")?;
+    let mut stmt = conn
+        .prepare(
+            "SELECT id, text FROM knowledge_blocks WHERE note_id=?1 AND deleted=0 ORDER BY ordinal",
+        )
+        .map_err(|e| e.to_string())?;
+    let db_blocks = stmt
+        .query_map([&note_id], |r| {
+            Ok(DbBlock {
+                id: r.get(0)?,
+                text: r.get(1)?,
+            })
+        })
+        .map_err(|e| e.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())?;
+    let ops_raw = input
+        .get("operations")
+        .or_else(|| input.get("ops"))
+        .ok_or("edit_note requires operations[]")?;
     let ops_arr = ops_raw.as_array().ok_or("operations must be an array")?;
-    if ops_arr.is_empty() { return Err("No edit operations provided".into()); }
-    if ops_arr.len() > 32 { return Err("Too many operations (max 32)".into()); }
+    if ops_arr.is_empty() {
+        return Err("No edit operations provided".into());
+    }
+    if ops_arr.len() > 32 {
+        return Err("Too many operations (max 32)".into());
+    }
     let mut ops: Vec<EditOp> = Vec::with_capacity(ops_arr.len());
     for raw in ops_arr {
         let norm = normalize_op_value(raw.clone());
-        let op: EditOp = serde_json::from_value(norm).map_err(|e| format!("Invalid operation: {e}"))?;
+        let op: EditOp =
+            serde_json::from_value(norm).map_err(|e| format!("Invalid operation: {e}"))?;
         ops.push(op);
     }
     // Reject full-rewrite of huge notes unless it's a single replaceAll with reasonable size (already checked)
@@ -749,125 +996,337 @@ fn preview_edit_note(app: tauri::AppHandle, input: serde_json::Value) -> Result<
     if new_content.len() > 2 * 1024 * 1024 {
         return Err("Resulting note exceeds 2MB limit".into());
     }
-    create_pending(&app, "edit_note", note_path, Some(note_id), old_content, new_content, input)
+    create_pending(
+        &app,
+        "edit_note",
+        note_path,
+        Some(note_id),
+        old_content,
+        new_content,
+        input,
+    )
 }
 
-fn preview_create_note(app: tauri::AppHandle, input: serde_json::Value) -> Result<PendingEdit, String> {
+fn preview_create_note(
+    app: tauri::AppHandle,
+    input: serde_json::Value,
+) -> Result<PendingEdit, String> {
     let scope = super::current(&app)?;
-    let rel = input.get("path").or_else(|| input.get("relativePath")).and_then(|v| v.as_str()).ok_or("create_note requires path")?.to_string();
-    let content = input.get("content").and_then(|v| v.as_str()).unwrap_or("").to_string();
-    if content.len() > 2 * 1024 * 1024 { return Err("Note content exceeds 2MB limit".into()); }
+    let rel = input
+        .get("path")
+        .or_else(|| input.get("relativePath"))
+        .and_then(|v| v.as_str())
+        .ok_or("create_note requires path")?
+        .to_string();
+    let content = input
+        .get("content")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+    if content.len() > 2 * 1024 * 1024 {
+        return Err("Note content exceeds 2MB limit".into());
+    }
     let abs = ensure_inside_vault(&scope, Path::new(&rel))?;
-    if abs.exists() { return Err(format!("A file already exists at {}", vault_relative(&scope, &abs.to_string_lossy()))); }
+    if abs.exists() {
+        return Err(format!(
+            "A file already exists at {}",
+            vault_relative(&scope, &abs.to_string_lossy())
+        ));
+    }
     // Validate folder depth like lib.rs create_file
-    let rel_path = abs.strip_prefix(&scope.root).unwrap_or(&abs).to_string_lossy().to_string();
+    let rel_path = abs
+        .strip_prefix(&scope.root)
+        .unwrap_or(&abs)
+        .to_string_lossy()
+        .to_string();
     let parts: Vec<&str> = rel_path.split('/').filter(|p| !p.is_empty()).collect();
-    if parts.len() > 6 { return Err("Folders can be nested up to 5 levels deep".into()); }
-    if rel_path.contains("..") || rel_path.contains('\0') || rel_path.contains(':') { return Err("Invalid vault path".into()); }
-    create_pending(&app, "create_note", abs.to_string_lossy().to_string(), None, String::new(), content, input)
+    if parts.len() > 6 {
+        return Err("Folders can be nested up to 5 levels deep".into());
+    }
+    if rel_path.contains("..") || rel_path.contains('\0') || rel_path.contains(':') {
+        return Err("Invalid vault path".into());
+    }
+    create_pending(
+        &app,
+        "create_note",
+        abs.to_string_lossy().to_string(),
+        None,
+        String::new(),
+        content,
+        input,
+    )
 }
 
-fn preview_delete_note(app: tauri::AppHandle, input: serde_json::Value) -> Result<PendingEdit, String> {
+fn preview_delete_note(
+    app: tauri::AppHandle,
+    input: serde_json::Value,
+) -> Result<PendingEdit, String> {
     let scope = super::current(&app)?;
     let conn = crate::db::init_db(&app)?;
-    let note_ref = input.get("noteId").or_else(|| input.get("path")).and_then(|v| v.as_str()).ok_or("delete_note requires noteId")?.to_string();
+    let note_ref = input
+        .get("noteId")
+        .or_else(|| input.get("path"))
+        .and_then(|v| v.as_str())
+        .ok_or("delete_note requires noteId")?
+        .to_string();
     let (note_id, note_path) = resolve_note(&conn, &scope.vault_id, &note_ref)?;
     ensure_inside_vault(&scope, Path::new(&note_path))?;
     let old_content = std::fs::read_to_string(&note_path).unwrap_or_default();
-    if old_content.is_empty() && !Path::new(&note_path).exists() { return Err("Note file does not exist".into()); }
-    create_pending(&app, "delete_note", note_path, Some(note_id), old_content, String::new(), input)
+    if old_content.is_empty() && !Path::new(&note_path).exists() {
+        return Err("Note file does not exist".into());
+    }
+    create_pending(
+        &app,
+        "delete_note",
+        note_path,
+        Some(note_id),
+        old_content,
+        String::new(),
+        input,
+    )
 }
 
-fn preview_rename_note(app: tauri::AppHandle, input: serde_json::Value) -> Result<PendingEdit, String> {
+fn preview_rename_note(
+    app: tauri::AppHandle,
+    input: serde_json::Value,
+) -> Result<PendingEdit, String> {
     let scope = super::current(&app)?;
     let conn = crate::db::init_db(&app)?;
-    let note_ref = input.get("noteId").or_else(|| input.get("oldPath")).or_else(|| input.get("path")).and_then(|v| v.as_str()).ok_or("rename_note requires noteId or oldPath")?.to_string();
-    let new_rel = input.get("newPath").or_else(|| input.get("new_path")).or_else(|| input.get("target")).and_then(|v| v.as_str()).ok_or("rename_note requires newPath")?.to_string();
+    let note_ref = input
+        .get("noteId")
+        .or_else(|| input.get("oldPath"))
+        .or_else(|| input.get("path"))
+        .and_then(|v| v.as_str())
+        .ok_or("rename_note requires noteId or oldPath")?
+        .to_string();
+    let new_rel = input
+        .get("newPath")
+        .or_else(|| input.get("new_path"))
+        .or_else(|| input.get("target"))
+        .and_then(|v| v.as_str())
+        .ok_or("rename_note requires newPath")?
+        .to_string();
     let (note_id, old_path) = resolve_note(&conn, &scope.vault_id, &note_ref)?;
     ensure_inside_vault(&scope, Path::new(&old_path))?;
     let new_abs = ensure_inside_vault(&scope, Path::new(&new_rel))?;
-    if new_abs.exists() { return Err("A note already exists at the destination".into()); }
+    if new_abs.exists() {
+        return Err("A note already exists at the destination".into());
+    }
     let old_content = std::fs::read_to_string(&old_path).unwrap_or_default();
     // For rename, preview is just the path change; new_content is same as old
-    let mut pending = create_pending(&app, "rename_note", old_path.clone(), Some(note_id), old_content.clone(), old_content, input.clone())?;
+    let mut pending = create_pending(
+        &app,
+        "rename_note",
+        old_path.clone(),
+        Some(note_id),
+        old_content.clone(),
+        old_content,
+        input.clone(),
+    )?;
     // Store new path in pending's new_content as sentinel? Instead store in input and use preview to show
     pending.note_path = old_path.clone(); // keep original for lookup
-    pending.preview = format!("Rename {} → {}", vault_relative(&scope, &old_path), vault_relative(&scope, &new_abs.to_string_lossy()));
+    pending.preview = format!(
+        "Rename {} → {}",
+        vault_relative(&scope, &old_path),
+        vault_relative(&scope, &new_abs.to_string_lossy())
+    );
     pending.new_content = new_abs.to_string_lossy().to_string(); // abuse new_content to carry destination
     Ok(pending)
 }
 
-fn preview_create_folder(app: tauri::AppHandle, input: serde_json::Value) -> Result<PendingEdit, String> {
+fn preview_create_folder(
+    app: tauri::AppHandle,
+    input: serde_json::Value,
+) -> Result<PendingEdit, String> {
     let scope = super::current(&app)?;
-    let rel = input.get("path").or_else(|| input.get("relativePath")).and_then(|v| v.as_str()).ok_or("create_folder requires path")?.to_string();
+    let rel = input
+        .get("path")
+        .or_else(|| input.get("relativePath"))
+        .and_then(|v| v.as_str())
+        .ok_or("create_folder requires path")?
+        .to_string();
     let abs = ensure_inside_vault(&scope, Path::new(&rel))?;
-    if abs.exists() { return Err("Folder already exists".into()); }
-    let rel_check = abs.strip_prefix(&scope.root).unwrap_or(&abs).to_string_lossy().to_string();
+    if abs.exists() {
+        return Err("Folder already exists".into());
+    }
+    let rel_check = abs
+        .strip_prefix(&scope.root)
+        .unwrap_or(&abs)
+        .to_string_lossy()
+        .to_string();
     let parts: Vec<&str> = rel_check.split('/').filter(|p| !p.is_empty()).collect();
-    if parts.len() > 5 { return Err("Folders can be nested up to 5 levels deep".into()); }
-    create_pending(&app, "create_folder", abs.to_string_lossy().to_string(), None, String::new(), String::new(), input)
+    if parts.len() > 5 {
+        return Err("Folders can be nested up to 5 levels deep".into());
+    }
+    create_pending(
+        &app,
+        "create_folder",
+        abs.to_string_lossy().to_string(),
+        None,
+        String::new(),
+        String::new(),
+        input,
+    )
 }
 
-fn preview_move_folder(app: tauri::AppHandle, input: serde_json::Value) -> Result<PendingEdit, String> {
+fn preview_move_folder(
+    app: tauri::AppHandle,
+    input: serde_json::Value,
+) -> Result<PendingEdit, String> {
     let scope = super::current(&app)?;
-    let old_rel = input.get("oldPath").or_else(|| input.get("from")).and_then(|v| v.as_str()).ok_or("move_folder requires oldPath")?.to_string();
-    let new_rel = input.get("newPath").or_else(|| input.get("to")).and_then(|v| v.as_str()).ok_or("move_folder requires newPath")?.to_string();
+    let old_rel = input
+        .get("oldPath")
+        .or_else(|| input.get("from"))
+        .and_then(|v| v.as_str())
+        .ok_or("move_folder requires oldPath")?
+        .to_string();
+    let new_rel = input
+        .get("newPath")
+        .or_else(|| input.get("to"))
+        .and_then(|v| v.as_str())
+        .ok_or("move_folder requires newPath")?
+        .to_string();
     let old_abs = ensure_inside_vault(&scope, Path::new(&old_rel))?;
     let new_abs = ensure_inside_vault(&scope, Path::new(&new_rel))?;
-    if !old_abs.exists() || !old_abs.is_dir() { return Err(format!("Folder not found: {old_rel}")); }
-    if new_abs.exists() { return Err(format!("A folder named '{new_rel}' already exists")); }
-    let mut pending = create_pending(&app, "move_folder", old_abs.to_string_lossy().to_string(), None, String::new(), new_abs.to_string_lossy().to_string(), input)?;
-    pending.preview = format!("Move folder {} → {}", vault_relative(&scope, &old_abs.to_string_lossy()), vault_relative(&scope, &new_abs.to_string_lossy()));
+    if !old_abs.exists() || !old_abs.is_dir() {
+        return Err(format!("Folder not found: {old_rel}"));
+    }
+    if new_abs.exists() {
+        return Err(format!("A folder named '{new_rel}' already exists"));
+    }
+    let mut pending = create_pending(
+        &app,
+        "move_folder",
+        old_abs.to_string_lossy().to_string(),
+        None,
+        String::new(),
+        new_abs.to_string_lossy().to_string(),
+        input,
+    )?;
+    pending.preview = format!(
+        "Move folder {} → {}",
+        vault_relative(&scope, &old_abs.to_string_lossy()),
+        vault_relative(&scope, &new_abs.to_string_lossy())
+    );
     Ok(pending)
 }
 
-fn preview_wikilink_or_tag(app: tauri::AppHandle, tool: &str, input: serde_json::Value) -> Result<PendingEdit, String> {
+fn preview_wikilink_or_tag(
+    app: tauri::AppHandle,
+    tool: &str,
+    input: serde_json::Value,
+) -> Result<PendingEdit, String> {
     let scope = super::current(&app)?;
     let conn = crate::db::init_db(&app)?;
-    let note_ref = input.get("noteId").or_else(|| input.get("path")).and_then(|v| v.as_str()).ok_or(format!("{tool} requires noteId"))?.to_string();
+    let note_ref = input
+        .get("noteId")
+        .or_else(|| input.get("path"))
+        .and_then(|v| v.as_str())
+        .ok_or(format!("{tool} requires noteId"))?
+        .to_string();
     let (note_id, note_path) = resolve_note(&conn, &scope.vault_id, &note_ref)?;
     ensure_inside_vault(&scope, Path::new(&note_path))?;
     let old_content = std::fs::read_to_string(&note_path).unwrap_or_default();
-    let mut stmt = conn.prepare("SELECT id, text FROM knowledge_blocks WHERE note_id=?1 AND deleted=0 ORDER BY ordinal").map_err(|e| e.to_string())?;
-    let db_blocks = stmt.query_map([&note_id], |r| Ok(DbBlock { id: r.get(0)?, text: r.get(1)? })).map_err(|e| e.to_string())?.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())?;
+    let mut stmt = conn
+        .prepare(
+            "SELECT id, text FROM knowledge_blocks WHERE note_id=?1 AND deleted=0 ORDER BY ordinal",
+        )
+        .map_err(|e| e.to_string())?;
+    let db_blocks = stmt
+        .query_map([&note_id], |r| {
+            Ok(DbBlock {
+                id: r.get(0)?,
+                text: r.get(1)?,
+            })
+        })
+        .map_err(|e| e.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())?;
     let op = match tool {
         "add_wikilink" => {
-            let target = input.get("target").and_then(|v| v.as_str()).ok_or("add_wikilink requires target")?.to_string();
-            let block_id = input.get("blockId").or_else(|| input.get("block_id")).and_then(|v| v.as_str()).map(|s| s.to_string());
+            let target = input
+                .get("target")
+                .and_then(|v| v.as_str())
+                .ok_or("add_wikilink requires target")?
+                .to_string();
+            let block_id = input
+                .get("blockId")
+                .or_else(|| input.get("block_id"))
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string());
             EditOp::AddWikilink { block_id, target }
         }
         "add_tag" => {
-            let tag = input.get("tag").and_then(|v| v.as_str()).ok_or("add_tag requires tag")?.to_string();
+            let tag = input
+                .get("tag")
+                .and_then(|v| v.as_str())
+                .ok_or("add_tag requires tag")?
+                .to_string();
             EditOp::AddTag { tag }
         }
         "remove_tag" => {
-            let tag = input.get("tag").and_then(|v| v.as_str()).ok_or("remove_tag requires tag")?.to_string();
+            let tag = input
+                .get("tag")
+                .and_then(|v| v.as_str())
+                .ok_or("remove_tag requires tag")?
+                .to_string();
             EditOp::RemoveTag { tag }
         }
         _ => return Err("Unknown tool".into()),
     };
     let new_content = apply_edits(&old_content, &db_blocks, &[op])?;
-    if new_content == old_content { return Err("No changes (tag/wikilink already present or not found)".into()); }
-    create_pending(&app, tool, note_path, Some(note_id), old_content, new_content, input)
+    if new_content == old_content {
+        return Err("No changes (tag/wikilink already present or not found)".into());
+    }
+    create_pending(
+        &app,
+        tool,
+        note_path,
+        Some(note_id),
+        old_content,
+        new_content,
+        input,
+    )
 }
 
-fn preview_format_note(app: tauri::AppHandle, input: serde_json::Value) -> Result<PendingEdit, String> {
+fn preview_format_note(
+    app: tauri::AppHandle,
+    input: serde_json::Value,
+) -> Result<PendingEdit, String> {
     let scope = super::current(&app)?;
     let conn = crate::db::init_db(&app)?;
-    let note_ref = input.get("noteId").or_else(|| input.get("path")).and_then(|v| v.as_str()).ok_or("format_note requires noteId")?.to_string();
+    let note_ref = input
+        .get("noteId")
+        .or_else(|| input.get("path"))
+        .and_then(|v| v.as_str())
+        .ok_or("format_note requires noteId")?
+        .to_string();
     let (note_id, note_path) = resolve_note(&conn, &scope.vault_id, &note_ref)?;
     ensure_inside_vault(&scope, Path::new(&note_path))?;
     let old_content = std::fs::read_to_string(&note_path).unwrap_or_default();
     let new_content = crate::knowledge::models::format(&old_content);
-    if new_content == old_content { return Err("Note is already formatted".into()); }
-    create_pending(&app, "format_note", note_path, Some(note_id), old_content, new_content, input)
+    if new_content == old_content {
+        return Err("Note is already formatted".into());
+    }
+    create_pending(
+        &app,
+        "format_note",
+        note_path,
+        Some(note_id),
+        old_content,
+        new_content,
+        input,
+    )
 }
 
 // ---------------------------------------------------------------------------
 // Applying pending edits (after approval)
 // ---------------------------------------------------------------------------
 
-fn apply_pending(app: &tauri::AppHandle, pending: PendingEdit) -> Result<serde_json::Value, String> {
+fn apply_pending(
+    app: &tauri::AppHandle,
+    pending: PendingEdit,
+) -> Result<serde_json::Value, String> {
     let scope = super::current(app)?;
     // Generation check (like cloud approvals)
     if pending.generation != scope.generation {
@@ -884,54 +1343,135 @@ fn apply_pending(app: &tauri::AppHandle, pending: PendingEdit) -> Result<serde_j
         "edit_note" | "add_wikilink" | "add_tag" | "remove_tag" | "format_note" => {
             let path = Path::new(&pending.note_path);
             super::validate_path(app, path)?;
-            if let Some(parent) = path.parent() { if !parent.exists() { std::fs::create_dir_all(parent).map_err(|e| e.to_string())?; } }
+            if let Some(parent) = path.parent() {
+                if !parent.exists() {
+                    std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+                }
+            }
             // Mask self-write
-            crate::engine::indexer::suppress_self_write(path, crate::engine::indexer::SELF_WRITE_MASK_MS);
+            crate::engine::indexer::suppress_self_write(
+                path,
+                crate::engine::indexer::SELF_WRITE_MASK_MS,
+            );
             std::fs::write(path, &pending.new_content).map_err(|e| e.to_string())?;
             // Record history before sync? history uses note_path key (which is path string)
-            let _ = crate::db::history::record_note_version(&conn, &pending.note_path, &pending.new_content);
+            let _ = crate::db::history::record_note_version(
+                &conn,
+                &pending.note_path,
+                &pending.new_content,
+            );
             super::sync_file(app, path, &pending.new_content)?;
             // Legacy sidecar: notes/tags/links for graph compatibility
-            if let Ok(title) = path.file_stem().map(|s| s.to_string_lossy().to_string()).ok_or("") {
+            if let Ok(title) = path
+                .file_stem()
+                .map(|s| s.to_string_lossy().to_string())
+                .ok_or("")
+            {
                 let aliases = crate::watcher::extract_aliases(&pending.new_content);
-                let _ = crate::db::upsert_note(&conn, &pending.note_path, &title, &pending.note_path, &aliases);
+                let _ = crate::db::upsert_note(
+                    &conn,
+                    &pending.note_path,
+                    &title,
+                    &pending.note_path,
+                    &aliases,
+                );
                 let _ = crate::db::sync_note_tags(&conn, &pending.note_path, &pending.new_content);
                 let targets = crate::db::extract_applied_links(&pending.new_content);
                 let _ = crate::db::update_links_flat(&conn, &pending.note_path, &targets);
             }
-            let revision: i64 = conn.query_row("SELECT revision FROM knowledge_notes WHERE path=?1", [&pending.note_path], |r| r.get(0)).unwrap_or(0);
-            super::emit(app, &conn, &scope.vault_id, "note_changed", pending.note_id.as_deref().unwrap_or(&pending.note_path))?;
-            Ok(serde_json::json!({ "notePath": pending.note_path, "relativePath": vault_relative(&scope, &pending.note_path), "revision": revision, "preview": pending.preview }))
+            let revision: i64 = conn
+                .query_row(
+                    "SELECT revision FROM knowledge_notes WHERE path=?1",
+                    [&pending.note_path],
+                    |r| r.get(0),
+                )
+                .unwrap_or(0);
+            super::emit(
+                app,
+                &conn,
+                &scope.vault_id,
+                "note_changed",
+                pending.note_id.as_deref().unwrap_or(&pending.note_path),
+            )?;
+            Ok(
+                serde_json::json!({ "notePath": pending.note_path, "relativePath": vault_relative(&scope, &pending.note_path), "revision": revision, "preview": pending.preview }),
+            )
         }
         "create_note" => {
             let path = Path::new(&pending.note_path);
             super::validate_path(app, path)?;
-            if let Some(parent) = path.parent() { if !parent.exists() { std::fs::create_dir_all(parent).map_err(|e| e.to_string())?; } }
-            if path.exists() { return Err("File already exists".into()); }
-            crate::engine::indexer::suppress_self_write(path, crate::engine::indexer::SELF_WRITE_MASK_MS);
+            if let Some(parent) = path.parent() {
+                if !parent.exists() {
+                    std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+                }
+            }
+            if path.exists() {
+                return Err("File already exists".into());
+            }
+            crate::engine::indexer::suppress_self_write(
+                path,
+                crate::engine::indexer::SELF_WRITE_MASK_MS,
+            );
             std::fs::write(path, &pending.new_content).map_err(|e| e.to_string())?;
-            let _ = crate::db::history::record_note_version(&conn, &pending.note_path, &pending.new_content);
+            let _ = crate::db::history::record_note_version(
+                &conn,
+                &pending.note_path,
+                &pending.new_content,
+            );
             super::sync_file(app, path, &pending.new_content)?;
-            if let Ok(title) = path.file_stem().map(|s| s.to_string_lossy().to_string()).ok_or("") {
+            if let Ok(title) = path
+                .file_stem()
+                .map(|s| s.to_string_lossy().to_string())
+                .ok_or("")
+            {
                 let aliases = crate::watcher::extract_aliases(&pending.new_content);
-                let _ = crate::db::upsert_note(&conn, &pending.note_path, &title, &pending.note_path, &aliases);
+                let _ = crate::db::upsert_note(
+                    &conn,
+                    &pending.note_path,
+                    &title,
+                    &pending.note_path,
+                    &aliases,
+                );
                 let _ = crate::db::sync_note_tags(&conn, &pending.note_path, &pending.new_content);
             }
-            super::emit(app, &conn, &scope.vault_id, "note_changed", &pending.note_path)?;
-            Ok(serde_json::json!({ "notePath": pending.note_path, "relativePath": vault_relative(&scope, &pending.note_path) }))
+            super::emit(
+                app,
+                &conn,
+                &scope.vault_id,
+                "note_changed",
+                &pending.note_path,
+            )?;
+            Ok(
+                serde_json::json!({ "notePath": pending.note_path, "relativePath": vault_relative(&scope, &pending.note_path) }),
+            )
         }
         "delete_note" => {
             let path = Path::new(&pending.note_path);
             super::validate_path(app, path)?;
             if path.exists() {
-                crate::engine::indexer::suppress_self_write(path, crate::engine::indexer::SELF_WRITE_MASK_MS);
+                crate::engine::indexer::suppress_self_write(
+                    path,
+                    crate::engine::indexer::SELF_WRITE_MASK_MS,
+                );
                 std::fs::remove_file(path).map_err(|e| e.to_string())?;
             }
             super::remove(&conn, &pending.note_path)?;
             let _ = conn.execute("DELETE FROM notes WHERE id=?1", params![pending.note_path]);
-            let _ = conn.execute("DELETE FROM backlinks WHERE source_path=?1 OR target_path=?1", params![pending.note_path]);
-            let _ = conn.execute("DELETE FROM links WHERE source=?1 OR target=?1", params![pending.note_path]);
-            super::emit(app, &conn, &scope.vault_id, "note_changed", pending.note_id.as_deref().unwrap_or(&pending.note_path))?;
+            let _ = conn.execute(
+                "DELETE FROM backlinks WHERE source_path=?1 OR target_path=?1",
+                params![pending.note_path],
+            );
+            let _ = conn.execute(
+                "DELETE FROM links WHERE source=?1 OR target=?1",
+                params![pending.note_path],
+            );
+            super::emit(
+                app,
+                &conn,
+                &scope.vault_id,
+                "note_changed",
+                pending.note_id.as_deref().unwrap_or(&pending.note_path),
+            )?;
             Ok(serde_json::json!({ "deleted": pending.note_path }))
         }
         "rename_note" => {
@@ -940,30 +1480,59 @@ fn apply_pending(app: &tauri::AppHandle, pending: PendingEdit) -> Result<serde_j
             let new = Path::new(&pending.new_content);
             super::validate_path(app, old)?;
             super::validate_path(app, new)?;
-            if new.exists() { return Err("Destination already exists".into()); }
-            if !old.exists() { return Err(format!("Source not found: {}", pending.note_path)); }
-            if let Some(parent) = new.parent() { if !parent.exists() { std::fs::create_dir_all(parent).map_err(|e| e.to_string())?; } }
+            if new.exists() {
+                return Err("Destination already exists".into());
+            }
+            if !old.exists() {
+                return Err(format!("Source not found: {}", pending.note_path));
+            }
+            if let Some(parent) = new.parent() {
+                if !parent.exists() {
+                    std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+                }
+            }
             std::fs::rename(old, new).map_err(|e| e.to_string())?;
             super::move_path(&conn, &pending.note_path, &pending.new_content)?;
             // Move legacy history rows already via move_path (knowledge) + need notes/backlinks? Do minimal
-            let _ = conn.execute("UPDATE notes SET id=?2, path=?2 WHERE id=?1", params![pending.note_path, pending.new_content]);
-            super::emit(app, &conn, &scope.vault_id, "note_changed", &pending.new_content)?;
-            Ok(serde_json::json!({ "oldPath": pending.note_path, "newPath": pending.new_content, "relativePath": vault_relative(&scope, &pending.new_content) }))
+            let _ = conn.execute(
+                "UPDATE notes SET id=?2, path=?2 WHERE id=?1",
+                params![pending.note_path, pending.new_content],
+            );
+            super::emit(
+                app,
+                &conn,
+                &scope.vault_id,
+                "note_changed",
+                &pending.new_content,
+            )?;
+            Ok(
+                serde_json::json!({ "oldPath": pending.note_path, "newPath": pending.new_content, "relativePath": vault_relative(&scope, &pending.new_content) }),
+            )
         }
         "create_folder" => {
             let path = Path::new(&pending.note_path);
             super::validate_path(app, path)?;
             std::fs::create_dir_all(path).map_err(|e| e.to_string())?;
-            Ok(serde_json::json!({ "path": pending.note_path, "relativePath": vault_relative(&scope, &pending.note_path) }))
+            Ok(
+                serde_json::json!({ "path": pending.note_path, "relativePath": vault_relative(&scope, &pending.note_path) }),
+            )
         }
         "move_folder" => {
             let old = Path::new(&pending.note_path);
             let new = Path::new(&pending.new_content);
             super::validate_path(app, old)?;
             super::validate_path(app, new)?;
-            if !old.exists() { return Err(format!("Folder not found: {}", pending.note_path)); }
-            if new.exists() { return Err("Destination folder already exists".into()); }
-            if let Some(parent) = new.parent() { if !parent.exists() { std::fs::create_dir_all(parent).map_err(|e| e.to_string())?; } }
+            if !old.exists() {
+                return Err(format!("Folder not found: {}", pending.note_path));
+            }
+            if new.exists() {
+                return Err("Destination folder already exists".into());
+            }
+            if let Some(parent) = new.parent() {
+                if !parent.exists() {
+                    std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+                }
+            }
             std::fs::rename(old, new).map_err(|e| e.to_string())?;
             let _ = crate::db::rename_folder_paths(&conn, &pending.note_path, &pending.new_content);
             Ok(serde_json::json!({ "oldPath": pending.note_path, "newPath": pending.new_content }))
@@ -983,70 +1552,181 @@ pub fn agent_list_tools(app: tauri::AppHandle) -> Result<Vec<ToolDefinition>, St
 }
 
 #[tauri::command]
-pub async fn agent_call_tool(app: tauri::AppHandle, request: AgentToolRequest) -> Result<AgentToolResponse, String> {
+pub async fn agent_call_tool(
+    app: tauri::AppHandle,
+    request: AgentToolRequest,
+) -> Result<AgentToolResponse, String> {
     let tool = request.tool.clone();
     // Reads — direct, no approval
     match tool.as_str() {
         "read_note" => {
-            let note_ref = request.input.get("noteId").or_else(|| request.input.get("note_id")).or_else(|| request.input.get("path")).and_then(|v| v.as_str()).ok_or("read_note requires noteId")?.to_string();
+            let note_ref = request
+                .input
+                .get("noteId")
+                .or_else(|| request.input.get("note_id"))
+                .or_else(|| request.input.get("path"))
+                .and_then(|v| v.as_str())
+                .ok_or("read_note requires noteId")?
+                .to_string();
             let app2 = app.clone();
-            let res = tauri::async_runtime::spawn_blocking(move || read_note_blocking(app2, note_ref)).await.map_err(|e| e.to_string())??;
-            Ok(AgentToolResponse { tool, requires_approval: false, approval_id: None, preview: None, result: Some(res), error: None })
+            let res =
+                tauri::async_runtime::spawn_blocking(move || read_note_blocking(app2, note_ref))
+                    .await
+                    .map_err(|e| e.to_string())??;
+            Ok(AgentToolResponse {
+                tool,
+                requires_approval: false,
+                approval_id: None,
+                preview: None,
+                result: Some(res),
+                error: None,
+            })
         }
         "read_block" => {
-            let block_id = request.input.get("blockId").or_else(|| request.input.get("block_id")).and_then(|v| v.as_str()).ok_or("read_block requires blockId")?.to_string();
+            let block_id = request
+                .input
+                .get("blockId")
+                .or_else(|| request.input.get("block_id"))
+                .and_then(|v| v.as_str())
+                .ok_or("read_block requires blockId")?
+                .to_string();
             let app2 = app.clone();
-            let res = tauri::async_runtime::spawn_blocking(move || read_block_blocking(app2, block_id)).await.map_err(|e| e.to_string())??;
-            Ok(AgentToolResponse { tool, requires_approval: false, approval_id: None, preview: None, result: Some(res), error: None })
+            let res =
+                tauri::async_runtime::spawn_blocking(move || read_block_blocking(app2, block_id))
+                    .await
+                    .map_err(|e| e.to_string())??;
+            Ok(AgentToolResponse {
+                tool,
+                requires_approval: false,
+                approval_id: None,
+                preview: None,
+                result: Some(res),
+                error: None,
+            })
         }
         "search_vault" => {
             let input = request.input.clone();
             let app2 = app.clone();
-            let res = tauri::async_runtime::spawn_blocking(move || search_vault_blocking(app2, input)).await.map_err(|e| e.to_string())??;
-            Ok(AgentToolResponse { tool, requires_approval: false, approval_id: None, preview: None, result: Some(res), error: None })
+            let res =
+                tauri::async_runtime::spawn_blocking(move || search_vault_blocking(app2, input))
+                    .await
+                    .map_err(|e| e.to_string())??;
+            Ok(AgentToolResponse {
+                tool,
+                requires_approval: false,
+                approval_id: None,
+                preview: None,
+                result: Some(res),
+                error: None,
+            })
         }
         "get_related_notes" => {
-            let note_ref = request.input.get("noteId").or_else(|| request.input.get("note_id")).and_then(|v| v.as_str()).unwrap_or("").to_string();
-            let kinds = request.input.get("kinds").and_then(|v| v.as_array()).map(|arr| arr.iter().filter_map(|v| v.as_str()).map(|s| s.to_string()).collect()).unwrap_or_else(|| vec!["wiki".into(), "tag".into(), "folder".into()]);
+            let note_ref = request
+                .input
+                .get("noteId")
+                .or_else(|| request.input.get("note_id"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            let kinds = request
+                .input
+                .get("kinds")
+                .and_then(|v| v.as_array())
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(|v| v.as_str())
+                        .map(|s| s.to_string())
+                        .collect()
+                })
+                .unwrap_or_else(|| vec!["wiki".into(), "tag".into(), "folder".into()]);
             let app2 = app.clone();
-            let res = tauri::async_runtime::spawn_blocking(move || get_related_blocking(app2, note_ref, kinds)).await.map_err(|e| e.to_string())??;
-            Ok(AgentToolResponse { tool, requires_approval: false, approval_id: None, preview: None, result: Some(res), error: None })
+            let res = tauri::async_runtime::spawn_blocking(move || {
+                get_related_blocking(app2, note_ref, kinds)
+            })
+            .await
+            .map_err(|e| e.to_string())??;
+            Ok(AgentToolResponse {
+                tool,
+                requires_approval: false,
+                approval_id: None,
+                preview: None,
+                result: Some(res),
+                error: None,
+            })
         }
         "get_backlinks" => {
-            let note_ref = request.input.get("noteId").or_else(|| request.input.get("note_id")).and_then(|v| v.as_str()).ok_or("get_backlinks requires noteId")?.to_string();
+            let note_ref = request
+                .input
+                .get("noteId")
+                .or_else(|| request.input.get("note_id"))
+                .and_then(|v| v.as_str())
+                .ok_or("get_backlinks requires noteId")?
+                .to_string();
             let app2 = app.clone();
-            let res = tauri::async_runtime::spawn_blocking(move || get_backlinks_blocking(app2, note_ref)).await.map_err(|e| e.to_string())??;
-            Ok(AgentToolResponse { tool, requires_approval: false, approval_id: None, preview: None, result: Some(res), error: None })
+            let res = tauri::async_runtime::spawn_blocking(move || {
+                get_backlinks_blocking(app2, note_ref)
+            })
+            .await
+            .map_err(|e| e.to_string())??;
+            Ok(AgentToolResponse {
+                tool,
+                requires_approval: false,
+                approval_id: None,
+                preview: None,
+                result: Some(res),
+                error: None,
+            })
         }
         // Writes — create pending approval with preview
-        "edit_note" | "create_note" | "delete_note" | "rename_note" | "create_folder" | "move_folder" | "add_wikilink" | "add_tag" | "remove_tag" | "format_note" => {
+        "edit_note" | "create_note" | "delete_note" | "rename_note" | "create_folder"
+        | "move_folder" | "add_wikilink" | "add_tag" | "remove_tag" | "format_note" => {
             let input = request.input.clone();
             let tool_clone = tool.clone();
             let app2 = app.clone();
-            let pending = tauri::async_runtime::spawn_blocking(move || -> Result<PendingEdit, String> {
-                match tool_clone.as_str() {
-                    "edit_note" => preview_edit_note(app2, input),
-                    "create_note" => preview_create_note(app2, input),
-                    "delete_note" => preview_delete_note(app2, input),
-                    "rename_note" | "move_note" => preview_rename_note(app2, input),
-                    "create_folder" => preview_create_folder(app2, input),
-                    "move_folder" => preview_move_folder(app2, input),
-                    "add_wikilink" | "add_tag" | "remove_tag" => preview_wikilink_or_tag(app2, &tool_clone, input),
-                    "format_note" => preview_format_note(app2, input),
-                    _ => Err("Unknown write tool".into()),
-                }
-            }).await.map_err(|e| e.to_string())??;
+            let pending =
+                tauri::async_runtime::spawn_blocking(move || -> Result<PendingEdit, String> {
+                    match tool_clone.as_str() {
+                        "edit_note" => preview_edit_note(app2, input),
+                        "create_note" => preview_create_note(app2, input),
+                        "delete_note" => preview_delete_note(app2, input),
+                        "rename_note" | "move_note" => preview_rename_note(app2, input),
+                        "create_folder" => preview_create_folder(app2, input),
+                        "move_folder" => preview_move_folder(app2, input),
+                        "add_wikilink" | "add_tag" | "remove_tag" => {
+                            preview_wikilink_or_tag(app2, &tool_clone, input)
+                        }
+                        "format_note" => preview_format_note(app2, input),
+                        _ => Err("Unknown write tool".into()),
+                    }
+                })
+                .await
+                .map_err(|e| e.to_string())??;
             let preview = pending.preview.clone();
             let id = store_pending(pending);
             // Emit knowledge-event for UI to refresh pending list
             if let Ok(conn) = crate::db::init_db(&app) {
                 if let Ok(scope) = super::current(&app) {
-                    let _ = super::emit(&app, &conn, &scope.vault_id, "agent_approval_required", &id);
+                    let _ =
+                        super::emit(&app, &conn, &scope.vault_id, "agent_approval_required", &id);
                 }
             }
-            Ok(AgentToolResponse { tool, requires_approval: true, approval_id: Some(id), preview: Some(preview), result: None, error: None })
+            Ok(AgentToolResponse {
+                tool,
+                requires_approval: true,
+                approval_id: Some(id),
+                preview: Some(preview),
+                result: None,
+                error: None,
+            })
         }
-        _ => Err(format!("Unknown tool: {tool}. Available: {}", tool_definitions().iter().map(|t| t.name.clone()).collect::<Vec<_>>().join(", "))),
+        _ => Err(format!(
+            "Unknown tool: {tool}. Available: {}",
+            tool_definitions()
+                .iter()
+                .map(|t| t.name.clone())
+                .collect::<Vec<_>>()
+                .join(", ")
+        )),
     }
 }
 
@@ -1055,7 +1735,8 @@ pub fn agent_list_pending(app: tauri::AppHandle) -> Result<Vec<PendingView>, Str
     let scope = super::current(&app)?;
     prune_expired(&scope.generation);
     let map = pending_map().lock().unwrap();
-    let mut out: Vec<PendingView> = map.values()
+    let mut out: Vec<PendingView> = map
+        .values()
         .filter(|p| p.vault_id == scope.vault_id && p.generation == scope.generation)
         .map(|p| p.into())
         .collect();
@@ -1064,14 +1745,29 @@ pub fn agent_list_pending(app: tauri::AppHandle) -> Result<Vec<PendingView>, Str
 }
 
 #[tauri::command]
-pub fn agent_resolve_pending(app: tauri::AppHandle, id: String, approved: bool) -> Result<serde_json::Value, String> {
+pub fn agent_resolve_pending(
+    app: tauri::AppHandle,
+    id: String,
+    approved: bool,
+) -> Result<serde_json::Value, String> {
     let scope = super::current(&app)?;
     let pending = {
         let mut map = pending_map().lock().unwrap();
-        let p = map.get(&id).cloned().ok_or("Approval expired or not found")?;
-        if p.generation != scope.generation { map.remove(&id); return Err("Vault changed — approval expired".into()); }
-        if p.expires <= Instant::now() { map.remove(&id); return Err("Approval expired".into()); }
-        if p.vault_id != scope.vault_id { return Err("Approval is for a different vault".into()); }
+        let p = map
+            .get(&id)
+            .cloned()
+            .ok_or("Approval expired or not found")?;
+        if p.generation != scope.generation {
+            map.remove(&id);
+            return Err("Vault changed — approval expired".into());
+        }
+        if p.expires <= Instant::now() {
+            map.remove(&id);
+            return Err("Approval expired".into());
+        }
+        if p.vault_id != scope.vault_id {
+            return Err("Approval is for a different vault".into());
+        }
         if !approved {
             map.remove(&id);
             return Ok(serde_json::json!({ "approved": false, "id": id }));
@@ -1081,8 +1777,10 @@ pub fn agent_resolve_pending(app: tauri::AppHandle, id: String, approved: bool) 
     };
     // Apply — convert to blocking work (filesystem + DB)
     let app2 = app.clone();
-    let res = tauri::async_runtime::block_on(tauri::async_runtime::spawn_blocking(move || apply_pending(&app2, pending)))
-        .map_err(|e| e.to_string())??;
+    let res = tauri::async_runtime::block_on(tauri::async_runtime::spawn_blocking(move || {
+        apply_pending(&app2, pending)
+    }))
+    .map_err(|e| e.to_string())??;
     // Emit applied event
     if let Ok(conn) = crate::db::init_db(&app) {
         let _ = super::emit(&app, &conn, &scope.vault_id, "agent_applied", &id);
@@ -1091,13 +1789,21 @@ pub fn agent_resolve_pending(app: tauri::AppHandle, id: String, approved: bool) 
 }
 
 #[tauri::command]
-pub fn agent_undo_last(app: tauri::AppHandle, note_path: String) -> Result<serde_json::Value, String> {
+pub fn agent_undo_last(
+    app: tauri::AppHandle,
+    note_path: String,
+) -> Result<serde_json::Value, String> {
     let scope = super::current(&app)?;
     let conn = crate::db::init_db(&app)?;
     // Resolve note path (may be id or path)
-    let (note_id, abs_path) = if let Ok((id, p)) = resolve_note(&conn, &scope.vault_id, &note_path) { (id, p) } else {
+    let (note_id, abs_path) = if let Ok((id, p)) = resolve_note(&conn, &scope.vault_id, &note_path)
+    {
+        (id, p)
+    } else {
         // Try as direct path
-        let abs = ensure_inside_vault(&scope, Path::new(&note_path))?.to_string_lossy().to_string();
+        let abs = ensure_inside_vault(&scope, Path::new(&note_path))?
+            .to_string_lossy()
+            .to_string();
         (abs.clone(), abs)
     };
     ensure_inside_vault(&scope, Path::new(&abs_path))?;
@@ -1119,7 +1825,9 @@ pub fn agent_undo_last(app: tauri::AppHandle, note_path: String) -> Result<serde
     let _ = crate::db::history::record_note_version(&conn, &abs_path, &prev.content);
     super::sync_file(&app, path, &prev.content)?;
     super::emit(&app, &conn, &scope.vault_id, "note_changed", &note_id)?;
-    Ok(serde_json::json!({ "notePath": abs_path, "relativePath": vault_relative(&scope, &abs_path), "restoredVersion": prev.version_id, "preview": patch }))
+    Ok(
+        serde_json::json!({ "notePath": abs_path, "relativePath": vault_relative(&scope, &abs_path), "restoredVersion": prev.version_id, "preview": patch }),
+    )
 }
 
 // ---------------------------------------------------------------------------
@@ -1142,13 +1850,28 @@ mod tests {
     fn edit_apply_replace_and_insert() {
         let old = "First\n\nSecond\n\nThird";
         let db_blocks = vec![
-            DbBlock { id: "a".into(), text: "First".into() },
-            DbBlock { id: "b".into(), text: "Second".into() },
-            DbBlock { id: "c".into(), text: "Third".into() },
+            DbBlock {
+                id: "a".into(),
+                text: "First".into(),
+            },
+            DbBlock {
+                id: "b".into(),
+                text: "Second".into(),
+            },
+            DbBlock {
+                id: "c".into(),
+                text: "Third".into(),
+            },
         ];
         let ops = vec![
-            EditOp::ReplaceBlock { block_id: "b".into(), text: "Second edited".into() },
-            EditOp::InsertAfter { block_id: "b".into(), text: "Inserted".into() },
+            EditOp::ReplaceBlock {
+                block_id: "b".into(),
+                text: "Second edited".into(),
+            },
+            EditOp::InsertAfter {
+                block_id: "b".into(),
+                text: "Inserted".into(),
+            },
         ];
         let new = apply_edits(old, &db_blocks, &ops).unwrap();
         assert!(new.contains("Second edited"));
@@ -1160,19 +1883,50 @@ mod tests {
     #[test]
     fn tag_add_remove() {
         let old = "Hello world";
-        let db_blocks = vec![DbBlock { id: "a".into(), text: "Hello world".into() }];
-        let new = apply_edits(old, &db_blocks, &[EditOp::AddTag { tag: "physics".into() }]).unwrap();
+        let db_blocks = vec![DbBlock {
+            id: "a".into(),
+            text: "Hello world".into(),
+        }];
+        let new = apply_edits(
+            old,
+            &db_blocks,
+            &[EditOp::AddTag {
+                tag: "physics".into(),
+            }],
+        )
+        .unwrap();
         assert!(new.contains("@physics"));
-        let db_blocks2 = vec![DbBlock { id: "a".into(), text: new.clone() }];
-        let newer = apply_edits(&new, &db_blocks2, &[EditOp::RemoveTag { tag: "physics".into() }]).unwrap();
+        let db_blocks2 = vec![DbBlock {
+            id: "a".into(),
+            text: new.clone(),
+        }];
+        let newer = apply_edits(
+            &new,
+            &db_blocks2,
+            &[EditOp::RemoveTag {
+                tag: "physics".into(),
+            }],
+        )
+        .unwrap();
         assert!(!newer.contains("@physics"));
     }
 
     #[test]
     fn wikilink_insert() {
         let old = "Note";
-        let db_blocks = vec![DbBlock { id: "a".into(), text: "Note".into() }];
-        let new = apply_edits(old, &db_blocks, &[EditOp::AddWikilink { block_id: None, target: "Target".into() }]).unwrap();
+        let db_blocks = vec![DbBlock {
+            id: "a".into(),
+            text: "Note".into(),
+        }];
+        let new = apply_edits(
+            old,
+            &db_blocks,
+            &[EditOp::AddWikilink {
+                block_id: None,
+                target: "Target".into(),
+            }],
+        )
+        .unwrap();
         assert!(new.contains("[[Target]]"));
     }
 
@@ -1181,6 +1935,8 @@ mod tests {
         let raw = serde_json::json!({"op":"replace_block","block_id":"a","text":"hi"});
         let norm = normalize_op_value(raw);
         let op: EditOp = serde_json::from_value(norm).unwrap();
-        assert!(matches!(op, EditOp::ReplaceBlock { block_id, text } if block_id == "a" && text == "hi"));
+        assert!(
+            matches!(op, EditOp::ReplaceBlock { block_id, text } if block_id == "a" && text == "hi")
+        );
     }
 }

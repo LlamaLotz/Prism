@@ -13,7 +13,10 @@ fn is_junk_line(line: &str) -> bool {
         return true;
     }
     // Standalone page numbers: "12", "Page 12", "pg. 12", "- 5 -", "12 of 34"
-    let page_num = Regex::new(r"(?i)^(?:p(?:age|g)?\.?\s*|[-–—]\s*)?\d{1,4}(?:\s*[-–—])?(?:\s+of\s+\d{1,4})?$").unwrap();
+    let page_num = Regex::new(
+        r"(?i)^(?:p(?:age|g)?\.?\s*|[-–—]\s*)?\d{1,4}(?:\s*[-–—])?(?:\s+of\s+\d{1,4})?$",
+    )
+    .unwrap();
     if page_num.is_match(t) {
         return true;
     }
@@ -27,7 +30,9 @@ fn is_junk_line(line: &str) -> bool {
     }
     // Garbled diacritic symbol rows (ÊˆÌœÛ …): no ASCII letters/digits but
     // contains non-ASCII alphabetic characters — pure OCR/layout noise.
-    let has_ascii = t.chars().any(|c| c.is_ascii_alphabetic() || c.is_ascii_digit());
+    let has_ascii = t
+        .chars()
+        .any(|c| c.is_ascii_alphabetic() || c.is_ascii_digit());
     if !has_ascii && t.chars().any(|c| c.is_alphabetic()) {
         return true;
     }
@@ -49,7 +54,10 @@ fn is_markdown_line(line: &str) -> bool {
         || t.starts_with("---")
         || t.starts_with("***")
         || t.starts_with("___")
-        || t.chars().next().map(|c| c.is_ascii_digit()).unwrap_or(false)
+        || t.chars()
+            .next()
+            .map(|c| c.is_ascii_digit())
+            .unwrap_or(false)
         || t.starts_with("![")
 }
 
@@ -166,13 +174,20 @@ fn detect_section_headings(lines: &[String]) -> Vec<String> {
                     let cap_word = |w: &str| -> String {
                         let mut chars = w.chars();
                         match chars.next() {
-                            Some(f) => format!("{}{}", f.to_uppercase(), w[f.len_utf8()..].to_lowercase()),
+                            Some(f) => {
+                                format!("{}{}", f.to_uppercase(), w[f.len_utf8()..].to_lowercase())
+                            }
                             None => String::new(),
                         }
                     };
                     let is_roman = |w: &str| -> bool {
                         !w.is_empty()
-                            && w.chars().all(|c| matches!(c.to_ascii_lowercase(), 'i' | 'v' | 'x' | 'l' | 'c' | 'd' | 'm'))
+                            && w.chars().all(|c| {
+                                matches!(
+                                    c.to_ascii_lowercase(),
+                                    'i' | 'v' | 'x' | 'l' | 'c' | 'd' | 'm'
+                                )
+                            })
                     };
                     let w2_capped = if !w2.is_empty()
                         && w2.chars().any(|c| c.is_alphabetic())
@@ -190,7 +205,9 @@ fn detect_section_headings(lines: &[String]) -> Vec<String> {
             } else if !next_list_like && !prev_list_like && !markdown_start_re.is_match(trimmed) {
                 if let Some(caps) = numbered_re.captures(trimmed) {
                     heading = Some(format!("## {}", caps[2].trim()));
-                } else if caps_re.is_match(trimmed) && trimmed.chars().any(|c| c.is_ascii_uppercase()) {
+                } else if caps_re.is_match(trimmed)
+                    && trimmed.chars().any(|c| c.is_ascii_uppercase())
+                {
                     if trimmed.split_whitespace().count() >= 3 {
                         heading = Some(format!("## {}", title_case(trimmed)));
                     }
@@ -397,7 +414,11 @@ pub fn format_note_content(raw_text: &str) -> String {
             let prev = joined.pop().unwrap();
             if hyphen_split {
                 let prev_text = prev.trim_end();
-                joined.push(format!("{}{}", &prev_text[..prev_text.len() - 1], line.trim_start()));
+                joined.push(format!(
+                    "{}{}",
+                    &prev_text[..prev_text.len() - 1],
+                    line.trim_start()
+                ));
             } else {
                 joined.push(format!("{} {}", prev.trim_end(), line.trim_start()));
             }
@@ -451,7 +472,8 @@ mod tests {
     #[test]
     fn test_heading_normalization() {
         let input = "###Header\n## # Title\n### ## Subtitle\n  ##   Indented\n#\n```\n# Verbatim inside code\n```";
-        let expected = "### Header\n## Title\n### Subtitle\n## Indented\n#\n```\n# Verbatim inside code\n```";
+        let expected =
+            "### Header\n## Title\n### Subtitle\n## Indented\n#\n```\n# Verbatim inside code\n```";
         assert_eq!(format_note_content(input), expected);
     }
 

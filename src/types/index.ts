@@ -103,6 +103,7 @@ export interface AppSettings {
   };
   vaultPath: string;
   ingestionScript: string;
+  ingestionEngine: 'python' | 'rust';
   omniRoute: OmniRouteConfig & {
     temperature: number;
     injectUserProfile: boolean;
@@ -330,6 +331,9 @@ export const tauriAPI = {
   // Deletes version-history rows older than `retentionDays` (0 = keep all).
   purgeExpiredHistory: async (retentionDays: number): Promise<void> => {
     await invoke('purge_expired_history', { retentionDays });
+  },
+  getIngestionEngineStatus: async (): Promise<{ engine: string; rustAvailable: boolean; rustPath?: string | null; reason?: string }> => {
+    return await invoke('get_ingestion_engine_status');
   },
   // Fully closes Prism and starts a fresh instance (real process restart, not
   // a webview reload). Never resolves on success — the process exits.

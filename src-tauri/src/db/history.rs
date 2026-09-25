@@ -54,7 +54,9 @@ fn myers_diff<'a>(a: &[&'a str], b: &[&'a str]) -> Vec<DiffOp<'a>> {
         trace.push(v.clone());
         let mut k = -d;
         while k <= d {
-            let mut x = if k == -d || (k != d && v[(offset as i64 + k - 1) as usize] < v[(offset as i64 + k + 1) as usize])
+            let mut x = if k == -d
+                || (k != d
+                    && v[(offset as i64 + k - 1) as usize] < v[(offset as i64 + k + 1) as usize])
             {
                 v[(offset as i64 + k + 1) as usize]
             } else {
@@ -81,7 +83,8 @@ fn myers_diff<'a>(a: &[&'a str], b: &[&'a str]) -> Vec<DiffOp<'a>> {
     for d in (0..=found_d).rev() {
         let v = &trace[d as usize];
         let k = x - y;
-        let prev_k = if k == -d || (k != d && v[(offset as i64 + k - 1) as usize] < v[(offset as i64 + k + 1) as usize])
+        let prev_k = if k == -d
+            || (k != d && v[(offset as i64 + k - 1) as usize] < v[(offset as i64 + k + 1) as usize])
         {
             k + 1
         } else {
@@ -295,9 +298,8 @@ pub fn reconstruct_note_version(
         Some(limit_id) => {
             format!("SELECT delta_patch FROM note_history_deltas WHERE note_path = ?1 AND id <= {} ORDER BY id ASC", limit_id)
         }
-        None => {
-            "SELECT delta_patch FROM note_history_deltas WHERE note_path = ?1 ORDER BY id ASC".to_string()
-        }
+        None => "SELECT delta_patch FROM note_history_deltas WHERE note_path = ?1 ORDER BY id ASC"
+            .to_string(),
     };
 
     let mut delta_stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;

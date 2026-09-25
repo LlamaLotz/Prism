@@ -18,6 +18,8 @@ pub fn extract(
         std::fs::copy(script.with_file_name("crawl_extractor.py"), &copy)
             .map_err(|e| Error::new("unavailable", e))?;
         let mut cmd = Command::new(python);
+        // Unbuffered so progress lines stream instead of arriving on exit.
+        cmd.env("PYTHONUNBUFFERED", "1").arg("-u");
         cmd.arg(copy)
             .arg(source)
             .args(["--follow-links", "--max-pages", &max.max(1).to_string()])
@@ -32,6 +34,7 @@ pub fn extract(
     let copy = runtime.join("master_extractor.py");
     std::fs::copy(script, &copy).map_err(|e| Error::new("unavailable", e))?;
     let mut cmd = Command::new(python);
+    cmd.env("PYTHONUNBUFFERED", "1").arg("-u");
     cmd.arg(copy)
         .args(["--vault"])
         .arg(stage)

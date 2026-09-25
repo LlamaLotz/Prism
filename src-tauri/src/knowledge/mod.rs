@@ -303,9 +303,16 @@ pub(crate) fn record_path_change(c: &Connection, path: &str, kind: &str) -> Resu
     c.execute("INSERT INTO knowledge_events(vault_id,kind,entity_id) SELECT vault_id,?2,id FROM knowledge_notes WHERE path=?1 AND deleted=0", params![path,kind]).map_err(|e|e.to_string())?;
     Ok(())
 }
-pub fn publish_path_change(app: &tauri::AppHandle, c: &Connection, path: &str) -> Result<(), String> {
+pub fn publish_path_change(
+    app: &tauri::AppHandle,
+    c: &Connection,
+    path: &str,
+) -> Result<(), String> {
     let event = c.query_row("SELECT e.sequence,e.vault_id,e.kind,e.entity_id FROM knowledge_events e JOIN knowledge_notes n ON n.id=e.entity_id WHERE n.path=?1 ORDER BY e.sequence DESC LIMIT 1", [path], |r| Ok(RuntimeEvent {sequence:r.get(0)?,vault_id:r.get(1)?,kind:r.get(2)?,entity_id:r.get(3)?})).optional().map_err(|e| e.to_string())?;
-    if let Some(event)=event {app.emit("knowledge-event",event).map_err(|e|e.to_string())?;}
+    if let Some(event) = event {
+        app.emit("knowledge-event", event)
+            .map_err(|e| e.to_string())?;
+    }
     Ok(())
 }
 pub fn move_path(conn: &Connection, old: &str, new: &str) -> Result<(), String> {

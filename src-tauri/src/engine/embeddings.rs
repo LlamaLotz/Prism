@@ -13,10 +13,9 @@ use hnsw_rs::prelude::*;
 use rusqlite::{params, Connection};
 
 use crate::db::{
-    clear_all_block_embeddings, clear_all_embeddings, clear_block_embeddings,
-    clear_note_embedding, load_all_block_embeddings, load_all_embeddings,
-    load_block_embeddings_for_note, save_block_embedding, save_note_embedding, BlockEmbedding,
-    SemanticMatch,
+    clear_all_block_embeddings, clear_all_embeddings, clear_block_embeddings, clear_note_embedding,
+    load_all_block_embeddings, load_all_embeddings, load_block_embeddings_for_note,
+    save_block_embedding, save_note_embedding, BlockEmbedding, SemanticMatch,
 };
 
 /// Graph construction parameters (accuracy/speed trade-off).
@@ -192,12 +191,7 @@ impl EmbeddingIndex {
     }
 
     fn rebuild(&mut self) {
-        let live: Vec<(String, Vec<f32>)> = self
-            .points
-            .iter()
-            .flatten()
-            .cloned()
-            .collect();
+        let live: Vec<(String, Vec<f32>)> = self.points.iter().flatten().cloned().collect();
 
         let pairs: Vec<(&Vec<f32>, usize)> = live
             .iter()
@@ -258,8 +252,7 @@ impl EmbeddingIndex {
         // neighbours are noise and surfacing them is exactly the "inaccurate
         // suggestions" complaint. An empty list is the honest answer. The
         // threshold is runtime-tunable (linking.similarityThreshold setting).
-        let best =
-            self.collect_matches(&candidates, exclude_note_id, Some(self.min_similarity));
+        let best = self.collect_matches(&candidates, exclude_note_id, Some(self.min_similarity));
 
         let mut matches: Vec<SemanticMatch> = best
             .into_iter()
@@ -270,7 +263,11 @@ impl EmbeddingIndex {
                 matched_block_id: None,
             })
             .collect();
-        matches.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+        matches.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         matches.truncate(top_k);
         matches
     }
@@ -319,15 +316,19 @@ struct BlockEntry {
 
 /// On-disk path of a note (via the notes table), if resolvable.
 fn note_path(conn: &Connection, note_id: &str) -> Option<String> {
-    conn.query_row("SELECT path FROM notes WHERE id = ?1", params![note_id], |row| {
-        row.get(0)
-    })
+    conn.query_row(
+        "SELECT path FROM notes WHERE id = ?1",
+        params![note_id],
+        |row| row.get(0),
+    )
     .ok()
 }
 
 /// On-disk byte size of a note (via its path in the index), if resolvable.
 fn note_byte_len(conn: &Connection, note_id: &str) -> Option<u64> {
-    std::fs::metadata(&note_path(conn, note_id)?).ok().map(|m| m.len())
+    std::fs::metadata(&note_path(conn, note_id)?)
+        .ok()
+        .map(|m| m.len())
 }
 
 /// True when the active note's text is shorter than `MIN_SEMANTIC_NOTE_CHARS`
@@ -465,7 +466,10 @@ impl EmbeddingEngine {
                 total_bytes / (1024 * 1024)
             );
         }
-        println!("[embeddings] starting ONNX session load from {:?}", cache_dir);
+        println!(
+            "[embeddings] starting ONNX session load from {:?}",
+            cache_dir
+        );
         let load_start = std::time::Instant::now();
 
         let options = InitOptions {
@@ -480,9 +484,20 @@ impl EmbeddingEngine {
         };
 
         let model = TextEmbedding::try_new(options).map_err(|e| e.to_string())?;
-        let revision=std::fs::read_to_string(model_repo_dir.join("refs/main")).unwrap_or_default();
-        let model_signature=format!("{MODEL_SIGNATURE}:{}",if revision.trim().is_empty(){"unversioned"}else{revision.trim()});
-        println!("[embeddings] ONNX session loaded in {:?}", load_start.elapsed());
+        let revision =
+            std::fs::read_to_string(model_repo_dir.join("refs/main")).unwrap_or_default();
+        let model_signature = format!(
+            "{MODEL_SIGNATURE}:{}",
+            if revision.trim().is_empty() {
+                "unversioned"
+            } else {
+                revision.trim()
+            }
+        );
+        println!(
+            "[embeddings] ONNX session loaded in {:?}",
+            load_start.elapsed()
+        );
 
         // Detect a vector-dimension change (e.g. a model swap): every stored
         // embedding from the old model is garbage for the new one, so wipe
@@ -516,7 +531,8 @@ impl EmbeddingEngine {
                     let _ = clear_note_embedding(conn, note_id);
                     false
                 } else {
-                    known_model(conn, note_id, "note", &model_signature) && std::path::Path::new(note_id).starts_with(&config.vault_path)
+                    known_model(conn, note_id, "note", &model_signature)
+                        && std::path::Path::new(note_id).starts_with(&config.vault_path)
                 }
             })
             .collect();
@@ -525,7 +541,11 @@ impl EmbeddingEngine {
 
         let blocks = load_all_block_embeddings(conn)?
             .into_iter()
-            .filter(|(note_id, _, _, _)| !is_empty_note(conn, note_id) && known_model(conn, note_id, "block", &model_signature) && std::path::Path::new(note_id).starts_with(&config.vault_path))
+            .filter(|(note_id, _, _, _)| {
+                !is_empty_note(conn, note_id)
+                    && known_model(conn, note_id, "block", &model_signature)
+                    && std::path::Path::new(note_id).starts_with(&config.vault_path)
+            })
             .map(|(note_id, block_id, _text, vector)| BlockEntry {
                 note_id,
                 block_id,
@@ -548,20 +568,35 @@ impl EmbeddingEngine {
     }
 
     /// Current similarity threshold used to gate semantic matches.
-    pub fn idle_for(&self) -> std::time::Duration {self.last_used.lock().unwrap().elapsed()}
+    pub fn idle_for(&self) -> std::time::Duration {
+        self.last_used.lock().unwrap().elapsed()
+    }
 
     pub fn search_text(&self, text: &str, limit: usize) -> Result<Vec<SemanticMatch>, String> {
         use std::sync::atomic::Ordering;
-        self.foreground_waiters.fetch_add(1,Ordering::SeqCst);
-        let lease=self.inference.lock().unwrap();
-        self.foreground_waiters.fetch_sub(1,Ordering::SeqCst);
-        *self.last_used.lock().unwrap()=std::time::Instant::now();
-        let vector=self.model.embed(vec![text.to_string()],None).map_err(|e|e.to_string())?.pop().ok_or("Model returned no embedding")?;
+        self.foreground_waiters.fetch_add(1, Ordering::SeqCst);
+        let lease = self.inference.lock().unwrap();
+        self.foreground_waiters.fetch_sub(1, Ordering::SeqCst);
+        *self.last_used.lock().unwrap() = std::time::Instant::now();
+        let vector = self
+            .model
+            .embed(vec![text.to_string()], None)
+            .map_err(|e| e.to_string())?
+            .pop()
+            .ok_or("Model returned no embedding")?;
         drop(lease);
-        Ok(self.index.lock().unwrap().search(&vector,limit.min(1000),""))
+        Ok(self
+            .index
+            .lock()
+            .unwrap()
+            .search(&vector, limit.min(1000), ""))
     }
-    fn yield_to_foreground(&self)->Result<(),String>{
-        while self.foreground_waiters.load(std::sync::atomic::Ordering::SeqCst)>0 {
+    fn yield_to_foreground(&self) -> Result<(), String> {
+        while self
+            .foreground_waiters
+            .load(std::sync::atomic::Ordering::SeqCst)
+            > 0
+        {
             crate::knowledge::jobs::checkpoint()?;
             std::thread::sleep(std::time::Duration::from_millis(1));
         }
@@ -575,13 +610,25 @@ impl EmbeddingEngine {
     /// Hot-applies live-tunable embedding parameters from a config save
     /// without rebuilding the engine. Thread count is NOT applied here — it's
     /// baked into the ONNX session at init and takes effect on next launch.
-    pub fn apply_runtime_config(&self, config: &crate::config::RuntimeConfig) -> Result<(), String> {
+    pub fn apply_runtime_config(
+        &self,
+        config: &crate::config::RuntimeConfig,
+    ) -> Result<(), String> {
         let threshold = config.linking.similarity_threshold.clamp(0.0, 1.0);
         let batch = config.linking.embedding_batch_size.max(1);
         // Acquire every lock before changing any live value.
-        let mut similarity = self.min_similarity.lock().map_err(|_| "Embedding settings unavailable; restart Prism")?;
-        let mut batch_size = self.backfill_batch_size.lock().map_err(|_| "Embedding settings unavailable; restart Prism")?;
-        let mut index = self.index.lock().map_err(|_| "Embedding index unavailable; restart Prism")?;
+        let mut similarity = self
+            .min_similarity
+            .lock()
+            .map_err(|_| "Embedding settings unavailable; restart Prism")?;
+        let mut batch_size = self
+            .backfill_batch_size
+            .lock()
+            .map_err(|_| "Embedding settings unavailable; restart Prism")?;
+        let mut index = self
+            .index
+            .lock()
+            .map_err(|_| "Embedding index unavailable; restart Prism")?;
         *similarity = threshold;
         *batch_size = batch;
         index.min_similarity = threshold;
@@ -623,7 +670,9 @@ impl EmbeddingEngine {
             .embed(vec![text.to_string()], None)
             .map_err(|e| e.to_string())?;
 
-        embeddings.pop().ok_or_else(|| "Embedding model returned no output.".to_string())
+        embeddings
+            .pop()
+            .ok_or_else(|| "Embedding model returned no output.".to_string())
     }
 
     /// Embeds `content` and persists it to SQLite + the in-memory HNSW graph.
@@ -663,7 +712,9 @@ impl EmbeddingEngine {
         let hash = fnv1a64(content.as_bytes());
         {
             let memo = self.last_embedded_hash.lock().unwrap();
-            if memo.get(note_id) == Some(&hash) && input_matches(conn,note_id,"note",content,&self.model_signature) {
+            if memo.get(note_id) == Some(&hash)
+                && input_matches(conn, note_id, "note", content, &self.model_signature)
+            {
                 return Ok(());
             }
         }
@@ -672,9 +723,12 @@ impl EmbeddingEngine {
         crate::knowledge::jobs::checkpoint()?;
         ensure_current(note_id, content)?;
         save_note_embedding(conn, note_id, &vector)?;
-        provenance(conn, note_id, "note", content,&self.model_signature)?;
+        provenance(conn, note_id, "note", content, &self.model_signature)?;
         self.index.lock().unwrap().upsert(note_id, vector);
-        self.last_embedded_hash.lock().unwrap().insert(note_id.to_string(), hash);
+        self.last_embedded_hash
+            .lock()
+            .unwrap()
+            .insert(note_id.to_string(), hash);
         Ok(())
     }
 
@@ -745,7 +799,11 @@ impl EmbeddingEngine {
                 matched_block_id: None,
             })
             .collect();
-        matches.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+        matches.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         matches.truncate(top_k);
 
         // Explain every suggestion: find the candidate block that best matches
@@ -847,7 +905,9 @@ fn existing_anchor(text: &str) -> Option<String> {
         if let Some(pos) = t.rfind('^') {
             let id = t[pos + 1..].trim();
             if !id.is_empty()
-                && id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+                && id
+                    .chars()
+                    .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
             {
                 return Some(id.to_string());
             }
@@ -982,7 +1042,9 @@ impl EmbeddingEngine {
         let hash = fnv1a64(content.as_bytes());
         {
             let memo = self.last_embedded_hash.lock().unwrap();
-            if memo.get(note_id) == Some(&hash) && input_matches(conn,note_id,"block",content,&self.model_signature) {
+            if memo.get(note_id) == Some(&hash)
+                && input_matches(conn, note_id, "block", content, &self.model_signature)
+            {
                 return Ok(());
             }
         }
@@ -996,10 +1058,14 @@ impl EmbeddingEngine {
         // small edit to a large note no longer re-embeds (and rewrites) all
         // of its blocks, which was the main CPU/temp spike on save.
         let existing: HashMap<(String, String), Vec<f32>> =
-            if known_model(conn, note_id, "block",&self.model_signature) {load_block_embeddings_for_note(conn, note_id)?} else {vec![]}
-                .into_iter()
-                .map(|(block_id, text, vector)| ((block_id, text), vector))
-                .collect();
+            if known_model(conn, note_id, "block", &self.model_signature) {
+                load_block_embeddings_for_note(conn, note_id)?
+            } else {
+                vec![]
+            }
+            .into_iter()
+            .map(|(block_id, text, vector)| ((block_id, text), vector))
+            .collect();
 
         let mut reused: Vec<((String, String), Vec<f32>)> = Vec::new();
         let mut to_embed: Vec<(String, String)> = Vec::new();
@@ -1057,9 +1123,12 @@ impl EmbeddingEngine {
             }
         }
 
-        provenance(conn, note_id, "block", content,&self.model_signature)?;
-        map_chunks(conn, note_id, &blocks,&self.model_signature)?;
-        self.last_embedded_hash.lock().unwrap().insert(note_id.to_string(), hash);
+        provenance(conn, note_id, "block", content, &self.model_signature)?;
+        map_chunks(conn, note_id, &blocks, &self.model_signature)?;
+        self.last_embedded_hash
+            .lock()
+            .unwrap()
+            .insert(note_id.to_string(), hash);
         Ok(())
     }
 
@@ -1171,7 +1240,10 @@ impl EmbeddingEngine {
                 // Purge any pre-cap block rows so stale blocks never resurface
                 // as suggestions (oversized notes are never re-embedded).
                 let _ = clear_block_embeddings(conn, note_id);
-                self.blocks.lock().unwrap().retain(|b| &b.note_id != note_id);
+                self.blocks
+                    .lock()
+                    .unwrap()
+                    .retain(|b| &b.note_id != note_id);
                 self.last_embedded_hash.lock().unwrap().remove(note_id);
                 println!(
                     "[embeddings] purged block embeddings for oversized note ({} bytes): {note_id}",
@@ -1185,13 +1257,19 @@ impl EmbeddingEngine {
             // removed stops suggesting them.
             clear_block_embeddings(conn, note_id)?;
             if blocks.is_empty() {
-                self.blocks.lock().unwrap().retain(|b| &b.note_id != note_id);
+                self.blocks
+                    .lock()
+                    .unwrap()
+                    .retain(|b| &b.note_id != note_id);
                 self.last_embedded_hash.lock().unwrap().remove(note_id);
                 continue;
             }
             let texts: Vec<String> = blocks.iter().map(|(_, t)| t.clone()).collect();
             let vectors = self.embed_serial(texts)?;
-            self.last_embedded_hash.lock().unwrap().insert(note_id.clone(), fnv1a64(content.as_bytes()));
+            self.last_embedded_hash
+                .lock()
+                .unwrap()
+                .insert(note_id.clone(), fnv1a64(content.as_bytes()));
 
             for ((block_id, text), vector) in blocks.iter().zip(vectors) {
                 save_block_embedding(conn, note_id, block_id, text, &vector)?;
@@ -1218,9 +1296,12 @@ pub fn apply_embedding_runtime_config(
     state: &crate::AppState,
     config: &crate::config::RuntimeConfig,
 ) -> Result<(), String> {
-    let engine = state.embeddings.lock()
+    let engine = state
+        .embeddings
+        .lock()
         .map_err(|_| "Embedding engine is unavailable; restart Prism")?
-        .as_ref().cloned();
+        .as_ref()
+        .cloned();
     match engine {
         Some(Ok(engine)) => engine.apply_runtime_config(config),
         Some(Err(error)) => Err(error),
@@ -1234,7 +1315,9 @@ pub fn apply_embedding_runtime_config(
 /// when `libonnxruntime` cannot be `dlopen`ed. Every such failure lands here
 /// as `Err`, so a missing library degrades to lexical search instead of
 /// aborting the process (and a later retry re-attempts the load cleanly).
-pub(crate) fn initialize_safely<T>(initialize: impl FnOnce() -> Result<T, String>) -> Result<T, String> {
+pub(crate) fn initialize_safely<T>(
+    initialize: impl FnOnce() -> Result<T, String>,
+) -> Result<T, String> {
     std::panic::catch_unwind(std::panic::AssertUnwindSafe(initialize)).unwrap_or_else(|payload| {
         let detail = payload
             .downcast_ref::<String>()
@@ -1274,8 +1357,12 @@ mod tests {
     #[test]
     fn loader_panic_details_and_repeated_failures_stay_errors() {
         // The panic payload surfaces in the error for diagnosability.
-        let err = initialize_safely::<()>(|| panic!("dlopen libonnxruntime.dylib failed")).unwrap_err();
-        assert!(err.contains("dlopen libonnxruntime.dylib failed"), "unexpected: {err}");
+        let err =
+            initialize_safely::<()>(|| panic!("dlopen libonnxruntime.dylib failed")).unwrap_err();
+        assert!(
+            err.contains("dlopen libonnxruntime.dylib failed"),
+            "unexpected: {err}"
+        );
         // A missing native library fails every load attempt (std OnceLock
         // retries after a panic rather than latching) — each attempt must
         // come back as Err and run again, never escape the guard.
@@ -1293,16 +1380,24 @@ mod tests {
     #[test]
     fn poisoned_engine_slot_is_a_save_warning_not_a_panic() {
         let state = crate::AppState {
-            linker: Mutex::new(None), db_path: Mutex::new(None), watcher_path: Mutex::new(None),
-            watcher_stop: Mutex::new(None), embeddings: std::sync::Arc::new(Mutex::new(None)),
-            embed_lock: std::sync::Arc::new(Mutex::new(())), linker_cache: Mutex::new(None),
+            linker: Mutex::new(None),
+            db_path: Mutex::new(None),
+            watcher_path: Mutex::new(None),
+            watcher_stop: Mutex::new(None),
+            embeddings: std::sync::Arc::new(Mutex::new(None)),
+            embed_lock: std::sync::Arc::new(Mutex::new(())),
+            linker_cache: Mutex::new(None),
         };
         let slot = state.embeddings.clone();
         let _ = std::thread::spawn(move || {
             let _guard = slot.lock().unwrap();
             panic!("loader failed");
-        }).join();
-        assert!(apply_embedding_runtime_config(&state, &crate::config::RuntimeConfig::default()).is_err());
+        })
+        .join();
+        assert!(
+            apply_embedding_runtime_config(&state, &crate::config::RuntimeConfig::default())
+                .is_err()
+        );
     }
 
     #[test]
@@ -1347,12 +1442,7 @@ mod tests {
         db.conn
             .execute(
                 "INSERT INTO notes (id, title, path, updated_at) VALUES (?1, ?2, ?3, ?4)",
-                params![
-                    "short",
-                    "Short",
-                    short_path.to_string_lossy(),
-                    12345678i64
-                ],
+                params!["short", "Short", short_path.to_string_lossy(), 12345678i64],
             )
             .unwrap();
         db.conn
@@ -1370,26 +1460,76 @@ mod tests {
     }
 }
 
-
 const MODEL_SIGNATURE: &str = "Qdrant/bge-base-en-v1.5-onnx-Q:768:max512:v1";
-fn known_model(conn:&Connection,path:&str,kind:&str,signature:&str)->bool {
- conn.query_row("SELECT model FROM knowledge_embedding_provenance WHERE path=?1 AND kind=?2",params![path,kind],|r|r.get::<_,String>(0)).map(|m|m==signature && !signature.ends_with(":unversioned")).unwrap_or(false)
+fn known_model(conn: &Connection, path: &str, kind: &str, signature: &str) -> bool {
+    conn.query_row(
+        "SELECT model FROM knowledge_embedding_provenance WHERE path=?1 AND kind=?2",
+        params![path, kind],
+        |r| r.get::<_, String>(0),
+    )
+    .map(|m| m == signature && !signature.ends_with(":unversioned"))
+    .unwrap_or(false)
 }
-fn provenance(conn:&Connection,path:&str,kind:&str,content:&str,signature:&str)->Result<(),String>{
- conn.execute("INSERT INTO knowledge_embedding_provenance(path,kind,hash,model) VALUES (?1,?2,?3,?4) ON CONFLICT(path,kind) DO UPDATE SET hash=excluded.hash,model=excluded.model",params![path,kind,crate::knowledge::blocks::hash(content),signature]).map_err(|e|e.to_string())?;Ok(())
+fn provenance(
+    conn: &Connection,
+    path: &str,
+    kind: &str,
+    content: &str,
+    signature: &str,
+) -> Result<(), String> {
+    conn.execute("INSERT INTO knowledge_embedding_provenance(path,kind,hash,model) VALUES (?1,?2,?3,?4) ON CONFLICT(path,kind) DO UPDATE SET hash=excluded.hash,model=excluded.model",params![path,kind,crate::knowledge::blocks::hash(content),signature]).map_err(|e|e.to_string())?;
+    Ok(())
 }
-fn ensure_current(path:&str,content:&str)->Result<(),String>{
- let actual=std::fs::read_to_string(path).map_err(|_|"Note was removed during inference")?;
- if actual!=content{return Err("Note changed during inference; stale result discarded".into());}Ok(())
+fn ensure_current(path: &str, content: &str) -> Result<(), String> {
+    let actual = std::fs::read_to_string(path).map_err(|_| "Note was removed during inference")?;
+    if actual != content {
+        return Err("Note changed during inference; stale result discarded".into());
+    }
+    Ok(())
 }
-fn map_chunks(conn:&Connection,path:&str,chunks:&[(String,String)],signature:&str)->Result<(),String>{
- let mut stmt=conn.prepare("SELECT b.id,b.note_id,b.text FROM knowledge_blocks b JOIN knowledge_notes n ON n.id=b.note_id WHERE n.path=?1 AND n.deleted=0 AND b.deleted=0").map_err(|e|e.to_string())?;
- let blocks=stmt.query_map([path],|r|Ok((r.get::<_,String>(0)?,r.get::<_,String>(1)?,r.get::<_,String>(2)?))).map_err(|e|e.to_string())?.collect::<Result<Vec<_>,_>>().map_err(|e|e.to_string())?;
- let tx=conn.unchecked_transaction().map_err(|e|e.to_string())?;
- for (chunk,text) in chunks {for (block,note,body) in &blocks {if text.contains(body) || body.contains(text) {tx.execute("INSERT OR REPLACE INTO knowledge_chunk_blocks(note_id,chunk_id,block_id,input_hash,model) VALUES (?1,?2,?3,?4,?5)",params![note,chunk,block,crate::knowledge::blocks::hash(text),signature]).map_err(|e|e.to_string())?;}}}
- tx.commit().map_err(|e|e.to_string())
+fn map_chunks(
+    conn: &Connection,
+    path: &str,
+    chunks: &[(String, String)],
+    signature: &str,
+) -> Result<(), String> {
+    let mut stmt=conn.prepare("SELECT b.id,b.note_id,b.text FROM knowledge_blocks b JOIN knowledge_notes n ON n.id=b.note_id WHERE n.path=?1 AND n.deleted=0 AND b.deleted=0").map_err(|e|e.to_string())?;
+    let blocks = stmt
+        .query_map([path], |r| {
+            Ok((
+                r.get::<_, String>(0)?,
+                r.get::<_, String>(1)?,
+                r.get::<_, String>(2)?,
+            ))
+        })
+        .map_err(|e| e.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())?;
+    let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
+    for (chunk, text) in chunks {
+        for (block, note, body) in &blocks {
+            if text.contains(body) || body.contains(text) {
+                tx.execute("INSERT OR REPLACE INTO knowledge_chunk_blocks(note_id,chunk_id,block_id,input_hash,model) VALUES (?1,?2,?3,?4,?5)",params![note,chunk,block,crate::knowledge::blocks::hash(text),signature]).map_err(|e|e.to_string())?;
+            }
+        }
+    }
+    tx.commit().map_err(|e| e.to_string())
 }
 
-fn input_matches(conn:&Connection,path:&str,kind:&str,content:&str,signature:&str)->bool {
- known_model(conn,path,kind,signature) && conn.query_row("SELECT hash FROM knowledge_embedding_provenance WHERE path=?1 AND kind=?2",params![path,kind],|r|r.get::<_,String>(0)).map(|hash|hash==crate::knowledge::blocks::hash(content)).unwrap_or(false)
+fn input_matches(
+    conn: &Connection,
+    path: &str,
+    kind: &str,
+    content: &str,
+    signature: &str,
+) -> bool {
+    known_model(conn, path, kind, signature)
+        && conn
+            .query_row(
+                "SELECT hash FROM knowledge_embedding_provenance WHERE path=?1 AND kind=?2",
+                params![path, kind],
+                |r| r.get::<_, String>(0),
+            )
+            .map(|hash| hash == crate::knowledge::blocks::hash(content))
+            .unwrap_or(false)
 }

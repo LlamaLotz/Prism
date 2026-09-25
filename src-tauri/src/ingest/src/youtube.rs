@@ -1,5 +1,9 @@
 use crate::{Error, Extraction, Result};
-use std::{path::Path, process::Command, time::Duration};
+use std::{path::Path, process::Command, sync::OnceLock, time::Duration};
+fn tag_stripper() -> &'static regex::Regex {
+    static STRIPPER: OnceLock<regex::Regex> = OnceLock::new();
+    STRIPPER.get_or_init(|| regex::Regex::new(r"<[^>]+>").unwrap())
+}
 pub fn clean(text: &str) -> String {
     if let Ok(value) = serde_json::from_str::<serde_json::Value>(text) {
         if let Some(events) = value["events"].as_array() {
@@ -15,7 +19,7 @@ pub fn clean(text: &str) -> String {
                 .join(" ");
         }
     }
-    let tags = regex::Regex::new(r"<[^>]+>").unwrap();
+    let tags = tag_stripper();
     let plain = tags.replace_all(text, " ");
     let mut lines = Vec::new();
     let mut style = false;
@@ -98,6 +102,11 @@ pub fn extract(url: &str, method: &str, scratch: &Path) -> Result<Extraction> {
                 }
             }
         }
+    }
+    // Explicit captions mode fails fast so the adapter retries once with
+    // Python; downloading media for Whisper here would be slow and surprising.
+    if method == "captions" && captions.is_empty() {
+        return Err(Error::new("quality", "No native captions available"));
     }
     let use_captions = method == "captions" && !captions.is_empty()
         || method == "auto" && captions_acceptable(&captions, meta["duration"].as_f64());
