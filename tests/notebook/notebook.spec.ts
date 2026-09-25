@@ -1,8 +1,13 @@
 import { expect, test } from '@playwright/test';
 
+test.beforeEach(async ({ page }) => {
+  page.on('pageerror', error => { throw error; });
+});
+
 test('research, citations, drafts and navigation stay in one workspace', async ({ page }) => {
   await page.goto('/tests/notebook/harness.html');
   await page.getByRole('heading', { name: 'Learning how we learn' }).click();
+  await page.getByRole('button', { name: /^View response/ }).click();
   await expect(page.getByText('Retrieval practice and spaced repetition work together.', { exact: false })).toBeVisible();
   await page.getByRole('button', { name: 'source:memory', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'The science of memory' })).toBeVisible();
@@ -39,6 +44,7 @@ for (const theme of ['industrial', 'glass', 'gloss']) for (const mode of ['light
   test(`${theme} ${mode} layout`, async ({ page }) => {
     await page.goto(`/tests/notebook/harness.html?theme=${theme}&mode=${mode}`);
     await page.getByRole('heading', { name: 'Learning how we learn' }).click();
+    await page.getByRole('button', { name: /^View response/ }).click();
     await expect(page.getByText('Retrieval practice and spaced repetition work together.', { exact: false })).toBeVisible();
     const contrasts = await page.evaluate(() => {
       const canvas = document.createElement('canvas'); canvas.width = canvas.height = 1;

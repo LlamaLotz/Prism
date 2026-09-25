@@ -1,5 +1,9 @@
 import {test,expect} from '@playwright/test';
 
+test.beforeEach(async ({page})=>{
+ page.on('pageerror',error=>{throw error;});
+});
+
 test('cloud approval is explicit, scoped, and deny is focused',async({page})=>{
  await page.goto('/tests/notebook/runtime-harness.html');
  const dialog=page.getByRole('dialog',{name:'Allow external processing?'});

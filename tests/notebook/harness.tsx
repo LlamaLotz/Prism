@@ -3,6 +3,8 @@ import React, { StrictMode, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { NotebookPage } from '../../src/components/notebook/NotebookPage';
 import { DialogProvider } from '../../src/components/DialogProvider';
+import { ChatLibraryProvider } from '../../src/services/chatLibrary';
+import type { ChatLibrarySession, ChatLibraryMessage } from '../../src/services/knowledge';
 import { TitleBar } from '../../src/components/TitleBar';
 import { LiquidGlass } from '../../src/components/LiquidGlass';
 import type { AppPage, AppSettings } from '../../src/types';
@@ -15,7 +17,10 @@ const notes = [{ id: 'note:summary', title: 'Research summary', content: 'Spacin
 const messages = [{ id: 'human:1', type: 'human', content: 'What helps us remember what we study?' }, { id: 'ai:1', type: 'ai', content: 'Retrieval practice and spaced repetition work together. Return to a topic over several days, and test what you can recall before reviewing. [source:memory]\n\n- Space your sessions\n- Ask yourself questions\n- Connect new ideas to familiar ones' }];
 const sources = [{ id: 'source:memory', title: 'The science of memory', full_text: 'Retrieval practice strengthens memory.', status: 'completed', embedded: true, insights_count: 1 }, { id: 'source:attention', title: 'Attention and learning', full_text: 'Focused attention supports encoding.', status: 'completed', embedded: true, insights_count: 0 }];
 const calls: { command: string; args: Record<string, any> }[] = [];
+const chats = new Map<string, ChatLibrarySession[]>();
+const transcripts = new Map<string, ChatLibraryMessage[]>();
 Object.assign(window, { fixtureCalls: calls });
+Object.defineProperty(window, '__TAURI_EVENT_PLUGIN_INTERNALS__', { value: { unregisterListener: () => {} } });
 Object.defineProperty(window, '__TAURI_INTERNALS__', { value: {
   metadata: { currentWindow: { label: 'main' }, currentWebview: { label: 'main' } },
   transformCallback: () => 1, unregisterCallback: () => {},
@@ -25,6 +30,26 @@ Object.defineProperty(window, '__TAURI_INTERNALS__', { value: {
     if (command === 'notebook_start') { workspace = args.vaultPath; return { state: 'ready', workspaceId: workspace, vaultPath: workspace }; }
     if (command === 'notebook_stop') { workspace = ''; return null; }
     if (command === 'notebook_status') return { state: 'ready', workspaceId: workspace };
+    // Shared chat commands are scoped by the active vault, not workspaceId arguments.
+    if (command === 'list_chat_sessions') return structuredClone(chats.get(workspace) ?? []);
+    if (command === 'link_notebook_session') {
+      const rows = chats.get(workspace) ?? [];
+      let row = rows.find(r => r.notebookSessionId === args.notebookSessionId);
+      if (!row) {
+        row = { id: `${workspace}:chat:${args.notebookSessionId}`, title: args.title, origin: 'notebook', notebookSessionId: args.notebookSessionId, notebookId: args.notebookId, sourceId: args.sourceId, model: args.model, createdAt: 0, updatedAt: 0, messageCount: 0 };
+        rows.push(row);
+        chats.set(workspace, rows);
+      } else Object.assign(row, { title: args.title, notebookId: args.notebookId, sourceId: args.sourceId, model: args.model });
+      return structuredClone(row);
+    }
+    if (command === 'get_chat_messages') return structuredClone(transcripts.get(args.sessionId) ?? []);
+    if (command === 'replace_chat_transcript') {
+      const messages = args.messages.map(([role, content, metadata]: [ChatLibraryMessage['role'], string, string | null], i: number) => ({ id: `${args.sessionId}:${i}`, sessionId: args.sessionId, role, content, metadata, createdAt: i }));
+      transcripts.set(args.sessionId, messages);
+      const row = (chats.get(workspace) ?? []).find(r => r.id === args.sessionId);
+      if (row) row.messageCount = messages.length;
+      return messages.length;
+    }
     if (args.workspaceId !== workspace) throw new Error('Wrong vault');
     if (command === 'notebook_export') return `${args.title}.md`;
     if (command === 'notebook_read_vault_note') return '# Vault note\nA selected snapshot.';
@@ -68,4 +93,4 @@ function Harness() {
     <LiquidGlass className="flex-1 min-h-0"><NotebookPage key={vault} active={page === 'notebook'} vaultPath={vault} vaultNotes={[{ path: '/vault-a/Study.md', relativePath: 'Study.md', title: 'Study', name: 'Study.md', updatedAt: 0 }]} settings={settings} onSelectVault={() => {}} onVaultExport={async () => {}}/>{page !== 'notebook' && <p>Other Prism page</p>}</LiquidGlass>
   </div>;
 }
-createRoot(document.getElementById('root')!).render(<StrictMode><DialogProvider><Harness/></DialogProvider></StrictMode>);
+createRoot(document.getElementById('root')!).render(<StrictMode><ChatLibraryProvider><DialogProvider><Harness/></DialogProvider></ChatLibraryProvider></StrictMode>);
