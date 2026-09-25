@@ -4,8 +4,11 @@ The lock is a JSON object with target and assets. Each asset specifies source (a
 local file or HTTPS URL), path relative to runtime, sha256, and license. Archives
 must be expanded and pinned per file before use; this script never blindly extracts.
 """
-import argparse, hashlib, json, os, pathlib, shutil, subprocess, tempfile, urllib.request
+import argparse, hashlib, json, os, pathlib, shutil, subprocess, sys, tempfile, urllib.request
 ROOT = pathlib.Path(__file__).resolve().parents[1]
+if os.environ.get('PRISM_SKIP_INGEST') == '1' and '--release' not in sys.argv and '--assets-lock' not in sys.argv:
+    print('PRISM_SKIP_INGEST=1: skipping native ingest build')
+    raise SystemExit(0)
 parser = argparse.ArgumentParser()
 parser.add_argument('--release', action='store_true')
 parser.add_argument('--target')
