@@ -17,3 +17,7 @@ myapp.key.pub
 
 # Vite dev cache (pre-bundled deps) — auto-regenerated on `vite dev`
 .vite/
+
+# Native ingestion build and downloaded runtime payloads.
+src-tauri/src/ingest/target/
+src-tauri/ingest-runtime/

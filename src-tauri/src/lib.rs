@@ -1,3 +1,5 @@
+#[cfg(feature = "ingest-rust")]
+mod native_ingest;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -1205,6 +1207,17 @@ async fn run_builtin_extractor_async(
 
     knowledge::validate_path(&app,Path::new(&vault_path))?;
     knowledge::models::authorize(&app,"Document extractor subprocess","EXTRACT",&value,false,false)?;
+    #[cfg(feature = "ingest-rust")]
+    return native_ingest::run(&app, &window, &vault_path, &ingest_type, &value, &yt_method, || {
+        job.check().map_err(|e| e.to_string())?;
+        if config::load_runtime_config(&app).unwrap_or_default().models.privacy == knowledge::models::PrivacyMode::StrictLocal {
+            return Err("Extraction cancelled".into());
+        }
+        Ok(())
+    });
+
+    #[cfg(not(feature = "ingest-rust"))]
+    {
     let script_path = resolve_resource_file(&app, "Extractor Final/master_extractor.py");
     if !script_path.exists() {
         return Err(format!("Extractor script not found at path: {:?}", script_path));
@@ -1297,6 +1310,7 @@ async fn run_builtin_extractor_async(
         Ok("Extraction completed successfully.".to_string())
     } else {
         Err("Extraction failed. Check logs for details.".to_string())
+    }
     }
         })
     }).await.map_err(|e|e.to_string())?

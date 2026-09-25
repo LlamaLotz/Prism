@@ -62,6 +62,7 @@ fastembed = { path = "vendor/fastembed" }
 hf-hub = { path = "vendor/hf-hub" }
 
 [target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_System_JobObjects", "Win32_System_Threading", "Win32_Security"] }
 # Direct use of the WebView2 COM bindings (same version wry/tauri use) so the
 # app can disable browser accelerator keys natively — JS preventDefault cannot
 # stop WebView2's own handling of Ctrl+P / Ctrl+R / F5 / F12 / etc.
@@ -74,6 +75,7 @@ windows-core = "0.61.2"
 tauri-plugin-updater = "^2"
 
 [features]
+ingest-rust = []
 # Opt-in native IPC regression harness; never enabled in release packaging.
 settings-smoke = []
 

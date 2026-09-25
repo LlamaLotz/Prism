@@ -1,0 +1,17 @@
+{
+  "fixture_sha256": "ff7c1de4797045599e1423f8166af23e923a8d9f1ccdde805ec1aa5e8500afd1",
+  "legacy_seconds": [
+    1.5887324820005233,
+    0.9541214399996534,
+    0.9508241109997471
+  ],
+  "native_seconds": [
+    4.567639767999935,
+    0.5218235350002942,
+    0.5755383489995438
+  ],
+  "warm_speedup": 1.7359319462199232,
+  "note": "Legacy measurements exclude Python bootstrap/import time. Native measurements include worker startup. RSS and disk profiling require the platform benchmark runner.",
+  "build_profile": "debug",
+  "release_gate_passed": false
+}

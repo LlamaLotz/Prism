@@ -1,0 +1,36 @@
+{
+  "sanitize_filename": [
+    {
+      "input": " A/B: C? ",
+      "expected": "A B C"
+    },
+    {
+      "input": "Résumé — notes",
+      "expected": "Résumé — notes"
+    }
+  ],
+  "clean_vtt_text": [
+    {
+      "input": "WEBVTT\n\n00:00.000 --> 00:01.000\nHello world.\nHello world.\n",
+      "expected": "Hello world."
+    }
+  ],
+  "inspect_text_quality": [
+    {
+      "input": "",
+      "expected": {
+        "words": 0,
+        "punc_ratio": 0.0,
+        "score": 0.0
+      }
+    },
+    {
+      "input": "One two, three!",
+      "expected": {
+        "words": 3,
+        "punc_ratio": 0.6666666666666666,
+        "score": 203.0
+      }
+    }
+  ]
+}

@@ -4,14 +4,16 @@
   "type": "module",
   "description": "",
   "scripts": {
-    "dev": "tauri dev",
+    "dev": "python3 scripts/build-ingest-runtime.py && tauri dev --features ingest-rust",
     "tauri": "tauri",
     "web": "vite",
     "build": "tauri build",
     "build-universal": "tauri build --target universal-apple-darwin",
     "build-frontend": "tsc && vite build",
     "preview": "vite preview",
-    "icons": "tauri icon public/logo.png"
+    "icons": "tauri icon public/logo.png",
+    "build-ingest": "python3 scripts/build-ingest-runtime.py",
+    "test-ingest": "cargo test --locked --manifest-path src-tauri/src/ingest/Cargo.toml"
   },
   "keywords": [],
   "author": "",
