@@ -194,8 +194,41 @@ fn nested_tables_flatten_without_losing_text() {
     assert!(md.contains("NESTED-LEVEL2-MARKER"));
     assert!(md.contains("NESTED-LEVEL3-MARKER"));
     // Top-level table survives as a real Markdown table with padded cells.
-    let header = md.lines().find(|l| l.contains("Name") && l.starts_with('|')).unwrap();
+    let header = md
+        .lines()
+        .find(|l| l.contains("Name") && l.starts_with('|'))
+        .unwrap();
     assert!(header.contains("Value"), "{header}");
-    assert!(md.lines().any(|l| l.starts_with('|') && l.contains("TOP-CELL-MARKER")));
+    assert!(md
+        .lines()
+        .any(|l| l.starts_with('|') && l.contains("TOP-CELL-MARKER")));
     assert!(!md.contains("CHROME-NAV-MARKER"));
+}
+#[test]
+fn table_padding_collapses_without_losing_cells() {
+    let html = "<html><body><main><table><tr><th>Name</th><th>Value</th></tr><tr><td>a very long cell value that forces padding across the whole column width</td><td>1</td></tr><tr><td>x</td><td>y \\| z</td></tr></table><p>A pipe | in prose stays.</p></main></body></html>";
+    let md = web::markdown(html);
+    assert!(md.lines().all(|l| l.len() < 2000), "{md}");
+    assert!(md.contains("a very long cell value"));
+    // html2md escapes the backslash but leaves a bare pipe; collapse must
+    // preserve the text on both sides rather than drop the cell.
+    assert!(md.contains('y'));
+    assert!(md.contains('z'));
+    assert!(md.contains("A pipe | in prose stays."));
+    assert!(md.lines().any(|l| l.starts_with('|') && l.contains("Name")));
+}
+#[test]
+fn images_strip_but_captions_survive() {
+    let html = "<html><body><main><p>Intro prose alpha beta gamma delta epsilon zeta eta theta iota kappa lambda.</p><figure><img src=\"photo.jpg\" srcset=\"photo.jpg 2x\" data-info=\"noise\" alt=\"\"><figcaption>Station platform photo caption marker</figcaption></figure></main></body></html>";
+    let md = web::markdown(html);
+    assert!(!md.contains("<img"), "{md}");
+    assert!(!md.contains("srcset"), "{md}");
+    assert!(md.contains("Station platform photo caption marker"), "{md}");
+}
+#[test]
+fn fixture_output_has_no_megabyte_rows() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
+    let html = std::fs::read_to_string(root.join("wiki_a.html")).unwrap();
+    let md = web::markdown(&html);
+    assert!(md.lines().all(|l| l.len() < 2000));
 }

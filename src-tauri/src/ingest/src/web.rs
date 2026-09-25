@@ -20,7 +20,12 @@ fn main_selector() -> &'static scraper::Selector {
 fn remove_selector() -> &'static scraper::Selector {
     static SELECTOR: std::sync::OnceLock<scraper::Selector> = std::sync::OnceLock::new();
     SELECTOR.get_or_init(|| {
-        scraper::Selector::parse("script, style, nav, footer, noscript, iframe, button").unwrap()
+        // img/picture carry no extractable value (media is never downloaded);
+        // their attribute dumps are pure noise. figure/figcaption text stays.
+        scraper::Selector::parse(
+            "script, style, nav, footer, noscript, iframe, button, img, picture",
+        )
+        .unwrap()
     })
 }
 fn title_selector() -> &'static scraper::Selector {
@@ -64,7 +69,85 @@ fn fragment_to_markdown(content: &str) -> String {
         }
     }
     flatten_nested_tables(&mut fragment);
-    html2md::parse_html(&fragment.html()).trim().into()
+    collapse_table_padding(html2md::parse_html(&fragment.html()).trim()).into()
+}
+/// html2md pads every cell to its column's max width, so one giant cell
+/// makes every row kilobytes wide. Collapse padding on table rows only;
+/// all other lines pass through byte-identical.
+fn collapse_table_padding(md: &str) -> String {
+    md.lines()
+        .map(|line| {
+            if !line.starts_with('|') {
+                return line.to_owned();
+            }
+            // Split on unescaped pipes so `\|` inside cells survives.
+            let mut cells = Vec::new();
+            let mut current = String::new();
+            let mut chars = line.chars();
+            while let Some(c) = chars.next() {
+                if c == '\\' {
+                    current.push(c);
+                    if let Some(next) = chars.next() {
+                        current.push(next);
+                    }
+                } else if c == '|' {
+                    cells.push(std::mem::take(&mut current));
+                } else {
+                    current.push(c);
+                }
+            }
+            cells.push(current);
+            // Separator rows collapse to minimal dashes (edge colons kept);
+            // trimming alone cannot shrink them since dashes are content.
+            // Detection strips edge colons: a data row of all-dash cells is
+            // visually a separator anyway, so collapsing it is harmless.
+            let is_separator = cells.iter().filter(|c| !c.trim().is_empty()).all(|c| {
+                let t = c.trim().strip_prefix(':').unwrap_or(c.trim());
+                let t = t.strip_suffix(':').unwrap_or(t);
+                !t.is_empty() && t.chars().all(|ch| ch == '-')
+            });
+            if is_separator {
+                let trailing = cells.pop().unwrap_or_default();
+                let mut out = String::new();
+                for cell in cells {
+                    if out.is_empty() {
+                        out.push('|');
+                    }
+                    let t = cell.trim();
+                    if t.is_empty() {
+                        out.push_str("  |");
+                    } else {
+                        out.push(' ');
+                        if t.starts_with(':') {
+                            out.push(':');
+                        }
+                        out.push_str("---");
+                        if t.ends_with(':') {
+                            out.push(':');
+                        }
+                        out.push_str(" |");
+                    }
+                }
+                out.push_str(trailing.trim_end());
+                return out;
+            }
+            // Preserve leading/trailing pipes; trim interior cells. Separator
+            // rows stay valid: trimming removes spaces, never the dashes.
+            let trailing = cells.pop().unwrap_or_default();
+            let mut out = String::new();
+            for cell in cells {
+                if out.is_empty() {
+                    out.push('|');
+                }
+                out.push(' ');
+                out.push_str(cell.trim());
+                out.push_str(" |");
+            }
+            out.push_str(trailing.trim_end());
+            out
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 /// html2md never finishes on deeply nested tables (route maps, navboxes:
 /// hundreds of KB with dozens of nested tables). Flatten any table inside
