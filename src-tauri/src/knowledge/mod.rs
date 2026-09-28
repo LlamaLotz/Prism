@@ -5,6 +5,7 @@ pub mod documents;
 pub mod gateway;
 pub mod jobs;
 pub mod models;
+pub mod note_io;
 pub mod operations;
 pub mod retrieval;
 pub mod schema;

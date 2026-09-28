@@ -622,59 +622,7 @@ fn remove_denied_link(
 
 #[tauri::command]
 fn setup_omniroute_environment(_app: tauri::AppHandle) -> Result<String, String> {
-    println!("Initializing OmniRoute environment check...");
-
-    let mut output = String::new();
-
-    // 1. Check/Install Node.js (via Homebrew for Mac as a baseline)
-    #[cfg(target_os = "macos")]
-    {
-        let node_check = Command::new("node").arg("-v").output();
-        if node_check.is_err() {
-            output.push_str("Node.js not found. Attempting installation via brew...\n");
-            let install_node = Command::new("brew").args(["install", "node"]).output();
-            if install_node.is_err() || !install_node.unwrap().status.success() {
-                return Err(
-                    "Failed to install Node.js. Please install it manually from https://nodejs.org"
-                        .to_string(),
-                );
-            }
-            output.push_str("Node.js installed successfully.\n");
-        } else {
-            output.push_str("Node.js is already installed.\n");
-        }
-    }
-
-    // 2. Check/Install OmniRoute
-    let omniroute_check = Command::new("omniroute").arg("--version").output();
-    if omniroute_check.is_err() {
-        output.push_str("OmniRoute not found. Installing via npm...\n");
-        let install_omni = Command::new("npm")
-            .args(["install", "-g", "omniroute"])
-            .output();
-        if install_omni.is_err() || !install_omni.unwrap().status.success() {
-            return Err(
-                "Failed to install OmniRoute. Please run 'npm install -g omniroute' manually."
-                    .to_string(),
-            );
-        }
-        output.push_str("OmniRoute installed successfully.\n");
-    } else {
-        output.push_str("OmniRoute is already installed.\n");
-    }
-
-    // 3. Start OmniRoute Server in background (assuming it has a server mode)
-    // If omniroute is a CLI tool and not a daemon, this might differ.
-    // We'll try to launch it as a detached process.
-    let _ = Command::new("omniroute")
-        .arg("server")
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .spawn();
-
-    output.push_str("OmniRoute server started in background.\n");
-
-    Ok(output)
+    Ok("Start the installed gateway in your terminal with: omniroute. Prism does not install or start it automatically.".into())
 }
 
 #[tauri::command]
@@ -767,6 +715,15 @@ fn write_file(
     let _mutation = knowledge::operations::lock()?;
     let path = Path::new(&file_path);
     knowledge::validate_path(&app_handle, path)?;
+    if content.len() as u64 > knowledge::note_io::MAX_NOTE_BYTES {
+        return Err("NOTE_TOO_LARGE: Notes are limited to 50 MiB.".into());
+    }
+    if !matches!(path.extension().and_then(|ext| ext.to_str()), Some("md" | "markdown")) {
+        return Err("Unsupported note file type".into());
+    }
+    if path.is_file() && fs::metadata(path).map_err(|e| e.to_string())?.len() > 1024 * 1024 {
+        return Err("NOTE_TOO_LARGE: This note requires the streamed save interface.".into());
+    }
     if let Some(parent) = path.parent() {
         if !parent.exists() {
             fs::create_dir_all(parent).map_err(|e| e.to_string())?;
@@ -788,6 +745,11 @@ fn write_file(
     // notes row + applied [[wikilinks]] + mention backlinks. This is cheap
     // (regex + Aho-Corasick) and makes the graph 1:1 with the vault.
     if let Ok(conn) = db::init_db(&app_handle) {
+        if content.len() as usize > engine::embeddings::MAX_EMBED_CHARS {
+            let _ = conn.execute("DELETE FROM backlinks WHERE source_path=?1", [&file_path]);
+            let _ = conn.execute("DELETE FROM links WHERE source=?1", [&file_path]);
+            return Ok(());
+        }
         let title = path
             .file_stem()
             .map(|s| s.to_string_lossy().to_string())
@@ -825,6 +787,7 @@ const LARGE_NOTE_CHARS: usize = 200_000;
 
 #[tauri::command]
 fn read_file(file_path: String) -> Result<String, String> {
+    knowledge::note_io::revision(Path::new(&file_path))?;
     fs::read_to_string(&file_path).map_err(|e| e.to_string())
 }
 
@@ -2370,7 +2333,14 @@ pub fn run() {
             knowledge::agent::agent_undo_operation,
             knowledge::jobs::list_knowledge_jobs,
             knowledge::jobs::cancel_knowledge_job,
+            knowledge::agent::prepare_ai_enhancement,
             knowledge::models::execute_model,
+            knowledge::note_io::read_note_chunk,
+            knowledge::note_io::begin_note_save,
+            knowledge::note_io::append_note_save,
+            knowledge::note_io::finish_note_save,
+            knowledge::note_io::cancel_note_save,
+            knowledge::models::model_service_status,
             knowledge::models::list_approvals,
             knowledge::models::resolve_approval,
             notebook::notebook_start,

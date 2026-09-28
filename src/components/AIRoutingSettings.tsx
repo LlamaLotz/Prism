@@ -3,7 +3,7 @@ import type { AppSettings } from '../types';
 import './runtime.css';
 
 type ModelSettings = NonNullable<AppSettings['models']>;
-const FEATURES = { CHAT: 'Chat', SUMMARIZE: 'Summarize', TAG: 'Tag', CLASSIFY: 'Classify' };
+const FEATURES = { CHAT: 'Chat', SUMMARIZE: 'Summarize', TAG: 'Tag', CLASSIFY: 'Classify', LINK_SUGGEST: 'Link suggestions', FORMAT: 'AI formatting', AI_SCAN: 'AI scan' };
 
 export function AIRoutingSettings({ draft, setDraft }: {
   draft: AppSettings;
@@ -56,7 +56,7 @@ export function AIRoutingSettings({ draft, setDraft }: {
     </div>
     <div className="runtime-local">
       <p><strong>Embeddings:</strong> built-in local</p>
-      <p><strong>Formatting:</strong> deterministic local</p>
+      <p><strong>Standard formatting:</strong> deterministic local; optional AI formatting uses its selected provider</p>
       <p><strong>Notebook generation and speech:</strong> configured in Notebook settings</p>
     </div>
     <p className="mt-3">Privacy applies to Prism AI and the managed Notebook gateway. A localhost provider may forward to cloud; selecting it does not verify local execution or bypass approval.</p>

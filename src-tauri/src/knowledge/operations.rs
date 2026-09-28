@@ -254,6 +254,32 @@ pub fn capture(
         undo_post: None,
     })
 }
+
+/// Captures a staged editor upload as the same journaled edit operation used by
+/// ordinary note changes. Revisions are checked before reading either file;
+/// capture/apply then verify source content and filesystem identity again.
+pub fn capture_file(
+    c: &Connection,
+    scope: &Scope,
+    tool: &str,
+    source: &str,
+    destination: Option<String>,
+    staged: &Path,
+    expected_revision: &str,
+) -> Result<Mutation, String> {
+    validate(&scope.root, Path::new(source))?;
+    validate(&scope.root, staged)?;
+    if super::note_io::revision(Path::new(source))? != expected_revision {
+        return Err(conflict("Note changed since the save began"));
+    }
+    let old = std::fs::read_to_string(source).map_err(persistence)?;
+    let new = std::fs::read_to_string(staged).map_err(persistence)?;
+    if super::note_io::revision(Path::new(source))? != expected_revision {
+        return Err(conflict("Note changed while the save was being staged"));
+    }
+    capture(c, scope, tool, source, destination, &old, &new)
+}
+
 pub(crate) fn verify(
     scope: &Scope,
     m: &Mutation,
@@ -933,6 +959,32 @@ mod tests {
         std::fs::write(&p, text).unwrap();
         super::super::sync(c, &s.vault_id, &p.to_string_lossy(), text).unwrap();
         p.to_string_lossy().into()
+    }
+    #[test]
+    fn streamed_save_capture_is_journaled_and_undoable_across_thresholds() {
+        for size in [128 * 1024, 2 * 1024 * 1024] {
+            let (_dir, db, s) = fixture();
+            let path = note(&db.conn, &s, "a.md", "before");
+            let staged = s.root.join(".prism/recovery/uploads/staged");
+            std::fs::create_dir_all(staged.parent().unwrap()).unwrap();
+            let text = "x".repeat(size);
+            std::fs::write(&staged, &text).unwrap();
+            let revision = super::super::note_io::revision(Path::new(&path)).unwrap();
+            let mutation = capture_file(
+                &db.conn,
+                &s,
+                "edit_note",
+                &path,
+                None,
+                &staged,
+                &revision,
+            )
+            .unwrap();
+            let id = apply(&db.conn, &s, &mutation).unwrap();
+            assert_eq!(std::fs::read_to_string(&path).unwrap(), text);
+            undo(&db.conn, &s, &id).unwrap();
+            assert_eq!(std::fs::read_to_string(&path).unwrap(), "before");
+        }
     }
     #[test]
     fn recovery_does_not_bless_a_replaced_postimage() {

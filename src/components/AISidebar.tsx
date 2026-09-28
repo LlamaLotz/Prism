@@ -1,3 +1,4 @@
+import { needsAgent } from '../utils/agentIntent';
 import { useDocumentImports } from './DocumentImports';
 import { mergeAgentContext } from '../services/agentContext';
 import React, { useState, useRef, useEffect, useCallback } from 'react';
@@ -240,6 +241,14 @@ export const AISidebar: React.FC<AISidebarProps> = ({
   const [searchMode, setSearchMode] = useState(false);
   const [error, setError] = useState<ErrorDetails | null>(null);
   const [agentMode, setAgentMode] = useState(false);
+  const [agentPrompt, setAgentPrompt] = useState<string | null>(null);
+  const agentDialog = useRef<HTMLDialogElement>(null);
+  useEffect(() => {
+    if (!agentPrompt) return;
+    const previous = document.activeElement as HTMLElement | null;
+    agentDialog.current?.showModal();
+    return () => { agentDialog.current?.close(); previous?.focus(); };
+  }, [agentPrompt]);
   const [pendingAgent, setPendingAgent] = useState<AgentPending[]>([]);
   const [operations, setOperations] = useState<AgentOperation[]>([]);
   const [staleProposal, setStaleProposal] = useState<AgentPending | null>(null);
@@ -596,6 +605,8 @@ export const AISidebar: React.FC<AISidebarProps> = ({
 
   const handleSubmit = async () => {
     setStickToBottom(true);
+    if (isLoading || isSearching || agentPrompt) return;
+    if (!searchMode && !agentMode && needsAgent(inputValue)) { setAgentPrompt(inputValue); return; }
     if (searchMode) {
       const query = inputValue.trim();
       setInputValue('');
@@ -692,6 +703,16 @@ export const AISidebar: React.FC<AISidebarProps> = ({
         </div>
       </div>
 
+      {!agentMode && <p className="agent-mode-hint">Chat only — tools disabled</p>}
+      <dialog ref={agentDialog} className="runtime-dialog runtime-surface" aria-labelledby="agent-enable-title" onCancel={() => setAgentPrompt(null)}>
+        <h2 id="agent-enable-title">Turn on Agent?</h2>
+        <p>This request may need tools. Turn on Agent to let Prism prepare the action?</p>
+        <div className="runtime-actions">
+          <button className="runtime-button" autoFocus onClick={() => setAgentPrompt(null)}>Cancel</button>
+          <button className="runtime-button" onClick={() => { const prompt = agentPrompt; setAgentPrompt(null); if (prompt) void handleSend(prompt); }}>Send as chat</button>
+          <button className="runtime-button runtime-primary" onClick={() => { const prompt = agentPrompt; setAgentPrompt(null); setAgentMode(true); if (prompt) void handleAgentTurn(prompt); }}>Turn on Agent and send</button>
+        </div>
+      </dialog>
       {/* Connection warning */}
       {!isConfigured && (
         <div className="ai-integration-warning m-3 p-3 bg-brand-950/20 border border-brand-900/50 rounded-xl flex items-start gap-2.5">

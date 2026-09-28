@@ -2034,4 +2034,18 @@ button[role="tab"][aria-selected="true"] {
 }
 
 
-
+
+
+/* Shared control geometry is declared last to override legacy utility rules. */
+:root { --control-radius: 0px; --app-radius: 0px; --control-edge: #71717a; }
+.mode-light { --control-edge: #72727a; }
+.theme-glass, .theme-gloss { --control-radius: 12px; --app-radius: 16px; }
+.theme-industrial :is(button,input,select,textarea,[role="button"],dialog) { border-radius: 0 !important; }
+.theme-industrial :is(.titlebar-window-control,.status-indicator-dot) { border-radius: 50% !important; }
+:is(.theme-glass,.theme-gloss) .liquid-gloss-app { border-radius: var(--app-radius) !important; overflow: hidden; isolation: isolate; clip-path: inset(0 round var(--app-radius)); }
+.window-edge-to-edge { --app-radius: 0px; }
+:is(.theme-glass,.theme-gloss) body, :is(.theme-glass,.theme-gloss) #root { background: transparent; }
+:is(.runtime-button,.runtime-trigger,.nb-button) { border-color: var(--control-edge); border-radius: var(--control-radius); }
+.runtime-button[aria-pressed=true], .runtime-button[aria-pressed=true]:hover { color: var(--color-text-hi); border-color: var(--control-edge); }
+button:focus-visible, [role="button"]:focus-visible { outline: 2px solid var(--color-text-hi); outline-offset: 2px; }
+.agent-mode-hint { padding: 6px 12px; color: var(--color-text-body); font-size: 11px; }

@@ -1,3 +1,6 @@
+import { LARGE_NOTE_BYTES } from '../services/noteIO';
+import { buildSparseLineIndex, getLineRange, type SparseLineIndex } from '../utils/largeText';
+import { AIEnhancements } from './AIEnhancements';
 import { DocumentSourcesButton } from './DocumentImports';
 import React, { useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback } from 'react';
 import { Eye, Edit2, FileText, Calendar, Link2, ChevronUp, ChevronDown, X, Search, Anchor, Wand2, Info, Copy, Check, Scissors, History as HistoryIcon, RotateCcw, Undo2, Redo2 } from 'lucide-react';
@@ -162,49 +165,37 @@ interface SearchMatch {
   ch: number;   // 0-based char offset of the match within its line
 }
 
-function findMatches(doc: string, query: string, caseSensitive: boolean): SearchMatch[] {
+function findMatches(doc: string, query: string, caseSensitive: boolean, maxMatches = Number.POSITIVE_INFINITY): SearchMatch[] {
   if (!query) return [];
-  const haystack = caseSensitive ? doc : doc.toLowerCase();
   const needle = caseSensitive ? query : query.toLowerCase();
-
-  const lineStarts: number[] = [0];
-  for (let i = 0; i < haystack.length; i++) {
-    if (haystack[i] === '\n') lineStarts.push(i + 1);
-  }
-  const lineIndexAt = (pos: number): number => {
-    let lo = 0;
-    let hi = lineStarts.length - 1;
-    let idx = 0;
-    while (lo <= hi) {
-      const mid = (lo + hi) >> 1;
-      if (lineStarts[mid] <= pos) {
-        idx = mid;
-        lo = mid + 1;
-      } else {
-        hi = mid - 1;
-      }
-    }
-    return idx;
-  };
-
   const matches: SearchMatch[] = [];
-  let idx = 0;
-  while (idx < haystack.length) {
-    const pos = haystack.indexOf(needle, idx);
-    if (pos === -1) break;
-    const lineStart = lineStarts[lineIndexAt(pos)];
-    matches.push({
-      line: lineIndexAt(pos) + 1,
-      from: pos,
-      to: pos + needle.length,
-      ch: pos - lineStart,
-    });
-    idx = pos + Math.max(needle.length, 1);
+  let offset = 0;
+  let line = 1;
+  let lineStart = 0;
+  // Scan line-by-line so very large notes don't allocate another full-size
+  // lower-cased copy and a full-document line-start table for every search.
+  while (offset <= doc.length) {
+    const lineEnd = doc.indexOf('\n', offset);
+    const end = lineEnd < 0 ? doc.length : lineEnd;
+    const rawLine = doc.slice(offset, end);
+    const haystack = caseSensitive ? rawLine : rawLine.toLowerCase();
+    let idx = 0;
+    while (idx <= haystack.length - needle.length) {
+      const found = haystack.indexOf(needle, idx);
+      if (found < 0) break;
+      matches.push({ line, from: lineStart + found, to: lineStart + found + needle.length, ch: found });
+      idx = found + Math.max(needle.length, 1);
+      if (matches.length >= maxMatches) return matches;
+    }
+    if (lineEnd < 0) break;
+    offset = lineEnd + 1;
+    lineStart = offset;
+    line++;
   }
   return matches;
 }
 
-const setSearchQueryEffect = StateEffect.define<{ query: string; caseSensitive: boolean }>();
+const setSearchQueryEffect = StateEffect.define<{ query: string; caseSensitive: boolean; matches?: SearchMatch[] }>();
 const setSearchActiveEffect = StateEffect.define<number>();
 
 // Renders all search matches as .search-match decorations, with the active
@@ -221,7 +212,7 @@ const searchField = StateField.define<{
     let v = value;
     for (const e of tr.effects) {
       if (e.is(setSearchQueryEffect)) {
-        const matches = findMatches(tr.state.doc.toString(), e.value.query, e.value.caseSensitive);
+        const matches = e.value.matches ?? findMatches(tr.state.doc.toString(), e.value.query, e.value.caseSensitive);
         v = {
           query: e.value.query,
           caseSensitive: e.value.caseSensitive,
@@ -233,12 +224,9 @@ const searchField = StateField.define<{
       }
     }
     if (tr.docChanged && v.query) {
-      const matches = findMatches(tr.state.doc.toString(), v.query, v.caseSensitive);
-      v = {
-        ...v,
-        matches,
-        active: matches.length ? Math.min(Math.max(v.active, 0), matches.length - 1) : -1,
-      };
+      // React owns the debounced, bounded result set; never rescan a large CM
+      // document synchronously from the transaction update path.
+      v = { ...v, matches: [], active: -1 };
     }
     return v;
   },
@@ -523,7 +511,7 @@ export const Editor: React.FC<EditorProps> = ({
   const [windowAnchorLine, setWindowAnchorLine] = useState<number | null>(null);
   // Heavy paths are disabled for oversized notes (see LARGE_NOTE_CHARS).
   const isLargeNote = useMemo(
-    () => (note?.content?.length ?? 0) > LARGE_NOTE_CHARS,
+    () => new Blob([note?.content ?? '']).size > LARGE_NOTE_BYTES,
     [note?.content]
   );
   // Hidden local keywords (`---kw---`) declared in the note body, surfaced
@@ -557,7 +545,10 @@ export const Editor: React.FC<EditorProps> = ({
   const [searchQuery, setSearchQuery] = useState('');
   const [searchCaseSensitive, setSearchCaseSensitive] = useState(false);
   const [matches, setMatches] = useState<SearchMatch[]>([]);
+  const [searchTruncated, setSearchTruncated] = useState(false);
+  const [searchDocRevision, setSearchDocRevision] = useState(0);
   const [activeMatchIndex, setActiveMatchIndex] = useState(0);
+  const searchRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
 
   // Latest mode, read from inside async/raf callbacks (not a hook dep).
@@ -593,7 +584,27 @@ export const Editor: React.FC<EditorProps> = ({
 
   // Splitting a multi-MB note per render (scroll events, preview frames) is
   // needless GC churn — the line array only changes with the content itself.
-  const lines = useMemo(() => content.split('\n'), [content]);
+  // Large previews retain only a sparse line index and materialize visible
+  // lines on demand rather than building an array entry for every line.
+  const previewLineIndex = useMemo<SparseLineIndex | null>(
+    () => isLargeNote && content.length > 2_000_000 ? buildSparseLineIndex(content) : null,
+    [content, isLargeNote]
+  );
+  const lines = useMemo(
+    () => (previewLineIndex ? [] as string[] : content.split('\n')),
+    [content, previewLineIndex]
+  );
+  const lineCount = previewLineIndex?.lineCount ?? lines.length;
+  // Browsers clamp giant element heights (commonly around 33M CSS px). Compress
+  // the virtual line scale for extreme newline-heavy files while keeping every
+  // line reachable through proportional scroll and search/block navigation.
+  const previewLineHeight = Math.min(PREVIEW_LINE_HEIGHT, 8_000_000 / Math.max(lineCount, 1));
+  const getPreviewLineRange = useCallback((start: number, end: number) => {
+    const first = Math.max(0, Math.min(start, lineCount));
+    const last = Math.max(first, Math.min(end, lineCount));
+    if (!previewLineIndex) return lines.slice(first, last);
+    return getLineRange(content, previewLineIndex, first, last);
+  }, [content, lineCount, lines, previewLineIndex]);
 
   // Single funnel for programmatic content changes: keeps React state, refs,
   // and the CodeMirror doc in lockstep without triggering the autosave path
@@ -610,6 +621,12 @@ export const Editor: React.FC<EditorProps> = ({
     }
   }, []);
 
+  const pendingLargeDoc = useRef<{path: string; view: EditorView} | null>(null);
+  const materializeLarge = (path: string) => {
+    const pending = pendingLargeDoc.current;
+    if (pending?.path === path) { contentRef.current = pending.view.state.doc.toString(); pendingLargeDoc.current = null; setContent(contentRef.current); }
+    return contentRef.current;
+  };
   const forceSave = useCallback(() => {
     if (!dirtyRef.current) return;
     if (timerRef.current) clearTimeout(timerRef.current);
@@ -620,8 +637,9 @@ export const Editor: React.FC<EditorProps> = ({
     if (path) {
       // Auto-link on save (Linking setting), then persist the possibly
       // rewritten content.
+      materializeLarge(path);
       autoApplyMentionsRef.current();
-      saveRef.current(path, contentRef.current);
+      void saveRef.current(path, contentRef.current).catch(() => { dirtyRef.current = true; setIsSaved(false); });
     }
   }, []);
 
@@ -648,7 +666,7 @@ export const Editor: React.FC<EditorProps> = ({
   // frame — that would re-render the whole (fully rendered) note on every
   // scroll tick and stutter scrolling.
   const largeNoteRef = useRef(false);
-  largeNoteRef.current = lines.length > settings.editor.fullRenderLineThreshold;
+  largeNoteRef.current = isLargeNote || lineCount > settings.editor.fullRenderLineThreshold;
   useEffect(() => {
     const el = previewRef.current;
     if (!el || mode !== 'preview') return;
@@ -1100,7 +1118,7 @@ export const Editor: React.FC<EditorProps> = ({
       } else {
         console.warn('[jump] preview element NOT found for line', lineNo, '- using estimate');
         appLogger.warn(`Block jump: preview element NOT found for line ${lineNo} — estimate used`);
-        const est = Math.max((lineNo - 1) * PREVIEW_LINE_HEIGHT - el.clientHeight / 3, 0);
+        const est = Math.max((lineNo - 1) * previewLineHeight - el.clientHeight / 3, 0);
         el.scrollTop = est;
         previewScrollTopRef.current = est;
         flashJumpStatus(`Element for line ${lineNo} not found — scrolled to estimate`);
@@ -1117,7 +1135,7 @@ export const Editor: React.FC<EditorProps> = ({
         setFullRenderAnchor(null);
       }, 2000);
     });
-  }, []);
+  }, [previewLineHeight]);
 
   // Same-frame drift correction: when the jump band closes, the windowed
   // spacers (28px/line estimates) replace the real content above the target,
@@ -1140,11 +1158,11 @@ export const Editor: React.FC<EditorProps> = ({
       previewScrollTopRef.current = top;
     } else {
       // Line virtualized out of the DOM: align with the spacer math.
-      const est = Math.max((lineNo - 1) * PREVIEW_LINE_HEIGHT - el.clientHeight / 3, 0);
+      const est = Math.max((lineNo - 1) * previewLineHeight - el.clientHeight / 3, 0);
       el.scrollTop = Math.min(est, max);
       previewScrollTopRef.current = el.scrollTop;
     }
-  }, [fullRender, mode]);
+  }, [fullRender, mode, previewLineHeight]);
 
   // Block-jump in preview mode: center the line, then flash-highlight it.
   const jumpPreview = useCallback(
@@ -1185,7 +1203,7 @@ export const Editor: React.FC<EditorProps> = ({
       `Block jump requested: ${note.title}${scrollRequest.blockId ? ` block "${scrollRequest.blockId}"` : ` line ${scrollRequest.line}`} (${modeRef.current} mode)`
     );
     let lineNo: number | null = null;
-    if (scrollRequest.line && scrollRequest.line <= lines.length) {
+    if (scrollRequest.line && scrollRequest.line <= lineCount) {
       lineNo = scrollRequest.line;
     } else if (scrollRequest.blockId) {
       const idx = findBlockLine(doc, scrollRequest.blockId);
@@ -1290,11 +1308,53 @@ export const Editor: React.FC<EditorProps> = ({
   // Recompute the shared match list whenever the content, query or case flag
   // changes (keeps the counter + preview highlights in sync with the doc).
   useEffect(() => {
-    const ms = findMatches(content, isSearchOpen ? searchQuery : '', searchCaseSensitive);
-    setMatches(ms);
-    setActiveMatchIndex((i) => (ms.length ? Math.min(Math.max(i, 0), ms.length - 1) : 0));
+    let cancelled = false;
+    const query = isSearchOpen ? searchQuery : '';
+    if (!query) { setMatches([]); setSearchTruncated(false); setActiveMatchIndex(0); return; }
+    // Chunk work between event-loop turns for large documents so typing and
+    // navigation remain responsive. The final result is bounded for rendering.
+    const run = async () => {
+      // Large-note typing intentionally avoids copying the full CodeMirror doc
+      // into React state. Materialize it only when a committed find query asks
+      // for a scan, so search always sees the live document.
+      const searchableContent = isLargeNote ? viewRef.current?.state.doc.toString() ?? content : content;
+      const result = await new Promise<SearchMatch[]>((resolve) => {
+        const found: SearchMatch[] = [];
+        const needle = searchCaseSensitive ? query : query.toLowerCase();
+        let offset = 0, line = 1, lineStart = 0;
+        const step = () => {
+          if (cancelled) return;
+          const deadline = performance.now() + 8;
+          while (offset <= searchableContent.length && performance.now() < deadline) {
+            const lineEnd = searchableContent.indexOf('\n', offset);
+            const end = lineEnd < 0 ? searchableContent.length : lineEnd;
+            const source = searchableContent.slice(offset, end);
+            const haystack = searchCaseSensitive ? source : source.toLowerCase();
+            let pos = 0;
+            while (pos <= haystack.length - needle.length) {
+              const at = haystack.indexOf(needle, pos);
+              if (at < 0) break;
+              found.push({ line, from: lineStart + at, to: lineStart + at + needle.length, ch: at });
+              pos = at + Math.max(needle.length, 1);
+              if (found.length >= 20_000) break;
+            }
+            if (found.length >= 20_000 || lineEnd < 0) { resolve(found); return; }
+            offset = lineEnd + 1; lineStart = offset; line++;
+          }
+          if (offset > searchableContent.length) resolve(found); else window.setTimeout(step, 0);
+        };
+        step();
+      });
+      if (!cancelled) {
+        setMatches(result);
+        setSearchTruncated(result.length >= 20_000);
+        setActiveMatchIndex(i => result.length ? Math.min(Math.max(i, 0), result.length - 1) : 0);
+      }
+    };
+    void run();
+    return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [content, searchQuery, searchCaseSensitive, isSearchOpen]);
+  }, [content, searchQuery, searchCaseSensitive, isSearchOpen, isLargeNote, searchDocRevision]);
 
   // Push the query + active index into the CodeMirror search decorations.
   useEffect(() => {
@@ -1305,12 +1365,13 @@ export const Editor: React.FC<EditorProps> = ({
         setSearchQueryEffect.of({
           query: isSearchOpen ? searchQuery : '',
           caseSensitive: searchCaseSensitive,
+          matches,
         }),
         setSearchActiveEffect.of(activeMatchIndex),
       ],
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchQuery, searchCaseSensitive, activeMatchIndex, isSearchOpen]);
+  }, [searchQuery, searchCaseSensitive, activeMatchIndex, isSearchOpen, isLargeNote, matches]);
 
   // Navigate to the active match: scroll the editor or the preview viewport.
   // NOTE: no `view.focus()` here — while the search overlay is open the
@@ -1346,6 +1407,7 @@ export const Editor: React.FC<EditorProps> = ({
     setSearchQuery('');
     setSearchCaseSensitive(false);
     setMatches([]);
+    setSearchTruncated(false);
     setActiveMatchIndex(0);
   }, []);
 
@@ -1693,6 +1755,7 @@ export const Editor: React.FC<EditorProps> = ({
   // switch/unmount, formatter execution and the 30s idle debounce — never on
   // the 800ms typing autosave (which would spam one delta per keystroke burst).
   const flushAndSnapshot = useCallback((path: string, doc: string) => {
+    if (pendingLargeDoc.current?.path === path) doc = materializeLarge(path);
     if (dirtyRef.current) {
       if (timerRef.current) {
         clearTimeout(timerRef.current);
@@ -1701,9 +1764,9 @@ export const Editor: React.FC<EditorProps> = ({
       dirtyRef.current = false;
       setIsSaved(true);
       saveRef.current(path, doc).then(() => {
-        tauriAPI.recordNoteVersion(path, doc).catch(() => {});
-      });
-    } else {
+        if (new Blob([doc]).size <= LARGE_NOTE_BYTES) void tauriAPI.recordNoteVersion(path, doc).catch(() => {});
+      }).catch(() => { dirtyRef.current = true; setIsSaved(false); });
+    } else if (new Blob([doc]).size <= LARGE_NOTE_BYTES) {
       tauriAPI.recordNoteVersion(path, doc).catch(() => {});
     }
   }, []);
@@ -1734,7 +1797,7 @@ export const Editor: React.FC<EditorProps> = ({
       // effect below re-creates the editor (plain-text, deps isLargeNote) with
       // the loaded content as its initial doc, so a 4MB full-doc replace into
       // a markdown editor (Lezer re-parse) never happens.
-      if ((note.content ?? '').length > LARGE_NOTE_CHARS) {
+      if (new Blob([note.content ?? '']).size > LARGE_NOTE_BYTES) {
         contentRef.current = note.content ?? '';
         setContent(note.content ?? '');
       } else {
@@ -1855,12 +1918,31 @@ const sidecarPath = (notePath: string): string => {
       cmTheme,
       flashField,
       searchField,
-      EditorView.lineWrapping,
+      ...(isLargeNote ? [] : [EditorView.lineWrapping]),
       EditorView.updateListener.of((u: ViewUpdate) => {
         if (!u.docChanged) return;
         // Undo/redo depth changed (typing, undo, redo, programmatic edits) —
         // refresh the toolbar buttons.
         setHistTick((t) => t + 1);
+        if (isLargeNote) {
+          const path = noteRef.current?.path;
+          if (!path) return;
+          pendingLargeDoc.current = { path, view: u.view };
+          if (searchRefreshTimerRef.current) clearTimeout(searchRefreshTimerRef.current);
+          searchRefreshTimerRef.current = setTimeout(() => {
+            searchRefreshTimerRef.current = null;
+            setSearchDocRevision((revision) => revision + 1);
+          }, 400);
+          dirtyRef.current = true; setIsSaved(false);
+          if (timerRef.current) clearTimeout(timerRef.current);
+          timerRef.current = setTimeout(() => {
+            timerRef.current = null;
+            const doc = materializeLarge(path);
+            dirtyRef.current = false;
+            void saveRef.current(path, doc).then(() => setIsSaved(true)).catch(() => { dirtyRef.current = true; setIsSaved(false); });
+          }, Math.max(1000, settings.editor.autosaveDebounceMs));
+          return;
+        }
         const doc = u.state.doc.toString();
         if (doc === contentRef.current) return; // programmatic sync, not typing
         contentRef.current = doc;
@@ -1876,7 +1958,7 @@ const sidecarPath = (notePath: string): string => {
             // Auto-link on save (Linking setting), then persist the possibly
             // rewritten content (contentRef may have been updated by it).
             autoApplyMentionsRef.current();
-            saveRef.current(path, contentRef.current);
+            void saveRef.current(path, contentRef.current).catch(() => { dirtyRef.current = true; setIsSaved(false); });
           }
         }, settings.editor.autosaveDebounceMs);
 
@@ -1962,6 +2044,8 @@ const sidecarPath = (notePath: string): string => {
     const view = new EditorView({ state, parent: container });
     viewRef.current = view;
     return () => {
+      if (searchRefreshTimerRef.current) clearTimeout(searchRefreshTimerRef.current);
+      searchRefreshTimerRef.current = null;
       view.destroy();
       viewRef.current = null;
     };
@@ -2276,10 +2360,10 @@ const sidecarPath = (notePath: string): string => {
             }`}
           >
             Aa
-          </button>
-          <span className="text-[10px] text-slate-500 whitespace-nowrap text-center min-w-12 tabular-nums">
+          </button>          <span className="text-[10px] text-slate-500 whitespace-nowrap text-center min-w-12 tabular-nums" title={searchTruncated ? 'Showing the first 20,000 matches.' : undefined}>
+
             {searchQuery
-              ? `${matches.length ? activeMatchIndex + 1 : 0}/${matches.length}`
+              ? `${matches.length ? activeMatchIndex + 1 : 0}/${searchTruncated ? '20,000+' : matches.length}`
               : ''}
           </span>
           <button
@@ -2373,6 +2457,10 @@ const sidecarPath = (notePath: string): string => {
               <Redo2 className="w-3.5 h-3.5" />
             </button>
           </div>
+          <AIEnhancements key={note.path} path={note.path} content={content} onChanged={async () => {
+            const refreshed = await tauriAPI.readFile(note.path); updateContent(refreshed);
+          }} />
+          {isLargeNote && <span className="agent-mode-hint" title="Plain-text editing and full-text search. Preview is bounded; whole-note AI and automatic semantic scans are disabled.">Large-note mode</span>}
           {/* Tools dropdown */}
           <div className="relative" ref={toolsRef}>
             <button
@@ -2487,7 +2575,8 @@ const sidecarPath = (notePath: string): string => {
         {/* CodeMirror editor: always mounted so scroll/highlight state survives
             mode switches; hidden (display:none) while in preview. */}
         <div
-          ref={cmContainerRef}
+            ref={cmContainerRef}
+
           className={`flex-1 w-full overflow-hidden ${mode === 'edit' ? '' : 'hidden'}`}
         />
         {mode === 'preview' && (
@@ -2499,8 +2588,8 @@ const sidecarPath = (notePath: string): string => {
               <div className="text-slate-600 italic text-xs">This note is empty. Click "Edit" to add content.</div>
             ) : (
               (() => {
-                const totalLines = lines.length;
-                const totalHeight = totalLines * PREVIEW_LINE_HEIGHT;
+                const totalLines = lineCount;
+                const totalHeight = totalLines * previewLineHeight;
                 // Windowed band rendering only pays off on genuinely huge
                 // notes (multi-MB / 10k+ lines). On ordinary notes the
                 // 28px/line estimate drifts badly from real rendered heights
@@ -2526,8 +2615,8 @@ const sidecarPath = (notePath: string): string => {
                     start = Math.max(0, windowAnchorLine - PREVIEW_BUFFER);
                     end = Math.min(totalLines, windowAnchorLine + PREVIEW_BUFFER + 1);
                   } else {
-                    start = Math.max(0, Math.floor(previewScrollTop / PREVIEW_LINE_HEIGHT) - PREVIEW_BUFFER);
-                    end = Math.min(totalLines, Math.ceil((previewScrollTop + previewViewportHeight) / PREVIEW_LINE_HEIGHT) + PREVIEW_BUFFER);
+                    start = Math.max(0, Math.floor(previewScrollTop / previewLineHeight) - PREVIEW_BUFFER);
+                    end = Math.min(totalLines, Math.ceil((previewScrollTop + previewViewportHeight) / previewLineHeight) + PREVIEW_BUFFER);
                   }
                 } else if (
                   totalLines > settings.editor.fullRenderLineThreshold &&
@@ -2546,18 +2635,18 @@ const sidecarPath = (notePath: string): string => {
                 if (!windowed) {
                   // Full render: no estimated-height wrapper — real content
                   // heights give an exact scrollbar and a reachable bottom.
-                  return renderMarkdown(lines.slice(start, end), start);
+                  return renderMarkdown(getPreviewLineRange(start, end), start);
                 }
                 return (
                   <div
                     style={{
-                      paddingTop: start * PREVIEW_LINE_HEIGHT,
-                      paddingBottom: (totalLines - end) * PREVIEW_LINE_HEIGHT,
+                      paddingTop: start * previewLineHeight,
+                      paddingBottom: (totalLines - end) * previewLineHeight,
                       height: totalHeight,
                       boxSizing: 'border-box',
                     }}
                   >
-                    {renderMarkdown(lines.slice(start, end), start)}
+                    {renderMarkdown(getPreviewLineRange(start, end), start)}
                   </div>
                 );
               })()
@@ -2660,7 +2749,7 @@ const sidecarPath = (notePath: string): string => {
                 if (source) rows.push({ label: 'Source', value: source });
                 else rows.push({ label: 'Source', value: '—' });
                 rows.push(
-                  { label: 'Lines', value: lines.length.toLocaleString() },
+                  { label: 'Lines', value: lineCount.toLocaleString() },
                   {
                     label: 'Words',
                     value: (content ? content.trim().split(/\s+/).filter(Boolean).length : 0).toLocaleString(),

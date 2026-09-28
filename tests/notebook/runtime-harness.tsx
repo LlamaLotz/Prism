@@ -1,3 +1,5 @@
+import { ModelServiceRecovery } from '../../src/components/ModelServiceRecovery';
+import { AIEnhancements } from '../../src/components/AIEnhancements';
 import React, {useState} from 'react';
 import { createRoot } from 'react-dom/client';
 import { DocumentImports, DocumentSourcesButton } from '../../src/components/DocumentImports';
@@ -24,6 +26,7 @@ if(query.has('manyoperations')) operations=Array.from({length:10},(_,i)=>({id:`o
 let chats=JSON.parse(localStorage.getItem('fixture-chats') || '[]');
 let transcript=JSON.parse(localStorage.getItem('fixture-transcript') || '[]');
 let modelRound=0;
+let checks=0;
 const source=(id:string)=>({noteId:`note-${id}`,blockId:`block-${id}`,path:`/vault/${id}.md`,title:`Source ${id}`,anchor:null,headingPath:[]});
 let importOptions=JSON.parse(localStorage.getItem('document-options')||'null')||{name:'Research 日本',folder:'Research',splitLevel:null,keepSource:false,separateCopy:false,excludedOutputs:[]};
 let importState=localStorage.getItem('document-state')||'review';
@@ -47,7 +50,9 @@ Object.defineProperty(window,'__TAURI_INTERNALS__',{value:{transformCallback:()=
  if(command==='get_chat_messages')return transcript;
  if(command==='agent_list_tools')return [{name:'read_note',description:'Read a note',requiresApproval:false,category:'read'}];
  if(command==='plan_retrieval')return {query:'fixture',blocks:[],contextText:'Source material',citations:[source('paged-out')],contextCitations:modelRound===0?[source('A')]:[source('A'),source('B')],degraded:modelRound===0?'Embeddings unavailable; lexical results used':null};
- if(command==='execute_model'){modelRound++;return modelRound===1?'```json\n{"tool":"read_note","input":{"noteId":"note-A"}}\n```':'Final answer from both rounds.';}
+ if(command==='model_service_status'){checks++;return {state:checks>1?'ready':'unavailable',command:'ollama serve',message:checks>1?'Ready':'Start your installed service.'};}
+ if(command==='prepare_ai_enhancement')return {tool:'edit_note',requiresApproval:true,approvalId:'edit-1',preview:'- Original\n+ Formatted',result:null,error:null};
+ if(command==='execute_model'){if(query.has('service') && checks<2)throw new Error('SERVICE_UNAVAILABLE: Provider connection failed');modelRound++;return modelRound===1?'```json\n{"tool":"read_note","input":{"noteId":"note-A"}}\n```':'Final answer from both rounds.';}
  if(command==='agent_call_tool'){
   const request=args.request as {tool:string;input:unknown};
   if(request.tool==='read_note')return {tool:'read_note',result:{content:'Source A'},requiresApproval:false};
@@ -78,9 +83,9 @@ const defaults={omniRoute:{provider:'fixture',baseUrl:'https://fixture.example',
 function Fixture(){
  const [draft,setDraft]=useState<AppSettings>(()=>JSON.parse(localStorage.getItem('runtime-settings') || 'null') || defaults);
  const [collapsed,setCollapsed]=useState(query.has('collapsed'));
- return <DocumentImports onPublished={()=>calls.push({command:"refresh_vault"})}><RuntimeActivity><div style={{display:'flex',minHeight:'100vh',background:'var(--color-base)',color:'var(--color-text-hi)'}}>
+ return <DocumentImports onPublished={()=>calls.push({command:"refresh_vault"})}><RuntimeActivity><ModelServiceRecovery/><div style={{display:'flex',minHeight:'100vh',background:'var(--color-base)',color:'var(--color-text-hi)'}}>
  <nav aria-label="Navigation" style={{width:collapsed?44:240,flexShrink:0,padding:8,display:'flex',alignItems:'start',alignContent:'flex-start',flexDirection:collapsed?'column':'row',gap:8,flexWrap:'wrap',background:'var(--color-panel)'}}><button className="runtime-button" onClick={()=>setCollapsed(!collapsed)} aria-label="Toggle navigation">☰</button><JobsButton/></nav>
- <main style={{padding:16,minWidth:0,flex:1}}>{query.has('agent')?<div style={{width:'100%',maxWidth:360,height:700}}><AISidebar note={null} allNotes={[]} config={draft.omniRoute} onOpenSettings={()=>{}} onInsertText={()=>{}} onOpenSource={async source=>{calls.push({command:'navigate_source',source});}}/></div>:query.has('settings')?<><AIRoutingSettings draft={draft} setDraft={setDraft}/><button className="runtime-button" onClick={()=>localStorage.setItem('runtime-settings',JSON.stringify(draft))}>Save settings</button></>:<><h1>Workspace</h1>{query.has("documents")&&<DocumentSourcesButton path="/vault/Imported.md"/>}</>}</main>
+ <main style={{padding:16,minWidth:0,flex:1}}>{query.has('agent')?<div style={{width:'100%',maxWidth:360,height:700}}><AISidebar note={null} allNotes={[]} config={draft.omniRoute} onOpenSettings={()=>{}} onInsertText={()=>{}} onOpenSource={async source=>{calls.push({command:'navigate_source',source});}}/></div>:query.has('settings')?<><AIRoutingSettings draft={draft} setDraft={setDraft}/><button className="runtime-button" onClick={()=>localStorage.setItem('runtime-settings',JSON.stringify(draft))}>Save settings</button></>:<><h1>Workspace</h1>{query.has("enhancements")&&<AIEnhancements path="/vault/note.md" content="Original" onChanged={async()=>{}}/>}{query.has("documents")&&<DocumentSourcesButton path="/vault/Imported.md"/>}</>}</main>
  </div></RuntimeActivity></DocumentImports>;
 }
 createRoot(document.getElementById('root')!).render(<ChatLibraryProvider><DialogProvider><Fixture/></DialogProvider></ChatLibraryProvider>);

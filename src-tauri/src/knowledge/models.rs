@@ -206,7 +206,7 @@ pub async fn execute_model(app: tauri::AppHandle, request: ModelRequest) -> Resu
     .map_err(|e| e.to_string())?
 }
 async fn execute(app: &tauri::AppHandle, request: ModelRequest) -> Result<String, String> {
-    if !["CHAT", "SUMMARIZE", "TAG", "FORMAT", "CLASSIFY"].contains(&request.task.as_str()) {
+    if !["CHAT", "SUMMARIZE", "TAG", "FORMAT", "CLASSIFY", "LINK_SUGGEST", "AI_SCAN"].contains(&request.task.as_str()) {
         return Err("Model capability is not available for this task".into());
     }
     let cfg = crate::config::load_runtime_config(app).ok_or("Configure an AI provider first")?;
@@ -304,9 +304,9 @@ async fn execute(app: &tauri::AppHandle, request: ModelRequest) -> Result<String
     } else if !key.is_empty() {
         req = req.bearer_auth(key);
     }
-    let response = req.send().await.map_err(|_| "Provider connection failed")?;
+    let response = req.send().await.map_err(|e| if e.is_connect() { "SERVICE_UNAVAILABLE: Provider connection failed" } else { "PROVIDER_ERROR: Request failed; it may have reached the provider. Retry manually." })?;
     if !response.status().is_success() {
-        return Err(format!("Provider request failed ({})", response.status()));
+        return Err(format!("{}: Provider request failed ({})", if response.status().as_u16() == 401 || response.status().as_u16() == 403 { "AUTHENTICATION" } else if response.status().as_u16() == 404 { "MODEL_OR_ENDPOINT_MISSING" } else { "PROVIDER_ERROR" }, response.status()));
     }
     let body: serde_json::Value = response
         .json()
@@ -367,4 +367,45 @@ mod tests {
 /// The built-in formatter is deterministic and cannot send content externally.
 pub fn format(content: &str) -> String {
     crate::engine::formatter::format_note_content(content)
+}
+
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ServiceStatus {
+    state: String,
+    command: Option<String>,
+    message: String,
+}
+
+/// Content-free, explicit readiness checks. Never installs or starts a process.
+#[tauri::command]
+pub async fn model_service_status(app: tauri::AppHandle, task: String) -> Result<ServiceStatus, String> {
+    super::current(&app)?;
+    let cfg = crate::config::load_runtime_config(&app).ok_or("Configure an AI provider first")?;
+    let model = match cfg.models.routes.get(&task) {
+        Some(id) => &cfg.models.providers.iter().find(|p| &p.id == id).ok_or("Selected provider unavailable")?.config,
+        None => &cfg.omni_route,
+    };
+    let url = reqwest::Url::parse(&model.base_url).map_err(|_| "Invalid provider URL")?;
+    let local = url.host_str().is_some_and(|host| host == "localhost" || host.trim_matches(['[', ']']).parse::<std::net::IpAddr>().is_ok_and(|ip| ip.is_loopback()));
+    let command = match model.provider.as_str() {
+        "ollama" if local => Some("ollama serve".into()),
+        "omniroute" if local => Some("omniroute".into()),
+        _ => None,
+    };
+    if !local || command.is_none() {
+        return Ok(ServiceStatus { state: "manual".into(), command: None, message: "Check the configured provider address, credentials, and service. Prism does not start remote or custom services.".into() });
+    }
+    let client = reqwest::Client::builder().redirect(reqwest::redirect::Policy::none()).timeout(Duration::from_secs(3)).build().map_err(|e| e.to_string())?;
+    let key = crate::config::provider_key(model)?;
+    let mut request = client.get(format!("{}/models", model.base_url.trim_end_matches('/')));
+    if !key.is_empty() { request = request.bearer_auth(key); }
+    let (state, message) = match request.send().await {
+        Ok(r) if r.status().is_success() => ("ready", "Service is reachable. Retry your request when ready; model availability is checked when dispatched."),
+        Ok(r) if matches!(r.status().as_u16(), 401 | 403) => ("authentication", "Service is running, but credentials were rejected. Check provider settings."),
+        Ok(_) => ("configuration", "Service responded, but its models endpoint is unavailable. Check the configured base URL."),
+        Err(_) => ("unavailable", "Start the installed service in your terminal, then check again. No software or models will be installed by Prism."),
+    };
+    Ok(ServiceStatus { state: state.into(), command, message: message.into() })
 }

@@ -1,3 +1,4 @@
+import { requestServiceRecovery } from './modelRecovery';
 import { invoke } from '@tauri-apps/api/core';
 import { OmniRouteConfig } from '../types';
 import { getSystemMessages, MAX_NOTE_CONTEXT_CHARS } from './systemMessages';
@@ -5,12 +6,21 @@ import type { RetrievalPlan } from './knowledge';
 function truncateForPrompt(content: string): string {
   return content.length <= MAX_NOTE_CONTEXT_CHARS ? content : `${content.slice(0, MAX_NOTE_CONTEXT_CHARS)}\n...[note truncated]`;
 }
+async function executeModel(request: { task: string; messages: Array<{ role: string; content: string }> }): Promise<string> {
+  try { return await invoke<string>('execute_model', { request }); }
+  catch (error) {
+    if (String(error).includes('SERVICE_UNAVAILABLE:') && await requestServiceRecovery(request.task)) {
+      return invoke<string>('execute_model', { request });
+    }
+    throw error;
+  }
+}
 export async function sendChatMessage(
   _config: OmniRouteConfig,
   messages: Array<{ role: 'user' | 'assistant' | 'system'; content: string }>,
   task = 'CHAT',
 ): Promise<string> {
-  const result = await invoke<string>('execute_model', { request: { task, messages } });
+  const result = await executeModel({ task, messages });
   return result.replace(/<thought>[\s\S]*?<\/thought>\s*/gi, '').trim();
 }
 
@@ -48,7 +58,7 @@ export async function sendChatMessageWithRetrieval(
       // retrieval is best-effort — fall back to plain prompt
     }
   }
-  const result = await invoke<string>('execute_model', { request: { task, messages: injected } });
+  const result = await executeModel({ task, messages: injected });
   return { text: result.replace(/<thought>[\s\S]*?<\/thought>\s*/gi, '').trim(), retrieval };
 }
 

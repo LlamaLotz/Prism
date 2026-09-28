@@ -64,9 +64,15 @@ export const TitleBar: React.FC<TitleBarProps> = ({
   useEffect(() => {
     let unlisten: (() => void) | undefined;
     let disposed = false;
-    appWindow.isMaximized().then((m: boolean) => { if (!disposed) setMaximized(m); }).catch(() => {});
+    const syncWindowShape = async () => {
+      try {
+        const [m, full] = await Promise.all([appWindow.isMaximized(), appWindow.isFullscreen()]);
+        if (!disposed) { setMaximized(m); document.documentElement.classList.toggle('window-edge-to-edge', m || full); }
+      } catch { /* Browser preview has no native window. */ }
+    };
+    void syncWindowShape();
     appWindow.onResized(async () => {
-      try { const m = await appWindow.isMaximized(); if (!disposed) setMaximized(m); } catch {}
+      await syncWindowShape();
     }).then((fn: () => void) => { unlisten = fn; }).catch(() => {});
     return () => { disposed = true; unlisten?.(); };
   }, [appWindow]);

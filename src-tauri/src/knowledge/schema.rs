@@ -8,10 +8,10 @@ pub fn migrate(conn: &Connection) -> Result<(), String> {
     let version: i64 = conn
         .query_row("PRAGMA user_version", [], |r| r.get(0))
         .map_err(|e| e.to_string())?;
-    if version > 3 {
+    if version > 4 {
         return Err("This database was created by a newer Prism version".into());
     }
-    if version == 3 {
+    if version == 4 {
         return Ok(());
     }
     // SQLite backup includes committed WAL pages; copying just the main file does not.
@@ -27,8 +27,8 @@ pub fn migrate(conn: &Connection) -> Result<(), String> {
     if version < 2 {
         tx.execute_batch(JOURNAL).map_err(|e| e.to_string())?;
     }
-    tx.execute_batch(DOCUMENTS).map_err(|e| e.to_string())?;
-    tx.execute_batch("PRAGMA user_version = 3")
+    if version < 3 { tx.execute_batch(DOCUMENTS).map_err(|e| e.to_string())?; }
+    tx.execute_batch("PRAGMA user_version = 4")
         .map_err(|e| e.to_string())?;
     tx.commit().map_err(|e| e.to_string())
 }
@@ -136,7 +136,7 @@ mod backup_tests {
             assert_eq!(
                 c.query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0))
                     .unwrap(),
-                if fail { 1 } else { 3 }
+                if fail { 1 } else { 4 }
             );
             assert_eq!(
                 c.query_row("SELECT value FROM history", [], |r| r.get::<_, String>(0))
@@ -189,7 +189,7 @@ mod backup_tests {
             assert_eq!(
                 c.query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0))
                     .unwrap(),
-                if fail { 2 } else { 3 }
+                if fail { 2 } else { 4 }
             );
             if fail {
                 assert!(c.prepare("SELECT * FROM knowledge_documents").is_err());

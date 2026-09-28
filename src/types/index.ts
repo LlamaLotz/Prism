@@ -1,3 +1,4 @@
+import { readNote, writeNote } from '../services/noteIO';
 import { invoke } from '@tauri-apps/api/core';
 
 export type AppPage = 'editor' | 'graph' | 'split' | 'topics' | 'notebook';
@@ -180,7 +181,7 @@ export const tauriAPI = {
     return await invoke<GraphPayload>('get_graph');
   },
   readFile: async (filePath: string): Promise<string> => {
-    return await invoke<string>('read_file', { filePath });
+    return await readNote(filePath);
   },
   // Space-optimized delta version history: records a snapshot only when the
   // frontend explicitly asks (explicit save, note switch/unmount, formatter
@@ -207,7 +208,7 @@ export const tauriAPI = {
   },
   writeFile: async (data: { filePath: string; content: string }): Promise<{ success: boolean; error?: string }> => {
     try {
-      await invoke('write_file', { filePath: data.filePath, content: data.content });
+      await writeNote(data.filePath, data.content);
       return { success: true };
     } catch (err: any) {
       return { success: false, error: err.toString() };

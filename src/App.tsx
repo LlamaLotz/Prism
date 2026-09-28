@@ -1,3 +1,4 @@
+import { ModelServiceRecovery } from './components/ModelServiceRecovery';
 import { DEFAULT_SETTINGS } from './defaultSettings';
 import React, { useState, useEffect, useRef } from 'react';
 import { NotebookPage } from './components/notebook/NotebookPage';
@@ -288,6 +289,12 @@ export default function App() {
   const embedInFlightRef = useRef<Record<string, boolean>>({});
   const embedContentRef = useRef<Record<string, string>>({});
   const scheduleEmbedding = (filePath: string, content: string) => {
+    if (new Blob([content]).size > 200_000) {
+      if (embedTimersRef.current[filePath]) clearTimeout(embedTimersRef.current[filePath]);
+      delete embedTimersRef.current[filePath];
+      delete embedContentRef.current[filePath];
+      return;
+    }
     embedContentRef.current[filePath] = content;
     if (embedTimersRef.current[filePath]) {
       clearTimeout(embedTimersRef.current[filePath]);
@@ -988,6 +995,8 @@ export default function App() {
     } else {
       console.error('Failed to write file:', result.error);
       appLogger.error(`Failed to write note: ${filePath}`, new Error(result.error));
+      await alert(result.error || 'The note could not be saved. Your edits are still in the editor.', { title: 'Save failed' });
+      throw new Error(result.error || 'Save failed');
     }
   };
 
@@ -1484,6 +1493,7 @@ export default function App() {
   return (
     <DocumentImports key={settings.vaultPath} request={documentReviewRequest?.vault === settings.vaultPath ? documentReviewRequest : null} onPublished={() => { void fetchNotes(); void handleAgentVaultChanged(); }}>
     <RuntimeActivity>
+    <ModelServiceRecovery key={settings.vaultPath} />
       {/* Background environment layer (behind the app, viewport-level) */}
       {settings.appearance.backgroundEnvironment !== 'none' && (
         <div
