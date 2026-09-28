@@ -8,10 +8,10 @@ pub fn migrate(conn: &Connection) -> Result<(), String> {
     let version: i64 = conn
         .query_row("PRAGMA user_version", [], |r| r.get(0))
         .map_err(|e| e.to_string())?;
-    if version > 1 {
+    if version > 3 {
         return Err("This database was created by a newer Prism version".into());
     }
-    if version == 1 {
+    if version == 3 {
         return Ok(());
     }
     // SQLite backup includes committed WAL pages; copying just the main file does not.
@@ -21,11 +21,29 @@ pub fn migrate(conn: &Connection) -> Result<(), String> {
             .map_err(|e| format!("Cannot back up index: {e}"))?;
     }
     let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
-    tx.execute_batch(SCHEMA).map_err(|e| e.to_string())?;
-    tx.execute_batch("PRAGMA user_version = 1")
+    if version == 0 {
+        tx.execute_batch(SCHEMA).map_err(|e| e.to_string())?;
+    }
+    if version < 2 {
+        tx.execute_batch(JOURNAL).map_err(|e| e.to_string())?;
+    }
+    tx.execute_batch(DOCUMENTS).map_err(|e| e.to_string())?;
+    tx.execute_batch("PRAGMA user_version = 3")
         .map_err(|e| e.to_string())?;
     tx.commit().map_err(|e| e.to_string())
 }
+
+const DOCUMENTS: &str = r#"
+CREATE TABLE knowledge_documents(id TEXT NOT NULL, vault_id TEXT NOT NULL, locator TEXT NOT NULL, PRIMARY KEY(vault_id,id));
+CREATE TABLE document_revisions(revision TEXT NOT NULL, vault_id TEXT NOT NULL, document_id TEXT NOT NULL, source_hash TEXT NOT NULL, settings TEXT NOT NULL, runtime TEXT NOT NULL, artifact TEXT NOT NULL, artifact_hash TEXT NOT NULL, bytes INTEGER NOT NULL, pinned INTEGER NOT NULL DEFAULT 0, last_used INTEGER NOT NULL DEFAULT(unixepoch()), PRIMARY KEY(vault_id,revision));
+CREATE TABLE document_imports(id TEXT PRIMARY KEY,vault_id TEXT NOT NULL,job_id TEXT,state TEXT NOT NULL,payload TEXT NOT NULL,created_at INTEGER NOT NULL DEFAULT(unixepoch()));
+CREATE INDEX document_imports_vault ON document_imports(vault_id,state);
+CREATE TABLE document_outputs(vault_id TEXT NOT NULL,document_id TEXT NOT NULL,output_key TEXT NOT NULL,note_id TEXT NOT NULL,path TEXT NOT NULL,revision TEXT NOT NULL,fingerprint TEXT NOT NULL,physical_id TEXT NOT NULL,PRIMARY KEY(vault_id,document_id,output_key));
+CREATE TABLE document_block_sources(block_id TEXT PRIMARY KEY,document_id TEXT NOT NULL,revision TEXT NOT NULL,document_block_id TEXT NOT NULL,content_hash TEXT NOT NULL,location TEXT);
+CREATE TABLE document_import_batches(id TEXT PRIMARY KEY,vault_id TEXT NOT NULL,state TEXT NOT NULL,payload TEXT NOT NULL,error TEXT,created_at INTEGER NOT NULL DEFAULT(unixepoch()));
+"#;
+
+const JOURNAL: &str = "CREATE TABLE knowledge_operations(id TEXT PRIMARY KEY, vault_id TEXT NOT NULL, tool TEXT NOT NULL, state TEXT NOT NULL, payload TEXT NOT NULL, error TEXT, created_at INTEGER NOT NULL DEFAULT (unixepoch())); CREATE INDEX knowledge_operations_vault ON knowledge_operations(vault_id,created_at);";
 
 const SCHEMA: &str = r#"
 CREATE TABLE knowledge_vaults(id TEXT PRIMARY KEY, root TEXT NOT NULL UNIQUE, revision INTEGER NOT NULL DEFAULT 0);
@@ -100,6 +118,106 @@ mod tests {
 #[cfg(test)]
 mod backup_tests {
     use super::*;
+    #[test]
+    fn upgrade_v1_and_failed_upgrade_preserve_original_database_and_markdown() {
+        for fail in [false, true] {
+            let dir = tempfile::tempdir().unwrap();
+            let path = dir.path().join("index.db");
+            let note = dir.path().join("note.md");
+            std::fs::write(&note, "# Original 🦀").unwrap();
+            let c = Connection::open(&path).unwrap();
+            c.execute_batch(SCHEMA).unwrap();
+            c.execute_batch("PRAGMA user_version=1; CREATE TABLE history(value TEXT); INSERT INTO history VALUES('keep');").unwrap();
+            if fail {
+                c.execute_batch("CREATE INDEX knowledge_operations_vault ON history(value)")
+                    .unwrap();
+            }
+            assert_eq!(migrate(&c).is_err(), fail);
+            assert_eq!(
+                c.query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0))
+                    .unwrap(),
+                if fail { 1 } else { 3 }
+            );
+            assert_eq!(
+                c.query_row("SELECT value FROM history", [], |r| r.get::<_, String>(0))
+                    .unwrap(),
+                "keep"
+            );
+            if fail {
+                assert!(c.prepare("SELECT * FROM knowledge_operations").is_err());
+            } else {
+                migrate(&c).unwrap();
+            }
+            assert_eq!(std::fs::read_to_string(&note).unwrap(), "# Original 🦀");
+            let backups: Vec<_> = std::fs::read_dir(dir.path())
+                .unwrap()
+                .filter_map(Result::ok)
+                .filter(|e| e.file_name().to_string_lossy().contains("before-runtime"))
+                .collect();
+            assert_eq!(backups.len(), 1);
+            let backup = Connection::open(backups[0].path()).unwrap();
+            assert_eq!(
+                backup
+                    .query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0))
+                    .unwrap(),
+                1
+            );
+            assert_eq!(
+                backup
+                    .query_row("SELECT value FROM history", [], |r| r.get::<_, String>(0))
+                    .unwrap(),
+                "keep"
+            );
+        }
+    }
+    #[test]
+    fn document_upgrade_v2_backups_and_rolls_back_without_touching_notes() {
+        for fail in [false, true] {
+            let dir = tempfile::tempdir().unwrap();
+            let path = dir.path().join("index.db");
+            let c = Connection::open(&path).unwrap();
+            c.execute_batch(SCHEMA).unwrap();
+            c.execute_batch(JOURNAL).unwrap();
+            c.execute_batch("PRAGMA user_version=2; CREATE TABLE history(value TEXT); INSERT INTO history VALUES('preserve');").unwrap();
+            let note = dir.path().join("Original.md");
+            std::fs::write(&note, "Unchanged 日本").unwrap();
+            if fail {
+                c.execute_batch("CREATE INDEX document_imports_vault ON history(value)")
+                    .unwrap();
+            }
+            assert_eq!(migrate(&c).is_err(), fail);
+            assert_eq!(
+                c.query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0))
+                    .unwrap(),
+                if fail { 2 } else { 3 }
+            );
+            if fail {
+                assert!(c.prepare("SELECT * FROM knowledge_documents").is_err());
+            } else {
+                migrate(&c).unwrap();
+            }
+            assert_eq!(std::fs::read_to_string(note).unwrap(), "Unchanged 日本");
+            let backups = std::fs::read_dir(dir.path())
+                .unwrap()
+                .filter_map(Result::ok)
+                .filter(|e| e.file_name().to_string_lossy().contains("before-runtime"))
+                .collect::<Vec<_>>();
+            assert_eq!(backups.len(), 1);
+            let backup = Connection::open(backups[0].path()).unwrap();
+            assert_eq!(
+                backup
+                    .query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0))
+                    .unwrap(),
+                2
+            );
+            assert_eq!(
+                backup
+                    .query_row("SELECT value FROM history", [], |r| r.get::<_, String>(0))
+                    .unwrap(),
+                "preserve"
+            );
+        }
+    }
     #[test]
     fn backup_contains_committed_wal_and_original_metadata() {
         let dir = tempfile::tempdir().unwrap();

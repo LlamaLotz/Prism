@@ -28,6 +28,8 @@ import { TitleBar } from './components/TitleBar';
 import { LiquidGlass } from './components/LiquidGlass';
 import { createErrorDetails, createRawErrorDetails, errorDialogMessage, ErrorDetails } from './utils/errors';
 
+import { documents } from './services/documents';
+import { DocumentImports } from './components/DocumentImports';
 import { RuntimeActivity, JobsButton } from './components/RuntimeActivity';
 import { SplashScreen } from './components/SplashScreen';
 import { UpdateBanner } from './components/UpdateBanner';
@@ -145,6 +147,7 @@ export default function App() {
   const [activeNote, setActiveNote] = useState<NoteFile | null>(null);
   const [isIngesting, setIsIngesting] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [documentReviewRequest, setDocumentReviewRequest] = useState<{id:string;ts:number;vault:string}|null>(null);
   const [isIngestModalOpen, setIsIngestModalOpen] = useState(false);
   // Which Settings section to land on when the window opens (the AI Co-Pilot
   // "Configure Now" link jumps straight to the AI page).
@@ -928,24 +931,19 @@ export default function App() {
     addLog({ level: 'info', message: 'Initializing ingestion pipeline...' });
     updateProgress({ status: 'ingesting', current: 0, total: 0, currentFileName: '' });
 
-    const args: any = {
-      vaultPath: settings.vaultPath,
-      ingestType: type,
-      value,
-    };
-
-    // Always pass a method, map file-mode to ytMethod slot for rust compatibility
-    args.ytMethod = method;
-
     try {
       // Background output is collected by the IngestionProvider listeners
       // (ingestion-progress / ingestion-error) while the panel is minimized.
-      const result = await tauriAPI.runBuiltinExtractorAsync(args);
+      const prepared = await documents.prepare(type, value, method);
+      setDocumentReviewRequest({id:prepared.id,ts:Date.now(),vault:settings.vaultPath});
+      const result = {success:true,output:'Extraction ready for review. No notes have been published.',error:''};
 
       if (result.success) {
         addLog({ level: 'success', message: 'DONE: ' + result.output });
         updateProgress({ status: 'completed' });
-        appLogger.info(`Ingestion completed: ${type}`);
+        setIsIngestModalOpen(false);
+        addLog({ level: 'info', message: 'Open Jobs → Review import to preview and confirm your notes.' });
+        appLogger.info(`Extraction ready for review: ${type}`);
       } else {
         const details = createRawErrorDetails(
           result.error || result.output,
@@ -1484,6 +1482,7 @@ export default function App() {
   };
 
   return (
+    <DocumentImports key={settings.vaultPath} request={documentReviewRequest?.vault === settings.vaultPath ? documentReviewRequest : null} onPublished={() => { void fetchNotes(); void handleAgentVaultChanged(); }}>
     <RuntimeActivity>
       {/* Background environment layer (behind the app, viewport-level) */}
       {settings.appearance.backgroundEnvironment !== 'none' && (
@@ -1645,11 +1644,20 @@ export default function App() {
             className="absolute left-0 top-0 bottom-0"
           />
           <AISidebar
+            key={settings.vaultPath}
             note={activeNote}
             allNotes={notes}
             config={settings.omniRoute}
             onOpenSettings={() => openSettings('ai')}
             onInsertText={handleInsertText}
+            onOpenSource={async source => {
+              const response = await knowledge.agentCall(source.blockId ? 'read_block' : 'read_note', source.blockId ? {blockId:source.blockId} : {noteId:source.noteId});
+              const result = response.result as {notePath?:string;path?:string;startLine?:number;anchor?:string};
+              const found=notes.find(n=>n.path===(result.notePath ?? result.path));
+              if(!found) throw new Error('Source is no longer in this vault.');
+              setActiveNote(found); setLayout('split');
+              if(result.startLine) setScrollRequest({line:result.startLine,ts:Date.now()});
+            }}
             onVaultChanged={handleAgentVaultChanged}
             openRequest={copilotOpenRequest}
             onOpenRequestConsumed={() => setCopilotOpenRequest(null)}
@@ -1761,5 +1769,6 @@ export default function App() {
       )}
     </div>
     </RuntimeActivity>
+    </DocumentImports>
   );
 }

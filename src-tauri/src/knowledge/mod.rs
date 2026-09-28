@@ -1,9 +1,11 @@
 //! Vault-scoped service boundary. Path-based IPC remains a compatibility layer.
 pub mod agent;
 pub mod blocks;
+pub mod documents;
 pub mod gateway;
 pub mod jobs;
 pub mod models;
+pub mod operations;
 pub mod retrieval;
 pub mod schema;
 pub mod search;
@@ -35,6 +37,7 @@ pub struct Scope {
 }
 
 pub fn activate(app: &tauri::AppHandle, root: &Path) -> Result<Scope, String> {
+    let _mutation = operations::lock()?;
     let root = std::fs::canonicalize(root).map_err(|e| e.to_string())?;
     let state = app.state::<KnowledgeRuntime>();
     let mut active = state.active.lock().map_err(|_| "Runtime unavailable")?;
@@ -48,6 +51,8 @@ pub fn activate(app: &tauri::AppHandle, root: &Path) -> Result<Scope, String> {
         root,
         generation: uuid::Uuid::new_v4().to_string(),
     };
+    operations::recover(&conn, &scope)?;
+    documents::recover_batches(&conn,&scope)?;
     *active = Some(scope.clone());
     drop(active);
     *state.embeddings.lock().unwrap() = None;
@@ -276,6 +281,7 @@ pub fn sync(
         )
         .map_err(|e| e.to_string())?;
     }
+    tx.execute("UPDATE knowledge_blocks SET source_id=NULL,source_page=NULL,source_bbox=NULL WHERE note_id=?1 AND id IN (SELECT p.block_id FROM document_block_sources p WHERE p.content_hash!=knowledge_blocks.hash)",[&id]).map_err(|e|e.to_string())?;
     if parsed.is_empty() {
         tx.execute(
             "INSERT INTO knowledge_fts(block_id,note_id,title,text) VALUES (NULL,?1,?2,'')",

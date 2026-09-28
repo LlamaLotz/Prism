@@ -78,7 +78,8 @@ pub fn start_vault_watcher(
                     let paired = std::mem::take(&mut renames);
                     let handle = app_handle.clone();
                     tauri::async_runtime::spawn_blocking(move || {
-                        for (from,to) in paired {if is_markdown(&from) && is_markdown(&to) {handle_rename(&handle,&from,&to);}}
+                        let Ok(_mutation)=crate::knowledge::operations::lock() else { return; };
+                        for (from,to) in paired {if !is_self_write(&from) && !is_self_write(&to) && is_markdown(&from) && is_markdown(&to) {handle_rename(&handle,&from,&to);}}
                         process_batch(&handle, batch);
                     });
                 }
@@ -98,7 +99,7 @@ fn process_batch(app_handle: &AppHandle, batch: HashMap<PathBuf, EventKind>) {
     for (path, kind) in batch {
         // Skip non-markdown files AND hidden/ignored paths (dot-prefixed
         // segments, the extractor's `note metadata/` sidecar folder).
-        if !is_markdown(&path) || crate::engine::indexer::is_hidden(&path) {
+        if is_self_write(&path) || !is_markdown(&path) || crate::engine::indexer::is_hidden(&path) {
             continue;
         }
         match kind {

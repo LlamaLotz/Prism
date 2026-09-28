@@ -128,6 +128,7 @@ pub fn extract(url: &str, method: &str, scratch: &Path) -> Result<Extraction> {
         (crate::audio::extract(&media, scratch)?, "Whisper.cpp ASR")
     };
     Ok(Extraction {
+        fragments: vec![],
         stem: title.clone(),
         title,
         body,

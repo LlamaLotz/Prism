@@ -70,7 +70,7 @@ fn state(c: &Connection, id: &str) -> Result<String, String> {
     .map_err(|e| e.to_string())
 }
 pub fn recover(c: &Connection) -> Result<(), String> {
-    c.execute("UPDATE knowledge_jobs SET state='interrupted',error=CASE WHEN kind IN ('INDEX','EMBED','EMBED_BACKFILL') THEN 'Will refresh on the next vault index or embedding pass.' ELSE 'Prism closed before completion. Retry this operation.' END,updated_at=unixepoch() WHERE state IN ('running','queued','waiting_for_approval')",[]).map_err(|e|e.to_string())?;
+    c.execute("UPDATE knowledge_jobs SET state='interrupted',error=CASE WHEN kind IN ('INDEX','EMBED','EMBED_BACKFILL') THEN 'Will refresh on the next vault index or embedding pass.' ELSE 'Prism closed before completion. Retry this operation.' END,updated_at=unixepoch() WHERE state IN ('running','queued','waiting_for_approval') AND NOT (kind='DOCUMENT_IMPORT' AND state='waiting_for_approval')",[]).map_err(|e|e.to_string())?;
     Ok(())
 }
 pub fn run<T>(

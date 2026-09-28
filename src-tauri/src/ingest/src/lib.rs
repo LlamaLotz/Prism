@@ -1,3 +1,5 @@
+#[path = "../../document_model.rs"]
+pub mod document_model;
 pub mod assets;
 pub mod audio;
 pub mod cli;
@@ -50,6 +52,7 @@ pub struct Extraction {
     pub engine: String,
     pub source: String,
     pub kind: String,
+    #[serde(default)] pub fragments: Vec<document_model::Fragment>,
 }
 pub fn budget() -> usize {
     let hardware = (std::thread::available_parallelism()
@@ -125,10 +128,11 @@ pub fn extract(source: &str, ocr: cli::Ocr, method: &str, scratch: &Path) -> Res
         .unwrap_or_default()
         .to_string_lossy()
         .to_lowercase();
+    let mut fragments=vec![];
     let (body, engine, kind) = match ext.as_str() {
-        "pdf" => (pdf::extract(path, ocr, scratch)?, "Prism PDF", "document"),
+        "pdf" => {fragments=pdf::extract_fragments(path,ocr,scratch)?;(fragments.iter().map(|f|f.markdown.as_str()).collect::<Vec<_>>().join("\n\n"),"Prism PDF","document")},
         "docx" | "pptx" | "xlsx" | "html" | "htm" | "txt" | "md" => {
-            (docs::extract(path)?, "Prism Documents", "document")
+            {fragments=docs::extract_fragments(path)?;(fragments.iter().map(|f|f.markdown.as_str()).collect::<Vec<_>>().join("\n\n"), "Prism Documents", "document")}
         }
         "png" | "jpg" | "jpeg" | "webp" => (pdf::ocr_image(path)?, "Tesseract OCR", "document"),
         "mp3" | "wav" | "m4a" | "flac" | "aac" | "ogg" | "mp4" | "mov" | "mkv" | "avi" | "webm" => {
@@ -145,6 +149,7 @@ pub fn extract(source: &str, ocr: cli::Ocr, method: &str, scratch: &Path) -> Res
         return Err(Error::new("quality", "Extraction produced no content"));
     }
     Ok(Extraction {
+        fragments,
         title: path.file_name().unwrap().to_string_lossy().into(),
         stem: path.file_stem().unwrap().to_string_lossy().into(),
         body,

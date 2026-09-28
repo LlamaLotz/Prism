@@ -82,7 +82,78 @@ pub struct RetrievalPlan {
     pub degraded: Option<String>,
     pub blocks: Vec<RetrievedBlock>,
     pub citations: Vec<Citation>,
+    pub context_citations: Vec<Citation>,
     pub context_text: String,
+}
+
+/// Truncates by Unicode scalar values, including the marker in the limit.
+pub fn truncate_chars(text: &str, limit: usize) -> String {
+    if text.chars().count() <= limit {
+        return text.into();
+    }
+    if limit == 0 {
+        return String::new();
+    }
+    text.chars()
+        .take(limit - 1)
+        .chain(std::iter::once('…'))
+        .collect()
+}
+
+pub fn pack_context(
+    active: Option<(String, &str, Option<Citation>)>,
+    blocks: &[RetrievedBlock],
+    budget: usize,
+) -> (String, Vec<Citation>) {
+    let mut out = String::new();
+    let mut citations = Vec::new();
+    let mut used = 0usize;
+    let mut append = |header: &str, text: &str, cap: usize| -> bool {
+        let separator = if out.is_empty() { "" } else { "\n---\n" };
+        let overhead = separator
+            .chars()
+            .count()
+            .saturating_add(header.chars().count());
+        let available = budget.saturating_sub(used);
+        if text.is_empty() || available <= overhead {
+            return false;
+        }
+        let body = truncate_chars(text, cap.min(available - overhead));
+        out.push_str(separator);
+        out.push_str(header);
+        out.push_str(&body);
+        used += overhead + body.chars().count();
+        true
+    };
+    if let Some((header, text, citation)) = active {
+        if append(&header, text, ACTIVE_NOTE_BUDGET) {
+            citations.extend(citation);
+        }
+    }
+    for b in blocks {
+        let headings = b
+            .heading_path
+            .as_array()
+            .map(|a| {
+                a.iter()
+                    .filter_map(|v| v.as_str())
+                    .collect::<Vec<_>>()
+                    .join(" > ")
+            })
+            .unwrap_or_default();
+        let header = format!("## Source: {} — {} ({})\n", b.citation, b.title, headings);
+        if append(&header, &b.text, usize::MAX) {
+            citations.push(Citation {
+                note_id: b.note_id.clone(),
+                path: b.path.clone(),
+                title: b.title.clone(),
+                block_id: b.block_id.clone(),
+                anchor: b.anchor.clone(),
+                heading_path: b.heading_path.clone(),
+            });
+        }
+    }
+    (out, citations)
 }
 
 // ---------------------------------------------------------------------------
@@ -456,6 +527,7 @@ fn build_plan_blocking(
             degraded,
             blocks: vec![],
             citations: vec![],
+            context_citations: vec![],
             context_text: String::new(),
         });
     }
@@ -607,11 +679,7 @@ fn build_plan_blocking(
         let snippet = if !text.is_empty() {
             // snippet: first 240 chars with ellipsis, similar to search snippet but cheaper
             let t = text.trim();
-            if t.len() > 240 {
-                format!("{} …", &t[..240])
-            } else {
-                t.to_string()
-            }
+            truncate_chars(t, 240)
         } else {
             String::new()
         };
@@ -652,96 +720,32 @@ fn build_plan_blocking(
         });
     }
 
-    // Context Builder — pack active note + ranked blocks into budget
-    let mut context_parts: Vec<String> = Vec::new();
-    let mut used = 0usize;
-    let mut citations: Vec<Citation> = Vec::new();
-
-    // Active note header (always first if present, truncated to ACTIVE_NOTE_BUDGET)
-    if let Some(ref ap) = active_path {
-        if let Some(ref at) = active_title {
-            if let Ok(content) = std::fs::read_to_string(ap) {
-                let truncated = if content.len() > ACTIVE_NOTE_BUDGET {
-                    format!("{}…[truncated]", &content[..ACTIVE_NOTE_BUDGET])
-                } else {
-                    content
-                };
-                let rel = relative_path(&scope.root, ap);
-                let header = format!("# Active Note: {} ({})\n{}\n", at, rel, truncated);
-                if header.len() + used <= budget_chars {
-                    used += header.len();
-                    context_parts.push(header);
-                } else if budget_chars > 500 {
-                    // At least include title if content too large
-                    let minimal = format!("# Active Note: {} ({})\n", at, rel);
-                    used += minimal.len();
-                    context_parts.push(minimal);
-                }
-            }
-        }
-    }
-
-    // Ranked blocks
-    for b in &blocks {
-        if b.text.is_empty() {
-            continue;
-        }
-        let heading_str = match &b.heading_path {
-            serde_json::Value::Array(arr) => arr
-                .iter()
-                .filter_map(|v| v.as_str())
-                .collect::<Vec<_>>()
-                .join(" > "),
-            _ => String::new(),
-        };
-        let heading_suffix = if heading_str.is_empty() {
-            String::new()
-        } else {
-            format!(" ({})", heading_str)
-        };
-        let block_header = format!(
-            "## Source: {} — {}{}\n",
-            b.citation, b.title, heading_suffix
-        );
-        let entry = format!("{}{}\n", block_header, b.text);
-        if used + entry.len() > budget_chars {
-            let remaining = budget_chars.saturating_sub(used);
-            if remaining > 300 {
-                // include truncated block if at least a snippet fits
-                let truncated_text = if b.text.len() > remaining - block_header.len() - 20 {
-                    format!("{}…", &b.text[..remaining - block_header.len() - 20])
-                } else {
-                    b.text.clone()
-                };
-                let truncated_entry = format!("{}{}\n", block_header, truncated_text);
-                context_parts.push(truncated_entry);
-                citations.push(Citation {
-                    note_id: b.note_id.clone(),
-                    path: b.path.clone(),
-                    title: b.title.clone(),
-                    block_id: b.block_id.clone(),
-                    anchor: b.anchor.clone(),
-                    heading_path: b.heading_path.clone(),
-                });
-            }
-            break;
-        }
-        used += entry.len();
-        context_parts.push(entry);
-        citations.push(Citation {
-            note_id: b.note_id.clone(),
-            path: b.path.clone(),
-            title: b.title.clone(),
-            block_id: b.block_id.clone(),
-            anchor: b.anchor.clone(),
-            heading_path: b.heading_path.clone(),
+    let active_content = active_path
+        .as_ref()
+        .and_then(|p| std::fs::read_to_string(p).ok());
+    let active = active_content
+        .as_ref()
+        .zip(active_path.as_ref())
+        .zip(active_title.as_ref())
+        .map(|((text, path), title)| {
+            (
+                format!(
+                    "# Active Note: {} ({})\n",
+                    title,
+                    relative_path(&scope.root, path)
+                ),
+                text.as_str(),
+                active_id.as_ref().map(|id| Citation {
+                    note_id: id.clone(),
+                    path: path.clone(),
+                    title: title.clone(),
+                    block_id: None,
+                    anchor: None,
+                    heading_path: serde_json::json!([]),
+                }),
+            )
         });
-        if used >= budget_chars {
-            break;
-        }
-    }
-
-    let context_text = context_parts.join("\n---\n");
+    let (context_text, context_citations) = pack_context(active, &blocks, budget_chars);
 
     // Apply offset/limit if requested (for API parity, but context_text already packed)
     let offset = req.offset.min(blocks.len());
@@ -752,7 +756,17 @@ fn build_plan_blocking(
     };
     let paged_blocks: Vec<RetrievedBlock> = blocks.into_iter().skip(offset).take(limit).collect();
     // citations correspond to paged blocks
-    let paged_citations: Vec<Citation> = citations.into_iter().skip(offset).take(limit).collect();
+    let paged_citations: Vec<Citation> = paged_blocks
+        .iter()
+        .map(|b| Citation {
+            note_id: b.note_id.clone(),
+            path: b.path.clone(),
+            title: b.title.clone(),
+            block_id: b.block_id.clone(),
+            anchor: b.anchor.clone(),
+            heading_path: b.heading_path.clone(),
+        })
+        .collect();
 
     Ok(RetrievalPlan {
         query,
@@ -761,6 +775,7 @@ fn build_plan_blocking(
         degraded,
         blocks: paged_blocks,
         citations: paged_citations,
+        context_citations,
         context_text,
     })
 }
@@ -880,11 +895,74 @@ mod tests {
     fn context_budget_truncates() {
         let text = "x".repeat(5000);
         let budget = 1000usize;
-        let truncated = if text.len() > budget {
-            format!("{}…", &text[..budget - 10])
-        } else {
-            text.clone()
-        };
-        assert!(truncated.len() <= budget + 10);
+        let (packed, _) = pack_context(Some(("# Note\n".into(), &text, None)), &[], budget);
+        assert_eq!(packed.chars().count(), budget);
+    }
+}
+
+#[cfg(test)]
+mod packing_tests {
+    use super::*;
+    fn block(id: &str, text: &str) -> RetrievedBlock {
+        RetrievedBlock {
+            note_id: format!("note-{id}"),
+            path: format!("/{id}.md"),
+            title: id.into(),
+            block_id: Some(id.into()),
+            anchor: None,
+            text: text.into(),
+            kind: "paragraph".into(),
+            heading_path: serde_json::json!([]),
+            snippet: text.into(),
+            citation: format!("[[{id}]]"),
+            scores: ScoreBreakdown {
+                lexical: None,
+                semantic: None,
+                rrf: 0.,
+                explicit: 0.,
+                graph_proximity: 0.,
+                tag_overlap: 0.,
+                folder_sibling: 0.,
+                final_score: 0.,
+            },
+        }
+    }
+    #[test]
+    fn exact_headers_separators_and_only_included_sources_are_counted() {
+        let blocks = vec![block("a", "日本🦀e\u{301}"), block("b", "second")];
+        let (full, citations) = pack_context(None, &blocks, usize::MAX);
+        assert_eq!(citations.len(), 2);
+        assert!(full.contains("\n---\n"));
+        let first_header = "## Source: [[a]] — a ()\n".chars().count();
+        let (_, none) = pack_context(None, &blocks, first_header);
+        assert!(none.is_empty());
+        let (one, only) = pack_context(None, &blocks, first_header + 1);
+        assert_eq!(one.chars().count(), first_header + 1);
+        assert_eq!(only.len(), 1);
+        assert_eq!(pack_context(None, &blocks, full.chars().count()).0, full);
+        let (_, active) = pack_context(
+            Some(("active\n".into(), "text", Some(citations[0].clone()))),
+            &[],
+            11,
+        );
+        assert_eq!(active.len(), 1);
+        let (_, omitted) = pack_context(
+            Some(("oversized".into(), "text", Some(citations[0].clone()))),
+            &[],
+            3,
+        );
+        assert!(omitted.is_empty());
+        assert!(pack_context(None, &[], 100).0.is_empty());
+    }
+    #[test]
+    fn unicode_and_headers_obey_the_actual_context_budget() {
+        let text = "日本語🦀e\u{301}".repeat(4000);
+        for budget in [0, 1, 5, 1000, 4000, 12000] {
+            let (out, _) = pack_context(Some(("# Note\n".into(), &text, None)), &[], budget);
+            assert!(out.chars().count() <= budget);
+        }
+        assert_eq!(truncate_chars("🦀日本", 2), "🦀…");
+        let (out, _) = pack_context(Some(("header".repeat(1000), &text, None)), &[], 20);
+        assert!(out.is_empty());
     }
 }

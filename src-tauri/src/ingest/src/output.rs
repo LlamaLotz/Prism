@@ -65,6 +65,62 @@ pub fn stage(e: &Extraction, dir: &Path) -> Result<()> {
                 .unwrap(),
         )?;
     }
+    let source_path = Path::new(&e.source);
+    let local = source_path.is_file();
+    let content_hash = if local {
+        use sha2::{Digest, Sha256};
+        use std::io::Read;
+        let mut file = std::fs::File::open(source_path)?;
+        let mut digest = Sha256::new();
+        let mut buffer = [0; 65536];
+        loop {
+            let count = file.read(&mut buffer)?;
+            if count == 0 {
+                break;
+            }
+            digest.update(&buffer[..count]);
+        }
+        format!("{:x}", digest.finalize())
+    } else {
+        crate::document_model::hash(e.body.as_bytes())
+    };
+    let fragments = if e.fragments.is_empty() {
+        vec![crate::document_model::Fragment {
+            markdown: e.body.clone(),
+            location: if e.kind == "web" {
+                Some(crate::document_model::Location {
+                    url: Some(e.source.clone()),
+                    ..Default::default()
+                })
+            } else {
+                None
+            },
+        }]
+    } else {
+        e.fragments.clone()
+    };
+    let document = crate::document_model::PrismDocument::new(
+        e.title.clone(),
+        crate::document_model::Source {
+            locator: e.source.clone(),
+            content_hash,
+            kind: if e.source.ends_with(".md") {
+                "markdown".into()
+            } else {
+                e.kind.clone()
+            },
+            fingerprint_kind: if local { "bytes" } else { "extracted_snapshot" }.into(),
+        },
+        e.engine.clone(),
+        env!("CARGO_PKG_VERSION").into(),
+        std::env::var("PRISM_DOCUMENT_SETTINGS").unwrap_or_default(),
+        fragments,
+    );
+    document.validate().map_err(|e| Error::new("document", e))?;
+    atomic(
+        &dir.join(format!("{name}.prism.json")),
+        &serde_json::to_vec(&document).map_err(|e| Error::new("document", e))?,
+    )?;
     atomic(&dir.join(name), note(e).as_bytes())
 }
 pub fn publish(stage: &Path, vault: &Path) -> Result<()> {
@@ -79,6 +135,13 @@ pub fn publish(stage: &Path, vault: &Path) -> Result<()> {
     }
     for p in notes {
         let name = p.file_name().unwrap();
+        let document = stage.join(format!("{}.prism.json", name.to_string_lossy()));
+        if document.is_file() {
+            atomic(
+                &vault.join(format!("{}.prism.json", name.to_string_lossy())),
+                &std::fs::read(document)?,
+            )?;
+        }
         let side_name = format!("{}.meta.json", name.to_string_lossy());
         let side = stage.join("note metadata").join(&side_name);
         let dest = vault.join(name);

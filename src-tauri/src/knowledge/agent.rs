@@ -77,6 +77,8 @@ pub struct AgentToolResponse {
 #[derive(Serialize, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct PendingEdit {
+    #[serde(skip)]
+    pub mutation: Option<super::operations::Mutation>,
     pub id: String,
     pub tool: String,
     pub vault_id: String,
@@ -900,7 +902,7 @@ fn create_pending(
     } else {
         // Truncate preview to 8000 chars to keep IPC bounded
         if patch.len() > 8000 {
-            format!("{}…[truncated]", &patch[..8000])
+            super::retrieval::truncate_chars(&patch, 8000)
         } else {
             patch
         }
@@ -913,6 +915,7 @@ fn create_pending(
         new_content.len()
     );
     Ok(PendingEdit {
+        mutation: None,
         id: uuid::Uuid::new_v4().to_string(),
         tool: tool.into(),
         vault_id: scope.vault_id.clone(),
@@ -953,7 +956,9 @@ fn preview_edit_note(
         .to_string();
     let (note_id, note_path) = resolve_note(&conn, &scope.vault_id, &note_ref)?;
     ensure_inside_vault(&scope, Path::new(&note_path))?;
-    let old_content = std::fs::read_to_string(&note_path).unwrap_or_default();
+    let old_content =
+        std::fs::read_to_string(&note_path).map_err(|e| format!("PERSISTENCE: {e}"))?;
+    super::sync(&conn, &scope.vault_id, &note_path, &old_content)?;
     // Load db blocks for this note
     let mut stmt = conn
         .prepare(
@@ -1071,7 +1076,8 @@ fn preview_delete_note(
         .to_string();
     let (note_id, note_path) = resolve_note(&conn, &scope.vault_id, &note_ref)?;
     ensure_inside_vault(&scope, Path::new(&note_path))?;
-    let old_content = std::fs::read_to_string(&note_path).unwrap_or_default();
+    let old_content =
+        std::fs::read_to_string(&note_path).map_err(|e| format!("PERSISTENCE: {e}"))?;
     if old_content.is_empty() && !Path::new(&note_path).exists() {
         return Err("Note file does not exist".into());
     }
@@ -1112,7 +1118,8 @@ fn preview_rename_note(
     if new_abs.exists() {
         return Err("A note already exists at the destination".into());
     }
-    let old_content = std::fs::read_to_string(&old_path).unwrap_or_default();
+    let old_content =
+        std::fs::read_to_string(&old_path).map_err(|e| format!("PERSISTENCE: {e}"))?;
     // For rename, preview is just the path change; new_content is same as old
     let mut pending = create_pending(
         &app,
@@ -1226,7 +1233,8 @@ fn preview_wikilink_or_tag(
         .to_string();
     let (note_id, note_path) = resolve_note(&conn, &scope.vault_id, &note_ref)?;
     ensure_inside_vault(&scope, Path::new(&note_path))?;
-    let old_content = std::fs::read_to_string(&note_path).unwrap_or_default();
+    let old_content = std::fs::read_to_string(&note_path).map_err(|e| e.to_string())?;
+    super::sync(&conn, &scope.vault_id, &note_path, &old_content)?;
     let mut stmt = conn
         .prepare(
             "SELECT id, text FROM knowledge_blocks WHERE note_id=?1 AND deleted=0 ORDER BY ordinal",
@@ -1303,7 +1311,8 @@ fn preview_format_note(
         .to_string();
     let (note_id, note_path) = resolve_note(&conn, &scope.vault_id, &note_ref)?;
     ensure_inside_vault(&scope, Path::new(&note_path))?;
-    let old_content = std::fs::read_to_string(&note_path).unwrap_or_default();
+    let old_content =
+        std::fs::read_to_string(&note_path).map_err(|e| format!("PERSISTENCE: {e}"))?;
     let new_content = crate::knowledge::models::format(&old_content);
     if new_content == old_content {
         return Err("Note is already formatted".into());
@@ -1323,222 +1332,46 @@ fn preview_format_note(
 // Applying pending edits (after approval)
 // ---------------------------------------------------------------------------
 
+fn validate_approval(
+    generation: &str,
+    vault_id: &str,
+    expires: Instant,
+    scope: &super::Scope,
+    now: Instant,
+) -> Result<(), String> {
+    if generation != scope.generation || vault_id != scope.vault_id || expires <= now {
+        return Err(
+            "CONFLICT: Approval expired or vault changed. Generate a fresh preview.".into(),
+        );
+    }
+    Ok(())
+}
+
 fn apply_pending(
     app: &tauri::AppHandle,
     pending: PendingEdit,
 ) -> Result<serde_json::Value, String> {
+    let _guard = super::operations::lock()?;
     let scope = super::current(app)?;
-    // Generation check (like cloud approvals)
-    if pending.generation != scope.generation {
-        return Err("Vault changed — approval expired".into());
-    }
-    if pending.expires <= Instant::now() {
-        return Err("Approval expired".into());
-    }
-    if pending.vault_id != scope.vault_id {
-        return Err("Approval is for a different vault".into());
-    }
+    validate_approval(
+        &pending.generation,
+        &pending.vault_id,
+        pending.expires,
+        &scope,
+        Instant::now(),
+    )?;
+    let mutation = pending
+        .mutation
+        .ok_or("CONFLICT: Generate a fresh preview")?;
     let conn = crate::db::init_db(app)?;
-    match pending.tool.as_str() {
-        "edit_note" | "add_wikilink" | "add_tag" | "remove_tag" | "format_note" => {
-            let path = Path::new(&pending.note_path);
-            super::validate_path(app, path)?;
-            if let Some(parent) = path.parent() {
-                if !parent.exists() {
-                    std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
-                }
-            }
-            // Mask self-write
-            crate::engine::indexer::suppress_self_write(
-                path,
-                crate::engine::indexer::SELF_WRITE_MASK_MS,
-            );
-            std::fs::write(path, &pending.new_content).map_err(|e| e.to_string())?;
-            // Record history before sync? history uses note_path key (which is path string)
-            let _ = crate::db::history::record_note_version(
-                &conn,
-                &pending.note_path,
-                &pending.new_content,
-            );
-            super::sync_file(app, path, &pending.new_content)?;
-            // Legacy sidecar: notes/tags/links for graph compatibility
-            if let Ok(title) = path
-                .file_stem()
-                .map(|s| s.to_string_lossy().to_string())
-                .ok_or("")
-            {
-                let aliases = crate::watcher::extract_aliases(&pending.new_content);
-                let _ = crate::db::upsert_note(
-                    &conn,
-                    &pending.note_path,
-                    &title,
-                    &pending.note_path,
-                    &aliases,
-                );
-                let _ = crate::db::sync_note_tags(&conn, &pending.note_path, &pending.new_content);
-                let targets = crate::db::extract_applied_links(&pending.new_content);
-                let _ = crate::db::update_links_flat(&conn, &pending.note_path, &targets);
-            }
-            let revision: i64 = conn
-                .query_row(
-                    "SELECT revision FROM knowledge_notes WHERE path=?1",
-                    [&pending.note_path],
-                    |r| r.get(0),
-                )
-                .unwrap_or(0);
-            super::emit(
-                app,
-                &conn,
-                &scope.vault_id,
-                "note_changed",
-                pending.note_id.as_deref().unwrap_or(&pending.note_path),
-            )?;
-            Ok(
-                serde_json::json!({ "notePath": pending.note_path, "relativePath": vault_relative(&scope, &pending.note_path), "revision": revision, "preview": pending.preview }),
-            )
-        }
-        "create_note" => {
-            let path = Path::new(&pending.note_path);
-            super::validate_path(app, path)?;
-            if let Some(parent) = path.parent() {
-                if !parent.exists() {
-                    std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
-                }
-            }
-            if path.exists() {
-                return Err("File already exists".into());
-            }
-            crate::engine::indexer::suppress_self_write(
-                path,
-                crate::engine::indexer::SELF_WRITE_MASK_MS,
-            );
-            std::fs::write(path, &pending.new_content).map_err(|e| e.to_string())?;
-            let _ = crate::db::history::record_note_version(
-                &conn,
-                &pending.note_path,
-                &pending.new_content,
-            );
-            super::sync_file(app, path, &pending.new_content)?;
-            if let Ok(title) = path
-                .file_stem()
-                .map(|s| s.to_string_lossy().to_string())
-                .ok_or("")
-            {
-                let aliases = crate::watcher::extract_aliases(&pending.new_content);
-                let _ = crate::db::upsert_note(
-                    &conn,
-                    &pending.note_path,
-                    &title,
-                    &pending.note_path,
-                    &aliases,
-                );
-                let _ = crate::db::sync_note_tags(&conn, &pending.note_path, &pending.new_content);
-            }
-            super::emit(
-                app,
-                &conn,
-                &scope.vault_id,
-                "note_changed",
-                &pending.note_path,
-            )?;
-            Ok(
-                serde_json::json!({ "notePath": pending.note_path, "relativePath": vault_relative(&scope, &pending.note_path) }),
-            )
-        }
-        "delete_note" => {
-            let path = Path::new(&pending.note_path);
-            super::validate_path(app, path)?;
-            if path.exists() {
-                crate::engine::indexer::suppress_self_write(
-                    path,
-                    crate::engine::indexer::SELF_WRITE_MASK_MS,
-                );
-                std::fs::remove_file(path).map_err(|e| e.to_string())?;
-            }
-            super::remove(&conn, &pending.note_path)?;
-            let _ = conn.execute("DELETE FROM notes WHERE id=?1", params![pending.note_path]);
-            let _ = conn.execute(
-                "DELETE FROM backlinks WHERE source_path=?1 OR target_path=?1",
-                params![pending.note_path],
-            );
-            let _ = conn.execute(
-                "DELETE FROM links WHERE source=?1 OR target=?1",
-                params![pending.note_path],
-            );
-            super::emit(
-                app,
-                &conn,
-                &scope.vault_id,
-                "note_changed",
-                pending.note_id.as_deref().unwrap_or(&pending.note_path),
-            )?;
-            Ok(serde_json::json!({ "deleted": pending.note_path }))
-        }
-        "rename_note" => {
-            // pending.new_content carries destination absolute path for rename
-            let old = Path::new(&pending.note_path);
-            let new = Path::new(&pending.new_content);
-            super::validate_path(app, old)?;
-            super::validate_path(app, new)?;
-            if new.exists() {
-                return Err("Destination already exists".into());
-            }
-            if !old.exists() {
-                return Err(format!("Source not found: {}", pending.note_path));
-            }
-            if let Some(parent) = new.parent() {
-                if !parent.exists() {
-                    std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
-                }
-            }
-            std::fs::rename(old, new).map_err(|e| e.to_string())?;
-            super::move_path(&conn, &pending.note_path, &pending.new_content)?;
-            // Move legacy history rows already via move_path (knowledge) + need notes/backlinks? Do minimal
-            let _ = conn.execute(
-                "UPDATE notes SET id=?2, path=?2 WHERE id=?1",
-                params![pending.note_path, pending.new_content],
-            );
-            super::emit(
-                app,
-                &conn,
-                &scope.vault_id,
-                "note_changed",
-                &pending.new_content,
-            )?;
-            Ok(
-                serde_json::json!({ "oldPath": pending.note_path, "newPath": pending.new_content, "relativePath": vault_relative(&scope, &pending.new_content) }),
-            )
-        }
-        "create_folder" => {
-            let path = Path::new(&pending.note_path);
-            super::validate_path(app, path)?;
-            std::fs::create_dir_all(path).map_err(|e| e.to_string())?;
-            Ok(
-                serde_json::json!({ "path": pending.note_path, "relativePath": vault_relative(&scope, &pending.note_path) }),
-            )
-        }
-        "move_folder" => {
-            let old = Path::new(&pending.note_path);
-            let new = Path::new(&pending.new_content);
-            super::validate_path(app, old)?;
-            super::validate_path(app, new)?;
-            if !old.exists() {
-                return Err(format!("Folder not found: {}", pending.note_path));
-            }
-            if new.exists() {
-                return Err("Destination folder already exists".into());
-            }
-            if let Some(parent) = new.parent() {
-                if !parent.exists() {
-                    std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
-                }
-            }
-            std::fs::rename(old, new).map_err(|e| e.to_string())?;
-            let _ = crate::db::rename_folder_paths(&conn, &pending.note_path, &pending.new_content);
-            Ok(serde_json::json!({ "oldPath": pending.note_path, "newPath": pending.new_content }))
-        }
-        _ => Err(format!("Unknown pending tool: {}", pending.tool)),
-    }
+    let id = super::operations::apply(&conn, &scope, &mutation)?;
+    super::emit(app, &conn, &scope.vault_id, "agent_applied", &id).map_err(|e| {
+        format!("PERSISTENCE: Operation {id} applied but its event could not be saved: {e}")
+    })?;
+    let target = mutation.destination.as_deref().unwrap_or(&mutation.source);
+    Ok(
+        serde_json::json!({"operationId":id,"undoAvailable":true,"notePath":target,"newPath":mutation.destination,"relativePath":vault_relative(&scope,target),"preview":pending.preview}),
+    )
 }
 
 // ---------------------------------------------------------------------------
@@ -1685,7 +1518,9 @@ pub async fn agent_call_tool(
             let app2 = app.clone();
             let pending =
                 tauri::async_runtime::spawn_blocking(move || -> Result<PendingEdit, String> {
-                    match tool_clone.as_str() {
+                    let _guard = super::operations::lock()?;
+                    let runtime_app = app2.clone();
+                    let mut pending = match tool_clone.as_str() {
                         "edit_note" => preview_edit_note(app2, input),
                         "create_note" => preview_create_note(app2, input),
                         "delete_note" => preview_delete_note(app2, input),
@@ -1697,7 +1532,24 @@ pub async fn agent_call_tool(
                         }
                         "format_note" => preview_format_note(app2, input),
                         _ => Err("Unknown write tool".into()),
-                    }
+                    }?;
+                    let scope = super::current(&runtime_app)?;
+                    let destination =
+                        if matches!(pending.tool.as_str(), "rename_note" | "move_folder") {
+                            Some(pending.new_content.clone())
+                        } else {
+                            None
+                        };
+                    pending.mutation = Some(super::operations::capture(
+                        &crate::db::init_db(&runtime_app)?,
+                        &scope,
+                        &pending.tool,
+                        &pending.note_path,
+                        destination,
+                        &pending.old_content,
+                        &pending.new_content,
+                    )?);
+                    Ok(pending)
                 })
                 .await
                 .map_err(|e| e.to_string())??;
@@ -1756,17 +1608,16 @@ pub fn agent_resolve_pending(
         let p = map
             .get(&id)
             .cloned()
-            .ok_or("Approval expired or not found")?;
-        if p.generation != scope.generation {
+            .ok_or("CONFLICT: Approval expired or not found")?;
+        if let Err(error) = validate_approval(
+            &p.generation,
+            &p.vault_id,
+            p.expires,
+            &scope,
+            Instant::now(),
+        ) {
             map.remove(&id);
-            return Err("Vault changed — approval expired".into());
-        }
-        if p.expires <= Instant::now() {
-            map.remove(&id);
-            return Err("Approval expired".into());
-        }
-        if p.vault_id != scope.vault_id {
-            return Err("Approval is for a different vault".into());
+            return Err(error);
         }
         if !approved {
             map.remove(&id);
@@ -1781,10 +1632,6 @@ pub fn agent_resolve_pending(
         apply_pending(&app2, pending)
     }))
     .map_err(|e| e.to_string())??;
-    // Emit applied event
-    if let Ok(conn) = crate::db::init_db(&app) {
-        let _ = super::emit(&app, &conn, &scope.vault_id, "agent_applied", &id);
-    }
     Ok(serde_json::json!({ "approved": true, "id": id, "result": res }))
 }
 
@@ -1794,50 +1641,82 @@ pub fn agent_undo_last(
     note_path: String,
 ) -> Result<serde_json::Value, String> {
     let scope = super::current(&app)?;
-    let conn = crate::db::init_db(&app)?;
-    // Resolve note path (may be id or path)
-    let (note_id, abs_path) = if let Ok((id, p)) = resolve_note(&conn, &scope.vault_id, &note_path)
-    {
-        (id, p)
-    } else {
-        // Try as direct path
-        let abs = ensure_inside_vault(&scope, Path::new(&note_path))?
-            .to_string_lossy()
-            .to_string();
-        (abs.clone(), abs)
+    let id = {
+        let _guard = super::operations::lock()?;
+        let conn = crate::db::init_db(&app)?;
+        super::operations::newest_for_path(&conn, &scope, &note_path)?
     };
-    ensure_inside_vault(&scope, Path::new(&abs_path))?;
-    let versions = crate::db::history::get_all_reconstructed_versions(&conn, &abs_path)?;
-    if versions.len() < 2 {
-        return Err("No previous version to undo".into());
-    }
-    // Previous version is second last (last is current)
-    let prev = &versions[versions.len() - 2];
-    let current = std::fs::read_to_string(&abs_path).unwrap_or_default();
-    if current == prev.content {
-        return Err("Note is already at the previous version".into());
-    }
-    let patch = crate::db::history::generate_patch(&current, &prev.content);
-    // Write previous content back
-    let path = Path::new(&abs_path);
-    crate::engine::indexer::suppress_self_write(path, crate::engine::indexer::SELF_WRITE_MASK_MS);
-    std::fs::write(path, &prev.content).map_err(|e| e.to_string())?;
-    let _ = crate::db::history::record_note_version(&conn, &abs_path, &prev.content);
-    super::sync_file(&app, path, &prev.content)?;
-    super::emit(&app, &conn, &scope.vault_id, "note_changed", &note_id)?;
+    let id=if let Some(child)=id.strip_prefix("import:"){child.rsplit_once(':').map(|(batch,_)|batch.to_string()).unwrap_or(id)}else{id};
+    agent_undo_operation(app, id)
+}
+#[tauri::command]
+pub fn agent_list_operations(
+    app: tauri::AppHandle,
+) -> Result<Vec<super::operations::OperationView>, String> {
+    let _guard = super::operations::lock()?;
+    let scope = super::current(&app)?;
+    let c=crate::db::init_db(&app)?;
+    let mut views=super::operations::list(&c,&scope)?.into_iter().filter(|o|!o.id.starts_with("import:")).collect::<Vec<_>>();
+    views.extend(super::documents::operation_views(&c,&scope)?);Ok(views)
+}
+#[tauri::command]
+pub fn agent_undo_operation(
+    app: tauri::AppHandle,
+    operation_id: String,
+) -> Result<serde_json::Value, String> {
+    let _guard = super::operations::lock()?;
+    let scope = super::current(&app)?;
+    let conn = crate::db::init_db(&app)?;
+    if operation_id.starts_with("document:"){let result=super::documents::undo_import(&conn,&scope,&operation_id)?;super::emit(&app,&conn,&scope.vault_id,"document_undone",&operation_id)?;return Ok(result);}
+    if operation_id.starts_with("import:"){return Err("CONFLICT: Undo the complete document import instead".into());}
+    let mutation = super::operations::undo(&conn, &scope, &operation_id)?;
+    super::emit(&app, &conn, &scope.vault_id, "agent_undone", &operation_id).map_err(|e| {
+        format!(
+            "PERSISTENCE: Operation {operation_id} undone but its event could not be saved: {e}"
+        )
+    })?;
     Ok(
-        serde_json::json!({ "notePath": abs_path, "relativePath": vault_relative(&scope, &abs_path), "restoredVersion": prev.version_id, "preview": patch }),
+        serde_json::json!({"operationId":operation_id,"notePath":mutation.source,"relativePath":vault_relative(&scope,&mutation.source),"restoredVersion":null,"preview":"Restored the recorded state before this agent operation"}),
     )
 }
 
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
+#[tauri::command]
+pub fn agent_recheck_operation(app: tauri::AppHandle, operation_id: String) -> Result<(), String> {
+    let _guard = super::operations::lock()?;
+    let scope = super::current(&app)?;
+    let conn = crate::db::init_db(&app)?;
+    if operation_id.starts_with("document:"){super::documents::recheck_import(&conn,&scope,&operation_id)?;}else{super::operations::recheck(&conn, &scope, &operation_id)?;}
+    super::emit(
+        &app,
+        &conn,
+        &scope.vault_id,
+        "agent_recovered",
+        &operation_id,
+    )?;
+    Ok(())
+}
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    #[test]
+    fn expired_and_other_vault_approvals_conflict() {
+        let now = Instant::now();
+        let scope = super::super::Scope {
+            vault_id: "v".into(),
+            root: "/vault".into(),
+            generation: "g".into(),
+        };
+        assert!(validate_approval("g", "v", now + Duration::from_secs(1), &scope, now).is_ok());
+        assert!(validate_approval("g", "v", now, &scope, now)
+            .unwrap_err()
+            .starts_with("CONFLICT:"));
+        assert!(validate_approval("old", "v", now + Duration::from_secs(1), &scope, now).is_err());
+        assert!(
+            validate_approval("g", "other", now + Duration::from_secs(1), &scope, now).is_err()
+        );
+    }
     #[test]
     fn frontmatter_preserved() {
         let old = "---\ntitle: Hi\n---\nFirst\n\nSecond";

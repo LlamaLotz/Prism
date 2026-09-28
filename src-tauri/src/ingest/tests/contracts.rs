@@ -103,6 +103,7 @@ fn atomic_replace_and_sidecar() {
     let stage = d.path().join("stage");
     let vault = d.path().join("vault");
     let e = prism_ingest::Extraction {
+        fragments: vec![],
         title: "A/B".into(),
         stem: "A/B".into(),
         body: "Body".into(),
@@ -231,4 +232,18 @@ fn fixture_output_has_no_megabyte_rows() {
     let html = std::fs::read_to_string(root.join("wiki_a.html")).unwrap();
     let md = web::markdown(&html);
     assert!(md.lines().all(|l| l.len() < 2000));
+}
+
+#[test]
+fn structured_office_boundaries_and_document_sidecar() {
+    let slides=prism_ingest::docs::extract_fragments(&fixture("ordered.pptx")).unwrap();
+    assert_eq!(slides[0].location.as_ref().unwrap().slide,Some(1));
+    assert!(slides.iter().enumerate().all(|(i,f)|f.location.as_ref().unwrap().slide==Some(i as u32+1)));
+    let sheets=prism_ingest::docs::extract_fragments(&fixture("sheets.xlsx")).unwrap();
+    assert!(sheets.iter().all(|f|f.location.as_ref().unwrap().sheet.is_some()));
+    let temp=tempfile::tempdir().unwrap();
+    let extracted=prism_ingest::Extraction{title:"Original".into(),stem:"Original".into(),source:fixture("ordered.pptx").to_string_lossy().into(),engine:"fixture".into(),kind:"document".into(),body:slides.iter().map(|f|f.markdown.as_str()).collect::<Vec<_>>().join("\n\n"),fragments:slides};
+    output::stage(&extracted,temp.path()).unwrap();
+    let document:prism_ingest::document_model::PrismDocument=serde_json::from_slice(&std::fs::read(temp.path().join("Original.md.prism.json")).unwrap()).unwrap();
+    document.validate().unwrap();assert!(document.blocks.iter().all(|b|b.location.as_ref().unwrap().slide.is_some()));
 }

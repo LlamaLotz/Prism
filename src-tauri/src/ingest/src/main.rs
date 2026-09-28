@@ -63,12 +63,12 @@ fn extract_one(
 }
 fn run(args: Args) -> Result<()> {
     if let Some(path) = &args.pdf_chunk {
-        let text = prism_ingest::pdf::range(path, args.page_start, args.page_end, args.ocr)?;
+        let text = prism_ingest::pdf::range_fragments(path, args.page_start, args.page_end, args.ocr)?;
         return prism_ingest::output::atomic(
             args.chunk_output
                 .as_ref()
                 .ok_or_else(|| Error::new("input", "Missing chunk output"))?,
-            text.as_bytes(),
+            &serde_json::to_vec(&text).map_err(|e|Error::new("protocol",e))?,
         );
     }
     if args.supervised && answer()?["start"] != true {

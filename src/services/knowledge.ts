@@ -24,6 +24,7 @@ export interface RetrievalPlan {
   degraded: string | null;
   blocks: RetrievedBlock[];
   citations: Citation[];
+  contextCitations?: Citation[];
   contextText: string;
 }
 export type RetrievalRequest = { query: string; activeNoteId?: string | null; budgetChars?: number; offset?: number; limit?: number };
@@ -31,6 +32,10 @@ export type RetrievalRequest = { query: string; activeNoteId?: string | null; bu
 export interface AgentToolDefinition { name: string; description: string; requiresApproval: boolean; category: string }
 export interface AgentToolResponse { tool: string; requiresApproval: boolean; approvalId: string | null; preview: string | null; result: unknown; error: string | null }
 export interface AgentPending { id: string; tool: string; vaultId: string; notePath: string; noteId: string | null; preview: string; createdAt: number; input: unknown }
+
+export interface AgentOperation { id: string; tool: string; notePath: string; state: string; undoAvailable: boolean; error: string | null }
+export interface AgentWriteResult { operationId: string; undoAvailable: boolean; notePath: string; newPath?: string; relativePath: string; preview: string }
+export interface AgentUndoResult { operationId: string; notePath: string; relativePath: string; restoredVersion: number | null; preview: string }
 
 /** One entry in the unified chat library (Co-Pilot + Notebook history). */
 export type ChatOrigin = 'copilot' | 'notebook';
@@ -66,7 +71,10 @@ export const knowledge = {
   agentTools: () => invoke<AgentToolDefinition[]>('agent_list_tools'),
   agentCall: (tool: string, input: unknown) => invoke<AgentToolResponse>('agent_call_tool', { request: { tool, input } }),
   agentPending: () => invoke<AgentPending[]>('agent_list_pending'),
-  agentApprove: (id: string, approved: boolean) => invoke<{ approved: boolean; id: string; result?: unknown }>('agent_resolve_pending', { id, approved }),
+  agentApprove: (id: string, approved: boolean) => invoke<{ approved: boolean; id: string; result?: AgentWriteResult }>('agent_resolve_pending', { id, approved }),
+  agentRecheckOperation: (operationId: string) => invoke<void>('agent_recheck_operation', { operationId }),
+  agentOperations: () => invoke<AgentOperation[]>('agent_list_operations'),
+  agentUndoOperation: (operationId: string) => invoke<AgentUndoResult>('agent_undo_operation', { operationId }),
   agentUndo: (notePath: string) => invoke<{ notePath: string; relativePath: string; restoredVersion: number | null; preview: string }>('agent_undo_last', { notePath }),
   createChat: (title: string, origin: ChatOrigin) => invoke<ChatLibrarySession>('create_chat_session', { title, origin }),
   listChats: (query?: string | null, origin?: ChatOrigin | null, limit?: number) => invoke<ChatLibrarySession[]>('list_chat_sessions', { query: query ?? null, origin: origin ?? null, limit: limit ?? 100 }),

@@ -1,3 +1,5 @@
+import { useDocumentImports } from './DocumentImports';
+import { mergeAgentContext } from '../services/agentContext';
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
   Sparkles, Send, Loader2, RefreshCw, FileText,
@@ -10,7 +12,7 @@ import { summarizeNote, suggestConnections, suggestMetadata, sendChatMessage, se
 import { CHAT_COLLAPSE_THRESHOLD } from '../services/notebook';
 import { buildAgentSystemPrompt, buildChatSystemPrompt } from '../services/systemMessages';
 import { knowledge } from '../services/knowledge';
-import type { AgentToolDefinition, ChatLibrarySession, Citation, RetrievedBlock, AgentPending } from '../services/knowledge';
+import type { AgentToolDefinition, ChatLibrarySession, Citation, RetrievedBlock, AgentPending, AgentOperation } from '../services/knowledge';
 import { useChatLibrary } from '../services/chatLibrary';
 import { useDialog } from './DialogProvider';
 import { createErrorDetails, createUserErrorDetails, ErrorDetails } from '../utils/errors';
@@ -21,6 +23,7 @@ interface AISidebarProps {
   config: OmniRouteConfig;
   onOpenSettings: () => void;
   onInsertText: (text: string) => void;
+  onOpenSource?: (source: Citation) => Promise<void>;
   /** Vault mutated by an approved/undone agent edit — refresh list + graph.
    *  Receives the affected absolute path when the tool result carries one. */
   onVaultChanged?: (affectedPath?: string) => void;
@@ -221,11 +224,13 @@ export const AISidebar: React.FC<AISidebarProps> = ({
   config,
   onOpenSettings,
   onInsertText,
+  onOpenSource,
   onVaultChanged,
   openRequest,
   onOpenRequestConsumed,
   onOpenInNotebook,
 }) => {
+  const documentImports = useDocumentImports();
   const dialogs = useDialog();
   const library = useChatLibrary();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -236,13 +241,18 @@ export const AISidebar: React.FC<AISidebarProps> = ({
   const [error, setError] = useState<ErrorDetails | null>(null);
   const [agentMode, setAgentMode] = useState(false);
   const [pendingAgent, setPendingAgent] = useState<AgentPending[]>([]);
-  const [undoNote, setUndoNote] = useState<string | null>(null);
+  const [operations, setOperations] = useState<AgentOperation[]>([]);
+  const [staleProposal, setStaleProposal] = useState<AgentPending | null>(null);
   const [view, setView] = useState<'chat' | 'library'>('chat');
   // Active library session backing this chat. Null = ephemeral draft that
   // becomes a persisted session on its first message.
   const [librarySessionId, setLibrarySessionId] = useState<string | null>(null);
   const librarySessionIdRef = useRef<string | null>(null);
   const persistedCount = useRef(0);
+  const persistenceQueue = useRef(Promise.resolve());
+  const persistenceTarget = useRef<{ id: string | null }>({ id: null });
+  const mounted = useRef(true);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
 
   const serializeMeta = (m: ChatMessage): string | null => {
     const meta: Record<string, unknown> = {};
@@ -263,24 +273,30 @@ export const AISidebar: React.FC<AISidebarProps> = ({
     if (messages.length === persistedCount.current) return;
     const delta = messages.slice(persistedCount.current);
     persistedCount.current = messages.length;
-    void (async () => {
+    const target = persistenceTarget.current;
+    persistenceQueue.current = persistenceQueue.current.then(async () => {
+      if (!mounted.current) return;
       try {
-        let sid = librarySessionIdRef.current;
+        let sid = target.id;
         if (!sid) {
           const firstUser = messages.find((m) => m.role === 'user');
           const title = (firstUser?.content ?? 'Conversation').slice(0, 60);
           const row = await library.create(title, 'copilot');
           sid = row.id;
-          librarySessionIdRef.current = sid;
-          setLibrarySessionId(sid);
+          target.id = sid;
+          if (mounted.current && persistenceTarget.current === target) {
+            librarySessionIdRef.current = sid;
+            setLibrarySessionId(sid);
+          }
         }
         for (const m of delta) {
+          if (!mounted.current) return;
           await library.append(sid, m.role, m.content, serializeMeta(m));
         }
       } catch (e) {
-        console.error('Chat persist failed:', e);
+        showError(e, 'Chat could not be saved. Keep this conversation open and retry.');
       }
-    })();
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [messages]);
 
@@ -290,6 +306,7 @@ export const AISidebar: React.FC<AISidebarProps> = ({
       setError(createUserErrorDetails('No synced transcript yet for this Notebook chat. Open it in Notebook (or press “Continue in Co-Pilot” there) to sync it here.'));
     }
     persistedCount.current = rows.length;
+    persistenceTarget.current = {id: entry.id};
     librarySessionIdRef.current = entry.id;
     setLibrarySessionId(entry.id);
     setMessages(
@@ -308,6 +325,7 @@ export const AISidebar: React.FC<AISidebarProps> = ({
   }, [library]);
 
   const startNewChat = useCallback(() => {
+    persistenceTarget.current = {id: null};
     librarySessionIdRef.current = null;
     setLibrarySessionId(null);
     setMessages([]);
@@ -364,8 +382,8 @@ export const AISidebar: React.FC<AISidebarProps> = ({
     let cancelled = false;
     const tick = async () => {
       try {
-        const list = await knowledge.agentPending();
-        if (!cancelled) setPendingAgent(list);
+        const [list, ops] = await Promise.all([knowledge.agentPending(), knowledge.agentOperations()]);
+        if (!cancelled) { setPendingAgent(list); setOperations(ops); }
       } catch {}
     };
     tick();
@@ -419,7 +437,7 @@ export const AISidebar: React.FC<AISidebarProps> = ({
       // Retrieval-augmented: vault-aware context (active note + linked + backlinks + semantic + tags) is injected server-side.
       const activeForRetrieval = note ? { title: note.title, path: note.path, content: note.content } : null;
       const { text: response, retrieval } = await sendChatMessageWithRetrieval(config, fullMessages, activeForRetrieval);
-      setMessages((prev) => [...prev, { role: 'assistant', content: response, citations: retrieval?.citations ?? undefined, degraded: retrieval?.degraded ?? null, retrievedBlocks: retrieval?.blocks ?? undefined }]);
+      setMessages((prev) => [...prev, { role: 'assistant', content: response, citations: retrieval?.contextCitations ?? retrieval?.citations ?? undefined, degraded: retrieval?.degraded ?? null, retrievedBlocks: retrieval?.blocks ?? undefined }]);
     } catch (err: any) {
       showError(err, 'An error occurred.');
     } finally {
@@ -450,8 +468,8 @@ export const AISidebar: React.FC<AISidebarProps> = ({
     return calls;
   };
 
-  const postApprovalMessage = async (tool: string, preview: string | null) => {
-    setMessages((prev) => [...prev, { role: 'assistant', content: `Agent prepared \`${tool}\` — review the preview below and Approve to apply.\n\nPreview:\n\`\`\`diff\n${preview ?? '(no preview)'}\n\`\`\`` }]);
+  const postApprovalMessage = async (tool: string, preview: string | null, context: {citations: Citation[]; degraded: string | null} = {citations: [], degraded: null}) => {
+    setMessages((prev) => [...prev, { ...context, role: 'assistant', content: `Agent prepared \`${tool}\` — review the preview below and Approve to apply.\n\nPreview:\n\`\`\`diff\n${preview ?? '(no preview)'}\n\`\`\`` }]);
     try { const list = await knowledge.agentPending(); setPendingAgent(list); } catch {}
   };
 
@@ -498,12 +516,14 @@ export const AISidebar: React.FC<AISidebarProps> = ({
         { role: 'user', content: trimmed },
       ];
       let finished = false;
+      let context: {citations: Citation[]; degraded: string | null} = {citations: [], degraded: null};
       for (let round = 0; round < MAX_AGENT_ROUNDS && !finished; round++) {
-        const { text: response } = await sendChatMessageWithRetrieval(config, work, activeForRetrieval);
+        const { text: response, retrieval } = await sendChatMessageWithRetrieval(config, work, activeForRetrieval);
+        context = mergeAgentContext(context, retrieval);
         work.push({ role: 'assistant', content: response });
         const calls = extractToolCalls(response);
         if (!calls.length) {
-          setMessages((prev) => [...prev, { role: 'assistant', content: response }]);
+          setMessages((prev) => [...prev, { role: 'assistant', content: response, ...context }]);
           finished = true;
           break;
         }
@@ -518,14 +538,15 @@ export const AISidebar: React.FC<AISidebarProps> = ({
             continue;
           }
           if (res.requiresApproval && res.approvalId) {
-            await postApprovalMessage(res.tool, res.preview);
+            await postApprovalMessage(res.tool, res.preview, context);
             work.push({ role: 'user', content: `Tool ${call.tool} prepared a preview (approval id ${res.approvalId}) now waiting for the user's decision. Do not call further write tools. Summarize what you prepared and ask for approval.` });
             // One more model pass for the summary, then end the turn — the
             // user's Approve/Deny resolves the pending edit via the review UI.
             try {
-              const { text: summary } = await sendChatMessageWithRetrieval(config, work, activeForRetrieval);
+              const { text: summary, retrieval } = await sendChatMessageWithRetrieval(config, work, activeForRetrieval);
+              context = mergeAgentContext(context, retrieval);
               if (!extractToolCalls(summary).length) {
-                setMessages((prev) => [...prev, { role: 'assistant', content: summary }]);
+                setMessages((prev) => [...prev, { role: 'assistant', content: summary, ...context }]);
               }
             } catch { /* preview message above already informs the user */ }
             finished = true;
@@ -539,7 +560,7 @@ export const AISidebar: React.FC<AISidebarProps> = ({
         }
       }
       if (!finished) {
-        setMessages((prev) => [...prev, { role: 'assistant', content: 'Agent reached its step limit. Review any prepared previews below, or ask me to continue.' }]);
+        setMessages((prev) => [...prev, { role: 'assistant', content: 'Agent reached its step limit. Review any prepared previews below, or ask me to continue.', ...context }]);
       }
     } catch (err: any) {
       showError(err, 'Agent turn failed.');
@@ -777,15 +798,16 @@ export const AISidebar: React.FC<AISidebarProps> = ({
                    <div className="mt-1 text-[10px] text-amber-400/80 bg-amber-950/20 border border-amber-900/40 rounded-lg px-2 py-1 max-w-full">{msg.degraded}</div>
                  )}
                  {!isUser && msg.citations && msg.citations.length > 0 && (
-                   <div className="mt-1.5 flex flex-wrap gap-1 max-w-full">
+                   <div className="mt-1.5 flex flex-wrap gap-1 max-w-full" aria-label="Retrieved sources">
+                     <span className="w-full text-xs">Retrieved sources</span>
                      {msg.citations.slice(0, 6).map((c, ci) => {
                        const label = c.blockId ? `${c.title}#${c.blockId.slice(0, 6)}` : c.title || c.path.split('/').pop() || c.path;
                        const hover = c.anchor ? `${c.path}#^${c.anchor}` : c.blockId ? `${c.path}#${c.blockId}` : c.path;
                        return (
-                         <span key={ci} title={hover} onClick={() => msg.retrievedBlocks?.[ci] && onInsertText(`[[${c.path}]]`)} className="inline-flex items-center gap-1 text-[10px] font-medium px-2 py-0.5 rounded-full bg-slate-800 border border-slate-700 text-slate-300 hover:bg-slate-700 cursor-pointer transition-colors">
+                         <span key={ci} className="inline-flex max-w-full gap-1"><button type="button" title={hover} onClick={() => void onOpenSource?.(c).catch(e => showError(e, 'Source is no longer available.'))} className="inline-flex items-center gap-1 text-[10px] font-medium px-2 py-0.5 rounded-full bg-slate-800 border border-slate-700 text-slate-300 hover:bg-slate-700 cursor-pointer transition-colors">
                            <FileText className="w-3 h-3 shrink-0" />
                            <span className="truncate max-w-[18ch]">{label}</span>
-                         </span>
+                         </button>{c.blockId && <button className="runtime-button" aria-label={`Source details: ${c.title}`} onClick={() => documentImports.source(c.blockId!)}>Source</button>}</span>
                        );
                      })}
                    </div>
@@ -844,19 +866,27 @@ export const AISidebar: React.FC<AISidebarProps> = ({
               <div className="text-[11px] font-semibold text-[var(--color-text-hi)]">{p.tool} · <span className="text-[var(--color-text-body)]">{p.notePath}</span></div>
               <pre >{p.preview || '(no preview)'}</pre>
               <div className="runtime-actions">
-                <button onClick={async () => { try { const r = await knowledge.agentApprove(p.id, true); setMessages((m) => [...m, { role: 'assistant', content: `Approved \`${p.tool}\`${(r as any)?.result ? ` — ${JSON.stringify((r as any).result)}` : ''}` }]); const list = await knowledge.agentPending(); setPendingAgent(list); setUndoNote(p.notePath); onVaultChanged?.((r as any)?.result?.newPath ?? (r as any)?.result?.notePath ?? p.notePath); } catch (e: any) { showError(e, 'Approval failed.'); } }} className="runtime-button runtime-primary"><Check className="w-3 h-3" /> Approve</button>
+                <button onClick={async () => { try { const r = await knowledge.agentApprove(p.id, true); setMessages((m) => [...m, { role: 'assistant', content: `Approved \`${p.tool}\`${r.result ? ` — ${JSON.stringify((r as any).result)}` : ''}` }]); const list = await knowledge.agentPending(); setPendingAgent(list); setOperations(await knowledge.agentOperations()); onVaultChanged?.(r.result?.newPath ?? r.result?.notePath ?? p.notePath); } catch (e: any) { if(String(e).includes('CONFLICT:')) { setStaleProposal(p); setPendingAgent(list => list.filter(item => item.id !== p.id)); } showError(e, 'Approval failed.'); } }} className="runtime-button runtime-primary"><Check className="w-3 h-3" /> Approve</button>
                 <button onClick={async () => { try { await knowledge.agentApprove(p.id, false); const list = await knowledge.agentPending(); setPendingAgent(list); setMessages((m) => [...m, { role: 'assistant', content: `Denied \`${p.tool}\`` }]); } catch (e: any) { showError(e, 'Deny failed.'); } }} className="runtime-button"><X className="w-3 h-3" /> Deny</button>
               </div>
             </article>
           ))}
         </div>
       )}
-      {agentMode && undoNote && (
-        <div className="agent-undo">
-          <span className="text-[10px] text-slate-400">Last edit recoverable via history</span>
-          <button onClick={async () => { try { const r = await knowledge.agentUndo(undoNote); setMessages((m) => [...m, { role: 'assistant', content: `Undid last change to \`${r.relativePath}\`\n\`\`\`diff\n${r.preview}\n\`\`\`` }]); onVaultChanged?.(undoNote); } catch (e: any) { showError(e, 'Undo failed.'); } }} className="runtime-button"><Undo2 className="w-3 h-3" /> Undo last edit</button>
-        </div>
-      )}
+      {agentMode && staleProposal && <div className="agent-review" role="alert">
+        <p>The source changed. Review a fresh proposal before applying it.</p>
+        <button className="runtime-button" onClick={async () => {
+          try { setError(null); await knowledge.agentCall(staleProposal.tool, staleProposal.input); setStaleProposal(null); setPendingAgent(await knowledge.agentPending()); }
+          catch(e) { showError(e, 'Could not prepare a fresh preview.'); }
+        }}>Generate fresh preview</button>
+      </div>}
+      {agentMode && <div className="agent-operation-list" aria-label="Agent operation history">{operations.filter(op => op.undoAvailable || op.state.includes('recovery')).slice(0,10).map(op => <div key={op.id} className="agent-undo">
+        <span>{op.tool.replaceAll('_',' ')} · {op.notePath}</span>
+        {op.undoAvailable ? <button className="runtime-button" onClick={async () => {
+          try { const r=await knowledge.agentUndoOperation(op.id); setOperations(previous=>previous.filter(item=>item.id!==op.id)); setMessages(previous=>[...previous,{role:'assistant',content:`Undid operation on ${r.relativePath}`}]); onVaultChanged?.(r.notePath); }
+          catch(e){ showError(e, 'Undo blocked; your current files were preserved.'); }
+        }}><Undo2 className="w-3 h-3"/>Undo operation</button> : <div><p role="alert">Recovery required: {op.error}. Recorded versions are retained.</p><button className="runtime-button" onClick={async()=>{try{await knowledge.agentRecheckOperation(op.id);setOperations(await knowledge.agentOperations());onVaultChanged?.(op.notePath);}catch(e){showError(e,'Recovery could not be reconciled.');}}}>Recheck recovery</button></div>}
+      </div>)}</div>}
       {view === 'chat' && <form
         onSubmit={(e) => {
           e.preventDefault();

@@ -1,3 +1,4 @@
+use crate::document_model::{Fragment, Location};
 use crate::{Error, Result};
 use std::{io::Read, path::Path};
 const CAP: u64 = 256 * 1024 * 1024;
@@ -61,6 +62,20 @@ fn markdown_table(rows: &[Vec<String>]) -> String {
     out
 }
 pub fn extract(path: &Path) -> Result<String> {
+    extract_impl(path, &mut vec![])
+}
+pub fn extract_fragments(path: &Path) -> Result<Vec<Fragment>> {
+    let mut fragments = vec![];
+    let markdown = extract_impl(path, &mut fragments)?;
+    if fragments.is_empty() {
+        fragments.push(Fragment {
+            markdown,
+            location: None,
+        });
+    }
+    Ok(fragments)
+}
+fn extract_impl(path: &Path, fragments: &mut Vec<Fragment>) -> Result<String> {
     let ext = path
         .extension()
         .unwrap_or_default()
@@ -106,6 +121,7 @@ pub fn extract(path: &Path) -> Result<String> {
             .map_err(|e: calamine::XlsxError| Error::new("extract", e))?;
         let mut out = String::new();
         for name in book.sheet_names().to_vec() {
+            let begin = out.len();
             let range = book
                 .worksheet_range(&name)
                 .map_err(|e| Error::new("extract", e))?;
@@ -118,6 +134,13 @@ pub fn extract(path: &Path) -> Result<String> {
                         .collect::<Vec<_>>()
                 )
             ));
+            fragments.push(Fragment {
+                markdown: out[begin..].to_string(),
+                location: Some(Location {
+                    sheet: Some(name),
+                    ..Default::default()
+                }),
+            });
         }
         return Ok(out);
     }
@@ -225,6 +248,7 @@ pub fn extract(path: &Path) -> Result<String> {
                 "Slide contains graphical content requiring Docling",
             ));
         }
+        let begin = out.len();
         out.push_str(&format!("## Slide {}\n\n", i + 1));
         for node in tree.descendants().filter(|n| {
             n.is_element()
@@ -247,6 +271,13 @@ pub fn extract(path: &Path) -> Result<String> {
             }
             out.push_str("\n\n");
         }
+        fragments.push(Fragment {
+            markdown: out[begin..].to_string(),
+            location: Some(Location {
+                slide: Some(i as u32 + 1),
+                ..Default::default()
+            }),
+        });
     }
     Ok(out)
 }

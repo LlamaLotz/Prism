@@ -341,6 +341,7 @@ fn page(
         let (title, links, body) = result;
         return Ok((
             Extraction {
+                fragments: vec![],
                 stem: title.clone(),
                 title,
                 body,
@@ -361,6 +362,7 @@ fn page(
         convert(&html)?.ok_or_else(|| Error::new("quality", "Insufficient webpage content"))?;
     Ok((
         Extraction {
+            fragments: vec![],
             stem: title.clone(),
             title,
             body,
@@ -406,6 +408,7 @@ pub fn crawl(source: &str, max: usize) -> Result<Extraction> {
     let mut queue = VecDeque::from([start.clone()]);
     let mut seen = HashSet::from([start.to_string()]);
     let mut sections = Vec::new();
+    let mut fragments = Vec::new();
     let mut attempted = 0;
     // Rounds of up to CRAWL_WORKERS concurrent fetches; results are joined
     // in discovery order so output stays deterministic BFS.
@@ -446,7 +449,15 @@ pub fn crawl(source: &str, max: usize) -> Result<Extraction> {
         for (_, url, result) in results {
             match result {
                 Ok((e, links)) => {
-                    sections.push(format!("## {}\n\nURL: {}\n\n{}", e.title, url, e.body));
+                    let section = format!("## {}\n\nURL: {}\n\n{}", e.title, url, e.body);
+                    fragments.push(crate::document_model::Fragment {
+                        markdown: section.clone(),
+                        location: Some(crate::document_model::Location {
+                            url: Some(url.to_string()),
+                            ..Default::default()
+                        }),
+                    });
+                    sections.push(section);
                     for href in links {
                         if seen.len() >= max {
                             break;
@@ -466,6 +477,7 @@ pub fn crawl(source: &str, max: usize) -> Result<Extraction> {
         return Err(Error::new("quality", "No crawl pages extracted"));
     }
     Ok(Extraction {
+        fragments,
         title: "Extracted web content".into(),
         stem: "extracted_web_content".into(),
         source: source.into(),

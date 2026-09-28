@@ -47,3 +47,21 @@
 .runtime-job progress::-webkit-progress-bar { background: var(--color-surface); }
 .runtime-job progress::-webkit-progress-value { background: var(--color-brand-500); }
 .runtime-job progress::-moz-progress-bar { background: var(--color-brand-500); }
+
+.agent-operation-list { max-height: 180px; min-height: 0; flex-shrink: 0; overflow: auto; }
+
+.document-dialog { width: min(800px, calc(100vw - 24px)); overflow-wrap: anywhere; }
+.document-dialog .runtime-heading { flex-wrap: wrap; }
+.document-dialog h3 { margin: 18px 0 10px; font-size: 14px; font-weight: 600; }
+.document-dialog details { margin: 12px 0; font-size: 12px; }
+.document-dialog summary { cursor: pointer; padding: 10px 0; font-weight: 600; }
+.document-dialog ul { padding-left: 20px; list-style: disc; }
+.document-dialog pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 300px; overflow: auto; background: var(--color-base); color: var(--color-text-hi); border: 1px solid var(--color-border); border-radius: 8px; padding: 14px; font-size: 12px; }
+.document-dialog :is(summary,pre,input,select):focus-visible { outline: 2px solid var(--color-brand-500); outline-offset: 2px; }
+.document-options { margin: 20px 0; padding: 12px 18px; }
+.document-options legend { font-size: 13px; padding: 0 6px; }
+.document-options .document-checkbox { display: flex; align-items: center; }
+.document-checkbox input { width: auto; accent-color: var(--color-brand-500); }
+.document-output { border-top: 1px solid var(--color-border); }
+.document-dialog .runtime-actions { align-items: center; font-size: 12px; }
+@media (max-width: 480px) { .document-dialog { padding: 16px; } .document-options { padding: 10px; } }

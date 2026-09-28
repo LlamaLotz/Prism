@@ -1,3 +1,4 @@
+use crate::document_model::{Fragment, Location};
 use crate::{cli::Ocr, Error, Result};
 use std::{path::Path, process::Command, time::Duration};
 pub fn chunks(pages: u32) -> Vec<(u32, u32)> {
@@ -25,6 +26,13 @@ pub fn ocr_image(path: &Path) -> Result<String> {
     }
 }
 pub fn extract(path: &Path, ocr: Ocr, scratch: &Path) -> Result<String> {
+    Ok(extract_fragments(path, ocr, scratch)?
+        .iter()
+        .map(|f| f.markdown.as_str())
+        .collect::<Vec<_>>()
+        .join("\n\n---\n\n"))
+}
+pub fn extract_fragments(path: &Path, ocr: Ocr, scratch: &Path) -> Result<Vec<Fragment>> {
     // lopdf's parser materializes the PDF: larger inputs go to the file-backed PDFium reader.
     let pages = page_count(path)?;
     if pages == 0 {
@@ -62,7 +70,10 @@ pub fn extract(path: &Path, ocr: Ocr, scratch: &Path) -> Result<String> {
                             Duration::from_secs(90),
                             4 * 1024 * 1024,
                         ) {
-                            Ok(_) => std::fs::read_to_string(dest).map_err(Error::from),
+                            Ok(_) => std::fs::read(dest).map_err(Error::from).and_then(|bytes| {
+                                serde_json::from_slice::<Vec<Fragment>>(&bytes)
+                                    .map_err(|e| Error::new("protocol", e))
+                            }),
                             Err(e) => {
                                 if ocr == Ocr::On || e.kind != "timeout" {
                                     return Err(e);
@@ -97,7 +108,10 @@ pub fn extract(path: &Path, ocr: Ocr, scratch: &Path) -> Result<String> {
                                     Duration::from_secs(90),
                                     4 * 1024 * 1024,
                                 )?;
-                                std::fs::read_to_string(dest).map_err(Error::from)
+                                std::fs::read(dest).map_err(Error::from).and_then(|bytes| {
+                                    serde_json::from_slice::<Vec<Fragment>>(&bytes)
+                                        .map_err(|e| Error::new("protocol", e))
+                                })
                             }
                         }
                     })
@@ -111,10 +125,10 @@ pub fn extract(path: &Path, ocr: Ocr, scratch: &Path) -> Result<String> {
                 .collect::<Vec<_>>()
         });
         for result in results {
-            output.push(result?);
+            output.extend(result?);
         }
     }
-    Ok(output.join("\n\n---\n\n"))
+    Ok(output)
 }
 fn page_count(path: &Path) -> Result<u32> {
     #[cfg(feature = "pdfium")]
@@ -144,6 +158,13 @@ fn bind() -> Result<pdfium_render::prelude::Pdfium> {
     Ok(Pdfium::new(bindings))
 }
 pub fn range(path: &Path, start: u32, end: u32, ocr: Ocr) -> Result<String> {
+    Ok(range_fragments(path, start, end, ocr)?
+        .iter()
+        .map(|f| f.markdown.as_str())
+        .collect::<Vec<_>>()
+        .join("\n\n---\n\n"))
+}
+pub fn range_fragments(path: &Path, start: u32, end: u32, ocr: Ocr) -> Result<Vec<Fragment>> {
     #[cfg(feature = "pdfium")]
     if let Ok(pdfium) = bind() {
         use pdfium_render::prelude::*;
@@ -190,21 +211,29 @@ pub fn range(path: &Path, start: u32, end: u32, ocr: Ocr) -> Result<String> {
                 .as_image()
                 .save(&image)
                 .map_err(|e| Error::new("extract", e))?;
-                texts.push(ocr_image(&image)?);
+                texts.push(Fragment {
+                    markdown: ocr_image(&image)?,
+                    location: Some(Location {
+                        page: Some(idx + 1),
+                        ..Default::default()
+                    }),
+                });
             } else if !text.trim().is_empty() {
-                texts.push(if ocr == Ocr::Off {
-                    format!("### Page {}\n\n{}", idx + 1, text.trim())
-                } else {
-                    text
+                texts.push(Fragment {
+                    markdown: if ocr == Ocr::Off {
+                        format!("### Page {}\n\n{}", idx + 1, text.trim())
+                    } else {
+                        text
+                    },
+                    location: Some(Location {
+                        page: Some(idx + 1),
+                        ..Default::default()
+                    }),
                 });
             }
         }
         if !texts.is_empty() {
-            return Ok(texts.join(if ocr == Ocr::Off {
-                "\n\n---\n\n"
-            } else {
-                "\n\n"
-            }));
+            return Ok(texts);
         }
     }
     if ocr == Ocr::On {
@@ -225,9 +254,14 @@ pub fn range(path: &Path, start: u32, end: u32, ocr: Ocr) -> Result<String> {
         .ok_or_else(|| Error::new("extract", "Invalid page range"))?
         .iter()
         .enumerate()
-        .map(|(i, t)| format!("### Page {}\n\n{}", start as usize + i + 1, t.trim()))
-        .collect::<Vec<_>>()
-        .join("\n\n---\n\n");
+        .map(|(i, t)| Fragment {
+            markdown: format!("### Page {}\n\n{}", start as usize + i + 1, t.trim()),
+            location: Some(Location {
+                page: Some(start + i as u32 + 1),
+                ..Default::default()
+            }),
+        })
+        .collect::<Vec<_>>();
     if ocr == Ocr::Adaptive {
         return Err(Error::new(
             "quality",

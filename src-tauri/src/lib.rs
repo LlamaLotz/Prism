@@ -1,3 +1,4 @@
+mod document_model;
 #[cfg(feature = "ingest-rust")]
 mod native_ingest;
 use rusqlite::params;
@@ -523,6 +524,7 @@ fn linker_diff(
 
 #[tauri::command]
 fn linker_apply(state: tauri::State<'_, AppState>, file_path: String) -> Result<bool, String> {
+    let _mutation = knowledge::operations::lock()?;
     let mut linker = state.linker.lock().unwrap();
     let engine = linker.as_mut().ok_or("Linker engine not initialized")?;
     engine.apply_file(&file_path).map_err(|e| e.to_string())
@@ -534,6 +536,7 @@ fn apply_approved_links(
     file_path: String,
     approved_links: Vec<LinkMention>,
 ) -> Result<(), String> {
+    let _mutation = knowledge::operations::lock()?;
     let mut linker = state.linker.lock().unwrap();
     let engine = linker.as_mut().ok_or("Linker engine not initialized")?;
 
@@ -761,6 +764,7 @@ fn write_file(
     file_path: String,
     content: String,
 ) -> Result<(), String> {
+    let _mutation = knowledge::operations::lock()?;
     let path = Path::new(&file_path);
     knowledge::validate_path(&app_handle, path)?;
     if let Some(parent) = path.parent() {
@@ -866,6 +870,7 @@ fn create_file(
     relative_path: String,
     content: Option<String>,
 ) -> Result<String, String> {
+    let _mutation = knowledge::operations::lock()?;
     let root = Path::new(&vault_path);
     let validated_relative_path = validate_vault_relative_path(&relative_path, true)?;
     let mut file_path = root.join(validated_relative_path);
@@ -895,6 +900,7 @@ fn create_file(
 
 #[tauri::command]
 fn create_folder(vault_path: String, relative_path: String) -> Result<String, String> {
+    let _mutation = knowledge::operations::lock()?;
     let validated_relative_path = validate_vault_relative_path(&relative_path, false)?;
     let dir = Path::new(&vault_path).join(validated_relative_path);
     fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
@@ -907,6 +913,7 @@ fn delete_folder(
     relative_path: String,
     only_if_empty: Option<bool>,
 ) -> Result<(), String> {
+    let _mutation = knowledge::operations::lock()?;
     let root = Path::new(&vault_path);
     let validated_relative_path = validate_vault_relative_path(&relative_path, false)?;
     let dir = root.join(validated_relative_path);
@@ -964,6 +971,7 @@ fn rename_folder(
     old_relative_path: String,
     new_relative_path: String,
 ) -> Result<(), String> {
+    let _mutation = knowledge::operations::lock()?;
     let root = Path::new(&vault_path);
     let old_relative = validate_vault_relative_path(&old_relative_path, false)?;
     let new_relative = validate_vault_relative_path(&new_relative_path, false)?;
@@ -1027,6 +1035,7 @@ fn rename_folder(
 
 #[tauri::command]
 fn delete_file(app_handle: tauri::AppHandle, file_path: String) -> Result<(), String> {
+    let _mutation = knowledge::operations::lock()?;
     let path = Path::new(&file_path);
     knowledge::validate_path(&app_handle, path)?;
     if path.exists() {
@@ -1068,6 +1077,7 @@ fn rename_file(
     old_path: String,
     new_path: String,
 ) -> Result<(), String> {
+    let _mutation = knowledge::operations::lock()?;
     let old = Path::new(&old_path);
     let new = Path::new(&new_path);
     knowledge::validate_path(&app_handle, old)?;
@@ -1407,6 +1417,31 @@ async fn run_builtin_extractor_async(
     value: String,
     yt_method: String,
 ) -> Result<String, String> {
+    knowledge::validate_path(&app, Path::new(&vault_path))?;
+    let plan = knowledge::documents::prepare_document_import(
+        app,
+        window,
+        knowledge::documents::PrepareRequest {
+            kind: ingest_type,
+            value,
+            method: yt_method,
+            saved_revision: None,
+        },
+    )
+    .await?;
+    Ok(format!(
+        "Extraction ready for review. Import {} has not written any notes.",
+        plan.id
+    ))
+}
+async fn extract_to_stage_async(
+    app: tauri::AppHandle,
+    window: Window,
+    vault_path: String,
+    ingest_type: String,
+    value: String,
+    yt_method: String,
+) -> Result<String, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let key = knowledge::blocks::hash(&format!("{ingest_type}:{value}:{yt_method}"));
         knowledge::jobs::run(
@@ -1421,14 +1456,19 @@ async fn run_builtin_extractor_async(
                 }
 
                 knowledge::validate_path(&app, Path::new(&vault_path))?;
-                knowledge::models::authorize(
-                    &app,
-                    "Document extractor subprocess",
-                    "EXTRACT",
-                    &value,
-                    false,
-                    false,
-                )?;
+                let source_path = value
+                    .rsplit_once('|')
+                    .filter(|(_, s)| ["A", "O", "N"].contains(s))
+                    .map(|(p, _)| p)
+                    .unwrap_or(&value);
+                let source_hash = if ingest_type == "file" {
+                    knowledge::documents::file_hash(Path::new(source_path))?
+                } else {
+                    String::new()
+                };
+                let authorization =
+                    serde_json::json!({"source":value,"revision":source_hash,"method":yt_method})
+                        .to_string();
                 // Production runtime switch (Python default). The `ingest-rust` feature
                 // only controls whether the native worker is compiled in; the persisted
                 // `ingestionEngine` setting controls which path runs. Rust failures fall
@@ -1439,6 +1479,14 @@ async fn run_builtin_extractor_async(
                     .ingestion_engine
                     == config::IngestionEngine::Rust
                 {
+                    knowledge::models::authorize(
+                        &app,
+                        "Document extractor subprocess",
+                        "EXTRACT",
+                        &authorization,
+                        false,
+                        false,
+                    )?;
                     match native_ingest::run(
                         &app,
                         &window,
@@ -1463,6 +1511,7 @@ async fn run_builtin_extractor_async(
                         Err(e) if e == "Extraction cancelled" || job.check().is_err() => {
                             return Err(e)
                         }
+                        Err(e) if e.starts_with("FALLBACK_ATTEMPTED:") => return Err(e),
                         Err(e) => {
                             let _ = window.emit(
                                 "ingestion-progress",
@@ -1475,6 +1524,14 @@ async fn run_builtin_extractor_async(
                 }
 
                 {
+                    knowledge::models::authorize(
+                        &app,
+                        "Python document extractor",
+                        "EXTRACT",
+                        &authorization,
+                        false,
+                        false,
+                    )?;
                     let script_path =
                         resolve_resource_file(&app, "Extractor Final/master_extractor.py");
                     if !script_path.exists() {
@@ -1516,7 +1573,13 @@ async fn run_builtin_extractor_async(
 
                     let python_cmd = find_prism_python(&app);
 
-                    let clean_script_path = script_path
+                    // The legacy extractor writes logs/downloads relative to its script.
+                    // Run a copy in staging so it cannot publish into installed resources.
+                    let runtime_dir = Path::new(&vault_path).join("legacy-runtime");
+                    fs::create_dir_all(&runtime_dir).map_err(|e| e.to_string())?;
+                    let staged_script = runtime_dir.join("master_extractor.py");
+                    fs::copy(&script_path, &staged_script).map_err(|e| e.to_string())?;
+                    let clean_script_path = staged_script
                         .to_string_lossy()
                         .trim_start_matches(r"\\?\")
                         .to_string();
@@ -1546,6 +1609,18 @@ async fn run_builtin_extractor_async(
                     {
                         use std::os::unix::process::CommandExt;
                         cmd.process_group(0);
+                    }
+                    job.check()?;
+                    if config::load_runtime_config(&app)
+                        .unwrap_or_default()
+                        .models
+                        .privacy
+                        == knowledge::models::PrivacyMode::StrictLocal
+                    {
+                        return Err(
+                            "Strict Local blocks extractor subprocesses with uncontrolled egress"
+                                .into(),
+                        );
                     }
                     let mut child = cmd
                         .current_dir(&vault_path)
@@ -2276,11 +2351,23 @@ pub fn run() {
             knowledge::search::get_relations,
             knowledge::retrieval::plan_retrieval,
             knowledge::retrieval::get_context,
+            knowledge::documents::prepare_document_import,
+            knowledge::documents::list_document_imports,
+            knowledge::documents::get_document_preview,
+            knowledge::documents::update_document_import,
+            knowledge::documents::commit_document_import,
+            knowledge::documents::get_document_source,
+            knowledge::documents::open_document_source,
+            knowledge::documents::list_note_document_sources,
+            knowledge::documents::recover_document_import,
             knowledge::agent::agent_list_tools,
             knowledge::agent::agent_call_tool,
             knowledge::agent::agent_list_pending,
             knowledge::agent::agent_resolve_pending,
             knowledge::agent::agent_undo_last,
+            knowledge::agent::agent_list_operations,
+            knowledge::agent::agent_recheck_operation,
+            knowledge::agent::agent_undo_operation,
             knowledge::jobs::list_knowledge_jobs,
             knowledge::jobs::cancel_knowledge_job,
             knowledge::models::execute_model,

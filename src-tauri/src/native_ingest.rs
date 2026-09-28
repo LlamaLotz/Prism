@@ -43,11 +43,12 @@ pub fn run(
     )?;
     let work = tempfile::Builder::new()
         .prefix("prism-ingest-")
-        .tempdir()
+        .tempdir_in(vault)
         .map_err(|e| e.to_string())?;
     let mut command = Command::new(&exe);
     command
         .env("PRISM_INGEST_WORK", work.path())
+        .env("PRISM_INGEST_DATA", Path::new(vault).join("diagnostics"))
         .env("PRISM_INGEST_SUPERVISED", "1");
     command.args([
         "--supervised",
@@ -112,6 +113,8 @@ pub fn run(
         }
     });
     let mut groups = HashSet::<i32>::new();
+    let mut publication_guard = None;
+    let mut fallback_attempted = false;
     let result = (|| {
         writeln!(stdin, "{{\"start\":true}}").map_err(|e| e.to_string())?;
         loop {
@@ -142,11 +145,25 @@ pub fn run(
                             }
                         }
                         "ready" => {
+                            publication_guard = Some(crate::knowledge::operations::lock()?);
                             check()?;
                             writeln!(stdin, "{{\"commit\":true}}").map_err(|e| e.to_string())?;
                         }
+                        "result" => {
+                            publication_guard.take();
+                            let _ = window.emit("ingestion-progress", message);
+                        }
                         "python_required" => {
+                            fallback_attempted = true;
                             check()?;
+                            crate::knowledge::models::authorize(
+                                app,
+                                "Python extraction fallback",
+                                "EXTRACT",
+                                &serde_json::json!({"source":value,"method":method}).to_string(),
+                                false,
+                                false,
+                            )?;
                             // Resolve/install Python only after the native worker has requested fallback.
                             let env = app.path().home_dir().map_err(|e| e.to_string())?.join(
                                 if cfg!(windows) {
@@ -198,7 +215,13 @@ pub fn run(
     drop(_job);
     let _ = out_reader.join();
     let _ = err_reader.join();
-    result
+    result.map_err(|e| {
+        if fallback_attempted && e != "Extraction cancelled" {
+            format!("FALLBACK_ATTEMPTED: {e}")
+        } else {
+            e
+        }
+    })
 }
 #[cfg(windows)]
 struct WindowsJob(windows_sys::Win32::Foundation::HANDLE);

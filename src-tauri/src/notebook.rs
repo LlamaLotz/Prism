@@ -739,6 +739,7 @@ pub async fn notebook_export(
     content: String,
 ) -> Result<String, String> {
     let lease = lease(&state, &workspace_id).await?;
+    let _mutation = crate::knowledge::operations::lock()?;
     let name = safe_filename(&title);
     for suffix in 0..10000 {
         let filename = if suffix == 0 {

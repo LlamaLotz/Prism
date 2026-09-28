@@ -1,3 +1,4 @@
+import { DocumentSourcesButton } from './DocumentImports';
 import React, { useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback } from 'react';
 import { Eye, Edit2, FileText, Calendar, Link2, ChevronUp, ChevronDown, X, Search, Anchor, Wand2, Info, Copy, Check, Scissors, History as HistoryIcon, RotateCcw, Undo2, Redo2 } from 'lucide-react';
 import { NoteFile, WikiLink, ReconstructedVersion, AppSettings } from '../types';
@@ -2341,6 +2342,7 @@ const sidecarPath = (notePath: string): string => {
 
         {/* Edit / Preview Segmented Controller */}
         <div className="flex items-center gap-2">
+          <DocumentSourcesButton path={note.path} />
           <LinkerToolbar
             pendingCount={visibleSuggestions.total}
             isScanning={isScanning}
