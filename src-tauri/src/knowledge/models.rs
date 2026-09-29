@@ -205,7 +205,13 @@ pub async fn execute_model(app: tauri::AppHandle, request: ModelRequest) -> Resu
     .await
     .map_err(|e| e.to_string())?
 }
-async fn execute(app: &tauri::AppHandle, request: ModelRequest) -> Result<String, String> {
+pub(crate) async fn execute(app: &tauri::AppHandle, request: ModelRequest) -> Result<String, String> {
+    execute_inner(app, request, None).await
+}
+pub(crate) async fn execute_stream<F: Fn(&str) + Send + Sync>(app: &tauri::AppHandle, request: ModelRequest, callback: F) -> Result<String, String> {
+    execute_inner(app, request, Some(&callback)).await
+}
+async fn execute_inner(app: &tauri::AppHandle, request: ModelRequest, callback: Option<&(dyn Fn(&str) + Send + Sync)>) -> Result<String, String> {
     if !["CHAT", "SUMMARIZE", "TAG", "FORMAT", "CLASSIFY", "LINK_SUGGEST", "AI_SCAN"].contains(&request.task.as_str()) {
         return Err("Model capability is not available for this task".into());
     }
@@ -267,7 +273,7 @@ async fn execute(app: &tauri::AppHandle, request: ModelRequest) -> Result<String
     } else {
         model.model.clone()
     };
-    let payload = if is_anthropic {
+    let mut payload = if is_anthropic {
         let system = messages
             .iter()
             .filter(|m| m.role == "system")
@@ -278,6 +284,7 @@ async fn execute(app: &tauri::AppHandle, request: ModelRequest) -> Result<String
     } else {
         serde_json::json!({"model":model_name,"messages":messages,"temperature":model.temperature})
     };
+    if callback.is_some() { payload["stream"] = serde_json::json!(true); }
     // A configurable localhost server may itself forward to cloud. Treat it as external.
     authorize(
         app,
@@ -304,9 +311,36 @@ async fn execute(app: &tauri::AppHandle, request: ModelRequest) -> Result<String
     } else if !key.is_empty() {
         req = req.bearer_auth(key);
     }
-    let response = req.send().await.map_err(|e| if e.is_connect() { "SERVICE_UNAVAILABLE: Provider connection failed" } else { "PROVIDER_ERROR: Request failed; it may have reached the provider. Retry manually." })?;
+    let mut response = req.send().await.map_err(|e| if e.is_connect() { "SERVICE_UNAVAILABLE: Provider connection failed" } else { "PROVIDER_ERROR: Request failed; it may have reached the provider. Retry manually." })?;
     if !response.status().is_success() {
         return Err(format!("{}: Provider request failed ({})", if response.status().as_u16() == 401 || response.status().as_u16() == 403 { "AUTHENTICATION" } else if response.status().as_u16() == 404 { "MODEL_OR_ENDPOINT_MISSING" } else { "PROVIDER_ERROR" }, response.status()));
+    }
+    if let Some(callback) = callback {
+        if response.headers().get("content-type").and_then(|v|v.to_str().ok()).unwrap_or("").contains("text/event-stream") {
+            let mut buffer=Vec::new();let mut text=String::new();let mut complete=false;
+            loop {
+                super::jobs::checkpoint()?;
+                let chunk=tokio::select! {
+                    result=response.chunk()=>result.map_err(|_|"Provider stream interrupted; retry manually")?,
+                    _=tokio::time::sleep(Duration::from_millis(100))=>continue,
+                };
+                let Some(chunk)=chunk else {break};buffer.extend_from_slice(&chunk);
+                if buffer.len()>8*1024*1024 || text.len()>8*1024*1024{return Err("Provider response exceeds 8 MB".into());}
+                while let Some(end)=buffer.iter().position(|b|*b==b'\n') {
+                    let line=String::from_utf8(buffer.drain(..=end).collect()).map_err(|_|"Invalid provider text")?;
+                    if let Some(data)=line.trim().strip_prefix("data:") {
+                        let data=data.trim();if data=="[DONE]"{complete=true;continue;}
+                        let item:serde_json::Value=serde_json::from_str(data).map_err(|_|"Invalid provider stream")?;
+                        if item.get("error").is_some(){return Err("Provider reported an error while streaming".into());}
+                        if item["type"]=="message_stop" || !item["choices"][0]["finish_reason"].is_null(){complete=true;}
+                        let delta=if is_anthropic {item["delta"]["text"].as_str()}else{item["choices"][0]["delta"]["content"].as_str()};
+                        if let Some(delta)=delta {text.push_str(delta);callback(&text);}
+                    }
+                }
+            }
+            if !complete || text.trim().is_empty(){return Err("Provider stream ended before a complete response; retry manually".into());}
+            return Ok(text);
+        }
     }
     let body: serde_json::Value = response
         .json()
@@ -325,6 +359,7 @@ async fn execute(app: &tauri::AppHandle, request: ModelRequest) -> Result<String
             .as_str()
             .map(String::from)
     };
+    if let (Some(callback), Some(text)) = (callback, text.as_ref()) { callback(text); }
     text.ok_or("Provider returned no text".into())
 }
 

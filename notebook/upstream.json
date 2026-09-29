@@ -8,5 +8,10 @@
     "darwin-arm64": "sha256:291daeebc15a98a9957182fc2e373aaabc700261d07cddf1bfe9de533342f9d4",
     "windows-amd64": "sha256:9f80f5b4c361b5274e17574822bddc7408f3a9c7b0d6a83a88a4c81f582ea9db"
   },
-  "imageioFfmpeg": "0.6.0"
+  "imageioFfmpeg": "0.6.0",
+  "studyExportDependencies": {
+    "python-pptx": "1.0.2",
+    "genanki": "0.13.1",
+    "reportlab": "4.4.3"
+  }
 }

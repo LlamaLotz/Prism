@@ -65,6 +65,8 @@ def main():
         run(args.uv, "export", "--project", source, "--frozen", "--no-dev", "--no-emit-project", "--output-file", requirements, stdout=subprocess.DEVNULL)
         run(args.uv, "pip", "sync", "--python", python, "--target", dest / "lib", requirements)
         run(args.uv, "pip", "install", "--python", python, "--target", dest / "lib", f"imageio-ffmpeg=={PIN['imageioFfmpeg']}")
+        export_dependencies = [f"{name}=={version}" for name, version in PIN["studyExportDependencies"].items()]
+        run(args.uv, "pip", "install", "--python", python, "--target", dest / "lib", *export_dependencies)
         arch = {"x86_64": "amd64", "aarch64": "arm64"}[machine]
         os_label = "windows" if os.name == "nt" else "darwin"
         # SurrealDB publishes Windows as a standalone .exe, not a zip archive.

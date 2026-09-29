@@ -1,3 +1,4 @@
+import { study, sharedStudy } from '../../services/study';
 import React, { useCallback, useEffect, useId, useRef, useState } from 'react';
 import ReactMarkdown, { defaultUrlTransform } from 'react-markdown';
 import { BookOpen, Plus, ArrowLeft, Upload, RefreshCw, Send, X, Search, FolderOpen, Pencil, ChevronDown, ChevronUp, History, ExternalLink } from 'lucide-react';
@@ -66,6 +67,12 @@ export interface NotebookChatOpenRequest {
   ts: number;
 }
 
+/** Section handoff request from the study workspace's Advanced menu. */
+export interface NotebookSectionOpenRequest {
+  section: 'workspace' | 'search' | 'chats' | 'transformations' | 'podcasts' | 'settings';
+  ts: number;
+}
+
 interface Props {
   active: boolean;
   vaultPath: string;
@@ -75,6 +82,8 @@ interface Props {
   onVaultExport: () => Promise<void>;
   openChatRequest?: NotebookChatOpenRequest | null;
   onOpenChatRequestConsumed?: () => void;
+  openSectionRequest?: NotebookSectionOpenRequest | null;
+  onOpenSectionRequestConsumed?: () => void;
   /** Continue a Notebook session in AI assistant (receives the library id). */
   onContinueInCopilot?: (sessionId: string) => void;
 }
@@ -117,7 +126,7 @@ export function NotebookPage(props: Props) {
   </section>;
 }
 
-function NotebookWorkspace({ client, vaultPath, vaultNotes, settings, onVaultExport, onRestart, openChatRequest, onOpenChatRequestConsumed, onContinueInCopilot }: Props & { client: NotebookClient; onRestart: () => Promise<void> }) {
+function NotebookWorkspace({ client, vaultPath, vaultNotes, settings, onVaultExport, onRestart, openChatRequest, onOpenChatRequestConsumed, openSectionRequest, onOpenSectionRequestConsumed, onContinueInCopilot }: Props & { client: NotebookClient; onRestart: () => Promise<void> }) {
   const dialogs = useDialog();
   const library = useChatLibrary();
   const storageKey = `prism_notebook_${vaultPath}`;
@@ -241,6 +250,7 @@ function NotebookWorkspace({ client, vaultPath, vaultNotes, settings, onVaultExp
         const title = titleOverride ?? row?.title ?? (sourceId ? 'Source conversation' : 'Research conversation');
         const model = modelOverride ?? (row as { model_override?: string | null } | undefined)?.model_override ?? null;
         const linked = await library.linkNotebook(sid, title, notebookId, sourceId, model);
+        if (await study.request<boolean>(vaultPath, 'isManaged', {id:linked.id}).catch(()=>false)) return linked.id;
         const backend = toLibraryTranscript(msgs);
         const have = new Set(backend.map((m) => `${m.role}\n${m.content}`));
         let extras: Array<{ role: 'user' | 'assistant'; content: string; metadata?: string | null }> = [];
@@ -366,6 +376,10 @@ function NotebookWorkspace({ client, vaultPath, vaultNotes, settings, onVaultExp
     const questionText = question; setQuestion('');
     const notebookId = selected; const scope = chatSource;
     const sid = session || await newSession();
+    const linked=await library.linkNotebook(sid,'Research conversation',scope?null:notebookId,scope||null,model||null);
+    if(await study.request<boolean>(vaultPath,'isManaged',{id:linked.id}).catch(()=>false)){
+      await sharedStudy.open(vaultPath,linked.id);void sharedStudy.send(vaultPath,linked.id,questionText);onContinueInCopilot?.(linked.id);return;
+    }
     try {
       if (scope) {
         const result = await client.request<{ stream: string }>(`${sessionPath}/${recordId(sid)}/messages`, 'POST', { message: questionText, model_override: model || null });
@@ -436,6 +450,16 @@ function NotebookWorkspace({ client, vaultPath, vaultNotes, settings, onVaultExp
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [openChatRequest?.ts]);
+  // Section handoff from the study workspace's Advanced menu; consumed once per
+  // request so StrictMode's double-invoked effects stay idempotent.
+  const openSectionConsumedTs = useRef<number | null>(null);
+  useEffect(() => {
+    if (!openSectionRequest || openSectionConsumedTs.current === openSectionRequest.ts) return;
+    openSectionConsumedTs.current = openSectionRequest.ts;
+    setSection(openSectionRequest.section);
+    onOpenSectionRequestConsumed?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openSectionRequest?.ts]);
   // Shared-library entry actions (Chats section).
   const librarySessionPath = (entry: ChatLibrarySession) =>
     entry.sourceId && entry.notebookSessionId

@@ -166,7 +166,7 @@ fn unused_port() -> Result<u16, String> {
     Ok(socket.local_addr().map_err(|e| e.to_string())?.port())
 }
 
-fn runtime_root(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+pub(crate) fn runtime_root(app: &tauri::AppHandle) -> Result<PathBuf, String> {
     let target = if cfg!(target_os = "windows") {
         "x86_64-pc-windows-msvc"
     } else if cfg!(target_arch = "aarch64") {

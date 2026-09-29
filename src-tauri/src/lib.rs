@@ -1,3 +1,4 @@
+mod study;
 mod document_model;
 #[cfg(feature = "ingest-rust")]
 mod native_ingest;
@@ -2096,6 +2097,7 @@ async fn replace_chat_transcript(
     tauri::async_runtime::spawn_blocking(move || {
         let scope = knowledge::current(&app_handle)?;
         let conn = db::init_db(&app_handle)?;
+        if study::managed(&scope, &session_id)? { return Ok(0); }
         db::chat::replace_messages(&conn, &scope.vault_id, &session_id, &messages)
     })
     .await
@@ -2308,6 +2310,10 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            study::study_request,
+            study::study_generate,
+            study::study_chat,
+            study::exports::study_export,
             knowledge::knowledge_snapshot,
             knowledge::get_knowledge_blocks,
             knowledge::search::search_knowledge,

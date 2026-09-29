@@ -364,6 +364,27 @@ export const Editor: React.FC<EditorProps> = ({
   const [histTick, setHistTick] = useState(0);
   const [content, setContent] = useState('');
   const [isSaved, setIsSaved] = useState(true);
+  const dirtyPathsRef = useRef(new Set<string>());
+  const publishStudyDirty = useCallback((path: string, dirty: boolean) => {
+    if (dirty) dirtyPathsRef.current.add(path);
+    else dirtyPathsRef.current.delete(path);
+    window.dispatchEvent(new CustomEvent('study-note-dirty', { detail: { path, dirty } }));
+  }, []);
+  const publishStudySaved = useCallback((path: string, savedContent: string) => {
+    if (noteRef.current?.path === path && contentRef.current !== savedContent) return;
+    publishStudyDirty(path, false);
+    if (noteRef.current?.path === path) {
+      dirtyRef.current = false;
+      setIsSaved(true);
+    }
+  }, [publishStudyDirty]);
+  const publishStudySaveFailed = useCallback((path: string) => {
+    publishStudyDirty(path, true);
+    if (noteRef.current?.path === path) {
+      dirtyRef.current = true;
+      setIsSaved(false);
+    }
+  }, [publishStudyDirty]);
   const [dictionary, setDictionary] = useState<[string, string][]>([]);
   const [pendingMentions, setPendingMentions] = useState<LinkMention[]>([]);
   const [incomingBacklinks, setIncomingBacklinks] = useState<BacklinkInfo[]>([]);
@@ -631,17 +652,16 @@ export const Editor: React.FC<EditorProps> = ({
     if (!dirtyRef.current) return;
     if (timerRef.current) clearTimeout(timerRef.current);
     timerRef.current = null;
-    dirtyRef.current = false;
-    setIsSaved(true);
     const path = noteRef.current?.path;
     if (path) {
       // Auto-link on save (Linking setting), then persist the possibly
       // rewritten content.
       materializeLarge(path);
       autoApplyMentionsRef.current();
-      void saveRef.current(path, contentRef.current).catch(() => { dirtyRef.current = true; setIsSaved(false); });
+      const content = contentRef.current;
+      void saveRef.current(path, content).then(() => publishStudySaved(path, content)).catch(() => publishStudySaveFailed(path));
     }
-  }, []);
+  }, [publishStudySaveFailed, publishStudySaved]);
 
   const forceSaveRef = useRef(forceSave);
   forceSaveRef.current = forceSave;
@@ -1762,14 +1782,14 @@ export const Editor: React.FC<EditorProps> = ({
         timerRef.current = null;
       }
       dirtyRef.current = false;
-      setIsSaved(true);
       saveRef.current(path, doc).then(() => {
+        publishStudySaved(path, doc);
         if (new Blob([doc]).size <= LARGE_NOTE_BYTES) void tauriAPI.recordNoteVersion(path, doc).catch(() => {});
-      }).catch(() => { dirtyRef.current = true; setIsSaved(false); });
+      }).catch(() => publishStudySaveFailed(path));
     } else if (new Blob([doc]).size <= LARGE_NOTE_BYTES) {
       tauriAPI.recordNoteVersion(path, doc).catch(() => {});
     }
-  }, []);
+  }, [publishStudySaveFailed, publishStudySaved]);
 
   // Sync content state when note changes. Deps are scoped to path + content:
   // runs on note switch and on lazy content arrival, but not on unrelated
@@ -1804,6 +1824,7 @@ export const Editor: React.FC<EditorProps> = ({
         updateContent(note.content ?? '');
       }
       setIsSaved(true);
+      if (note?.path) publishStudyDirty(note.path, false);
       setPendingMentions([]);
     } else {
       updateContent('');
@@ -1826,11 +1847,12 @@ export const Editor: React.FC<EditorProps> = ({
         if (timerRef.current) clearTimeout(timerRef.current);
         dirtyRef.current = false;
         saveRef.current(path, doc).then(() => {
+          publishStudySaved(path, doc);
           tauriAPI.recordNoteVersion(path, doc).catch(() => {});
-        });
+        }).catch(() => publishStudySaveFailed(path));
       }
     };
-  }, []);
+  }, [publishStudySaveFailed, publishStudySaved]);
 
   // Close the metadata modal when switching notes and support Esc to dismiss.
   useEffect(() => {
@@ -1890,9 +1912,7 @@ const sidecarPath = (notePath: string): string => {
   const dir = notePath.slice(0, notePath.lastIndexOf(sep));
   const name = notePath.slice(notePath.lastIndexOf(sep) + 1);
   return `${dir}${sep}note metadata${sep}${name}.meta.json`;
-};
-
-// CodeMirror 6 editor: recreated per note. The updateListener feeds React
+};  // CodeMirror 6 editor: recreated per note. The updateListener feeds React
   // state + debounced autosave; programmatic syncs (updateContent) are skipped
   // because the doc already matches contentRef. Notes above LARGE_NOTE_CHARS
   // get a plain-text editor (no markdown()/highlighting): the Lezer parse +
@@ -1903,6 +1923,7 @@ const sidecarPath = (notePath: string): string => {
     if (!container || !note) return;
     const initial = note.content ?? '';
     contentRef.current = initial;
+    dirtyRef.current=false;setIsSaved(true);setContent(initial);
     prevKeywordsRef.current = new Set(extractKeywords(initial).map((k) => k.toLowerCase()));
 
     const sharedExtensions = [
@@ -1933,13 +1954,13 @@ const sidecarPath = (notePath: string): string => {
             searchRefreshTimerRef.current = null;
             setSearchDocRevision((revision) => revision + 1);
           }, 400);
-          dirtyRef.current = true; setIsSaved(false);
+          dirtyRef.current = true; setIsSaved(false); publishStudyDirty(path, true);
           if (timerRef.current) clearTimeout(timerRef.current);
           timerRef.current = setTimeout(() => {
             timerRef.current = null;
             const doc = materializeLarge(path);
             dirtyRef.current = false;
-            void saveRef.current(path, doc).then(() => setIsSaved(true)).catch(() => { dirtyRef.current = true; setIsSaved(false); });
+            void saveRef.current(path, doc).then(() => publishStudySaved(path, doc)).catch(() => publishStudySaveFailed(path));
           }, Math.max(1000, settings.editor.autosaveDebounceMs));
           return;
         }
@@ -1949,16 +1970,16 @@ const sidecarPath = (notePath: string): string => {
         setContent(doc);
         dirtyRef.current = true;
         setIsSaved(false);
-        if (timerRef.current) clearTimeout(timerRef.current);        timerRef.current = setTimeout(() => {
+        publishStudyDirty(noteRef.current?.path ?? note.path, true);
+        if (timerRef.current) clearTimeout(timerRef.current);
+        timerRef.current = setTimeout(() => {
           timerRef.current = null;
           dirtyRef.current = false;
-          setIsSaved(true);
           const path = noteRef.current?.path;
           if (path) {
-            // Auto-link on save (Linking setting), then persist the possibly
-            // rewritten content (contentRef may have been updated by it).
             autoApplyMentionsRef.current();
-            void saveRef.current(path, contentRef.current).catch(() => { dirtyRef.current = true; setIsSaved(false); });
+            const savedContent = contentRef.current;
+            void saveRef.current(path, savedContent).then(() => publishStudySaved(path, savedContent)).catch(() => publishStudySaveFailed(path));
           }
         }, settings.editor.autosaveDebounceMs);
 
@@ -2048,6 +2069,8 @@ const sidecarPath = (notePath: string): string => {
       searchRefreshTimerRef.current = null;
       view.destroy();
       viewRef.current = null;
+      const path = note?.path;
+      if (path && dirtyPathsRef.current.has(path)) publishStudyDirty(path, false);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [note?.path, isLargeNote]);

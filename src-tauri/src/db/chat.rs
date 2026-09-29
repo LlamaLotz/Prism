@@ -233,7 +233,7 @@ pub fn get_messages(
             "SELECT m.id, m.session_id, m.role, m.content, m.metadata, m.created_at \
              FROM chat_messages m JOIN chat_sessions s ON s.id=m.session_id \
              WHERE s.vault_id=?1 AND m.session_id=?2 \
-             ORDER BY m.created_at ASC LIMIT ?3 OFFSET ?4",
+             ORDER BY m.created_at ASC, m.rowid ASC LIMIT ?3 OFFSET ?4",
         )
         .map_err(|e| e.to_string())?;
     let mapped = stmt
@@ -320,7 +320,7 @@ pub fn replace_messages(
     if owner.as_deref() != Some(vault_id) {
         return Err("Chat session not found".into());
     }
-    if messages.len() > 500 {
+    if messages.len() > 100_000 || messages.iter().map(|m| m.1.len() + m.2.as_ref().map_or(0, String::len)).sum::<usize>() > 64 * 1024 * 1024 {
         return Err("Transcript too large".into());
     }
     let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;

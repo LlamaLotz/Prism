@@ -1,7 +1,10 @@
+import { StudyWorkspace } from './components/study/StudyWorkspace';
+import { AssistantWorkspace } from './components/study/AssistantWorkspace';
+import { sharedStudy, study } from './services/study';
 import { ModelServiceRecovery } from './components/ModelServiceRecovery';
 import { DEFAULT_SETTINGS } from './defaultSettings';
 import React, { useState, useEffect, useRef } from 'react';
-import { NotebookPage } from './components/notebook/NotebookPage';
+import { NotebookPage, type NotebookSectionOpenRequest } from './components/notebook/NotebookPage';
 import { APP_PAGES, type AppPage } from './types';
 import { Sidebar } from './components/Sidebar';
 import { Editor } from './components/Editor';
@@ -239,6 +242,9 @@ export default function App() {
     DEFAULT_SETTINGS.appearance.startupView
   );
   const [notebookVisited, setNotebookVisited] = useState(false);
+  const [studyUnsavedPaths,setStudyUnsavedPaths]=useState<string[]>([]);
+  useEffect(()=>{const changed=(event:Event)=>{const {path,dirty}=(event as CustomEvent<{path:string;dirty:boolean}>).detail;setStudyUnsavedPaths(paths=>dirty?[...new Set([...paths,path])]:paths.filter(p=>p!==path));};window.addEventListener('study-note-dirty',changed);return()=>window.removeEventListener('study-note-dirty',changed);},[]);
+
   useEffect(() => { if (layout === 'notebook') setNotebookVisited(true); }, [layout]);
   const [showAICoPilot, setShowAICoPilot] = useState(DEFAULT_SETTINGS.appearance.aiPanelOpenOnStart);
   // Requested block scroll (blockId or 1-based line + timestamp), passed to the Editor.
@@ -1459,6 +1465,8 @@ export default function App() {
     notebookId?: string; sourceId?: string; sessionId?: string;
     seed?: { title: string; transcript: string }; ts: number;
   } | null>(null);
+  // Section handoff into the legacy Notebook (study workspace Advanced menu).
+  const [notebookSectionRequest, setNotebookSectionRequest] = useState<NotebookSectionOpenRequest | null>(null);
 
   // Continue a Notebook/session-library chat in Co-Pilot: ensure the panel is
   // visible, then hand the library id over for opening.
@@ -1472,13 +1480,10 @@ export default function App() {
   // Notebook to seed a backend session with it as opening context.
   const handleOpenInNotebook = async (entry: ChatLibrarySession) => {
     try {
-      const rows = await knowledge.chatMessages(entry.id, 500, 0);
-      const transcript = rows.map((m) => `${m.role === 'user' ? 'You' : 'Assistant'}: ${m.content}`).join('\n\n');
+      await study.legacy(settings.vaultPath, entry);
+      await sharedStudy.open(settings.vaultPath, entry.id);
       setLayout('notebook');
-      setNotebookChatRequest({ seed: { title: entry.title, transcript }, ts: Date.now() });
-    } catch (e) {
-      console.error('Could not load chat transcript:', e);
-    }
+    } catch (e) { await alert(String(e), { title: 'Could not open conversation' }); }
   };
 
   // An approved (or undone) agent edit mutated the vault outside the normal
@@ -1491,7 +1496,7 @@ export default function App() {
   };
 
   return (
-    <DocumentImports key={settings.vaultPath} request={documentReviewRequest?.vault === settings.vaultPath ? documentReviewRequest : null} onPublished={() => { void fetchNotes(); void handleAgentVaultChanged(); }}>
+    <DocumentImports vaultPath={settings.vaultPath} key={settings.vaultPath} request={documentReviewRequest?.vault === settings.vaultPath ? documentReviewRequest : null} onPublished={() => { void fetchNotes(); void handleAgentVaultChanged(); }}>
     <RuntimeActivity>
     <ModelServiceRecovery key={settings.vaultPath} />
       {/* Background environment layer (behind the app, viewport-level) */}
@@ -1633,7 +1638,12 @@ export default function App() {
           {(notebookVisited || layout === 'notebook') && (
             <div className="flex-1 min-w-0 h-full" style={{ display: layout === 'notebook' ? undefined : 'none' }}>
               <ErrorBoundary fallbackTitle="Notebook encountered an error">
-                <NotebookPage key={settings.vaultPath} active={layout === 'notebook'} vaultPath={settings.vaultPath} vaultNotes={notes} settings={settings} onSelectVault={handleSelectVault} onVaultExport={async () => { await fetchNotes(); await loadGraph(); }} openChatRequest={notebookChatRequest} onOpenChatRequestConsumed={() => setNotebookChatRequest(null)} onContinueInCopilot={handleContinueInCopilot} />
+                <StudyWorkspace unsavedPaths={studyUnsavedPaths} key={settings.vaultPath} vaultPath={settings.vaultPath}
+                  onImport={() => setIsIngestModalOpen(true)} onOpenSettings={() => openSettings('ai')}
+                  onOtherChatView={() => { setLayout('editor'); setShowAICoPilot(true); }}
+                  onOpenNote={path => { const found = notes.find(n => n.relativePath === path); if (found) { setActiveNote(found); setLayout('editor'); } }}
+                  onOpenLegacy={section => setNotebookSectionRequest({ section, ts: Date.now() })}
+                  legacy={<NotebookPage key={settings.vaultPath} active={layout === 'notebook'} vaultPath={settings.vaultPath} vaultNotes={notes} settings={settings} onSelectVault={handleSelectVault} onVaultExport={async () => { await fetchNotes(); await loadGraph(); }} openChatRequest={notebookChatRequest} onOpenChatRequestConsumed={() => setNotebookChatRequest(null)} openSectionRequest={notebookSectionRequest} onOpenSectionRequestConsumed={() => setNotebookSectionRequest(null)} onContinueInCopilot={handleContinueInCopilot} />} />
               </ErrorBoundary>
             </div>
           )}
@@ -1653,7 +1663,9 @@ export default function App() {
             onResize={(d) => saveAiWidth(Math.min(560, Math.max(240, aiWidth - d)))}
             className="absolute left-0 top-0 bottom-0"
           />
-          <AISidebar
+          <AssistantWorkspace key={settings.vaultPath} vaultPath={settings.vaultPath} openRequest={copilotOpenRequest}
+            onConsumed={() => setCopilotOpenRequest(null)} onNotebook={() => setLayout('notebook')}
+            onOpenSettings={() => openSettings('ai')} advanced={<AISidebar
             key={settings.vaultPath}
             note={activeNote}
             allNotes={notes}
@@ -1672,7 +1684,7 @@ export default function App() {
             openRequest={copilotOpenRequest}
             onOpenRequestConsumed={() => setCopilotOpenRequest(null)}
             onOpenInNotebook={handleOpenInNotebook}
-          />
+          />} />
         </LiquidGlass>
       )}
 

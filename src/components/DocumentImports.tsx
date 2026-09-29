@@ -7,7 +7,7 @@ import './runtime.css';
 const Context = createContext({ imports: [] as ImportSummary[], review: (_id: string) => {}, source: (_blockId: string) => {}, note: (_path: string) => {} });
 export const useDocumentImports = () => useContext(Context);
 /** Persists independently of the ingestion panel and collapsed navigation. */
-export function DocumentImports({ children, onPublished, request }: { children: ReactNode; onPublished: () => void; request?: {id:string;ts:number}|null }) {
+export function DocumentImports({ children, onPublished, request, vaultPath }: { children: ReactNode; vaultPath?: string; onPublished: () => void; request?: {id:string;ts:number}|null }) {
   const [imports, setImports] = useState<ImportSummary[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
@@ -22,7 +22,7 @@ export function DocumentImports({ children, onPublished, request }: { children: 
   }, []);
   return <Context.Provider value={{ imports, review: setSelected, source: setBlock, note: setNote }}>
     {children}
-    {selected && <ImportReview key={selected} id={selected} state={imports.find(i => i.id === selected)?.state ?? 'review'} close={() => setSelected(null)} published={() => { setImports(rows => rows.filter(i => i.id !== selected)); onPublished(); }} />}
+    {selected && <ImportReview vaultPath={vaultPath} key={selected} id={selected} state={imports.find(i => i.id === selected)?.state ?? 'review'} close={() => setSelected(null)} published={() => { setImports(rows => rows.filter(i => i.id !== selected)); onPublished(); }} />}
     {note && <NoteSources key={note} path={note} close={() => setNote(null)} choose={id => { setNote(null); setBlock(id); }} />}
     {block && <SourceDetails key={block} blockId={block} close={() => setBlock(null)} review={id => { setBlock(null); setSelected(id); }} />}
   </Context.Provider>;
@@ -55,7 +55,7 @@ function OutputPreview({ output, id, index }: { output: PreviewOutput; id: strin
     {error && <p role="alert" className="runtime-error">{error}</p>}
   </details>;
 }
-export function ImportReview({ id, state, close, published }: { id: string; state: string; close: () => void; published: () => void }) {
+export function ImportReview({ id, state, close, published, vaultPath }: { id: string; vaultPath?: string; state: string; close: () => void; published: () => void }) {
   const [preview, setPreview] = useState<ImportPreview | null>(null);
   const [options, setOptions] = useState<ImportOptions | null>(null);
   const [error, setError] = useState(''), [busy, setBusy] = useState(false), [dirty, setDirty] = useState(false), [stale, setStale] = useState(false);
@@ -64,7 +64,7 @@ export function ImportReview({ id, state, close, published }: { id: string; stat
   useEffect(() => { let alive = true; void documents.preview(id).then(p => { if (alive) { setPreview(p); setOptions(p.options); } }).catch(e => { if (alive) setError(String(e)); }); return () => { alive = false; }; }, [id]);
   const change = (values: Partial<ImportOptions>) => { setOptions(o => o && ({ ...o, ...values })); setDirty(true); };
   const refresh = async () => { if (!options) return; setBusy(true); setError(''); try { await documents.update(id, options); const p = await documents.preview(id); setPreview(p); setOptions(p.options); setDirty(false); setStale(false); } catch (e) { setError(String(e)); } finally { setBusy(false); } };
-  const commit = async () => { if (!preview) return; setBusy(true); setError(''); try { const result = await documents.commit(id, preview.token); setOperation(result.operationId); published(); } catch (e) { setError(String(e)); setStale(true); } finally { setBusy(false); } };
+  const commit = async () => { if (!preview) return; setBusy(true); setError(''); try { const result = await documents.commit(id, preview.token); setOperation(result.operationId); if (vaultPath) window.dispatchEvent(new CustomEvent('study-import-published', {detail:{paths:result.paths,vault:vaultPath}})); published(); } catch (e) { setError(String(e)); setStale(true); } finally { setBusy(false); } };
   const page = async (offset: number) => { setBusy(true); try { setPreview(await documents.preview(id, offset)); setError(''); } catch (e) { setError(String(e)); } finally { setBusy(false); } };
   return <dialog {...modal} className="runtime-dialog runtime-surface document-dialog" aria-labelledby="document-review-title">
     <header className="runtime-heading"><h2 id="document-review-title">Review document import</h2><button className="runtime-button" disabled={busy} onClick={close} aria-label="Close import review">Close</button></header>

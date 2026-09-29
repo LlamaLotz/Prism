@@ -143,6 +143,28 @@ def main():
                 else:
                     raise AssertionError(f"Worker did not ingest source: {detail}")
                 assert "packaged runtime" in detail["full_text"]
+                export_script = root.parent.parent.parent / "notebook" / "study_export.py"
+                if not export_script.is_file():
+                    export_script = Path(__file__).resolve().parents[1] / "notebook" / "study_export.py"
+                export_input = temp / "study-export-fixture.json"
+                fixture_source = {"id":"source-1","title":"Smoke source","path":"Smoke source","hash":"abc","text":"source","missing":False}
+                snapshot = {"id":"snapshot-1","sources":[fixture_source],"context":"source","excerpts":False,"created":1}
+                fixtures = {
+                    "table":{"title":"Table","columns":["Name"],"rows":[{"cells":["Value"],"sourceIds":["source-1"]}]},
+                    "quiz":{"title":"Quiz","questions":[{"question":"Q?","options":["Yes","No"],"answer":0,"explanation":"Evidence","sourceIds":["source-1"]}]},
+                    "flashcards":{"title":"Cards","cards":[{"id":"card-1","front":"Front","back":"Back","sourceIds":["source-1"]}]},
+                    "podcast":{"title":"Podcast","transcript":"Host: Test","sourceIds":["source-1"]},
+                    "slides":{"title":"Slides","slides":[{"title":"Title","bullets":["Point"],"notes":"Notes","sourceIds":["source-1"]}]},
+                    "mindmap":{"title":"Map","nodes":[{"id":"root","parentId":None,"label":"Root","sourceIds":["source-1"]}]},
+                }
+                export_input.write_text(json.dumps({"snapshot":snapshot}), encoding="utf-8")
+                for kind, body in fixtures.items():
+                    export_input.write_text(json.dumps({"artifact":{"id":"fixture-"+kind,"kind":kind,"title":body["title"],"body":body},"snapshot":snapshot}), encoding="utf-8")
+                    formats={"table":["csv","pdf"],"quiz":["md","pdf"],"flashcards":["csv","apkg","pdf"],"podcast":["md","pdf"],"slides":["pptx","pdf"],"mindmap":["svg","md","pdf"]}[kind]
+                    for extension in formats:
+                        result=subprocess.run([str(python),"-B",str(export_script),str(export_input),str(temp/f"study-export.{extension}")],env={**env,"PYTHONPATH":str(root/"lib")},capture_output=True,text=True)
+                        assert result.returncode==0, f"{kind}/{extension} export failed: {result.stderr[-2000:]}"
+                        assert (temp/f"study-export.{extension}").stat().st_size>0
                 assert request("/api/capabilities") is not None
                 assert isinstance(request("/api/providers"), list)
                 assert isinstance(request("/api/transformations"), list)
@@ -199,8 +221,8 @@ def main():
                 (root / "openapi.json").write_text(json.dumps(schema, indent=2) + "\n")
                 request(f"/api/notebooks/{notebook['id']}", method="DELETE")
                 assert gateway_requests, 'Model requests bypassed the gateway'
-                (root / 'smoke-tested.json').write_text(json.dumps({'revision': manifest['revision'], 'target': manifest['target'], 'provider': 'local deterministic fixture', 'checks': ['startup', 'authentication', 'ingestion', 'notes', 'chat', 'transformations', 'podcast-audio', 'jobs', 'drain', 'cancellation']}, indent=2) + '\n')
-                print("PASS: packaged database, API, authentication, migrations, worker ingestion, notes, chat, transformations, podcast audio, job status, drain and cancellation (local provider fixture)")
+                (root / 'smoke-tested.json').write_text(json.dumps({'revision': manifest['revision'], 'target': manifest['target'], 'provider': 'local deterministic fixture', 'checks': ['startup', 'authentication', 'ingestion', 'notes', 'chat', 'transformations', 'podcast-audio', 'jobs', 'drain', 'cancellation', 'study-exports']}, indent=2) + '\n')
+                print("PASS: packaged database, API, authentication, migrations, worker ingestion, notes, chat, transformations, podcast audio, all study export formats, job status, drain and cancellation (local provider fixture)")
             except Exception:
                 log.flush()
                 log.seek(0)
