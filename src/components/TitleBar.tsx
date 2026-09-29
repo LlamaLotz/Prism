@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { getCurrentWindow } from '@tauri-apps/api/window';
-import { Minus, Square, Copy, X, FileText, SplitSquareVertical, Network, Tags, Sparkles, BookOpen } from 'lucide-react';
+import { Minus, Square, Copy, X, FileText, Sparkles } from 'lucide-react';
+import { NavigationMenu } from './NavigationMenu';
 import { getAppIcon } from '../services/appIcon';
 
 const isMacOS = navigator.userAgent.includes('Mac');
@@ -128,7 +129,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
         { divider: true, label: '' },
         { label: 'Open a Prism…', shortcut: 'Ctrl+O', action: () => { onOpenPrism(); closeMenu(); } },
         { divider: true, label: '' },
-        { label: 'Ingest Content…', shortcut: 'Ctrl+Shift+I', action: () => { onIngestContent(); closeMenu(); } },
+        { label: 'Import content…', shortcut: 'Ctrl+Shift+I', action: () => { onIngestContent(); closeMenu(); } },
       ],
     },
     edit: {
@@ -148,33 +149,26 @@ export const TitleBar: React.FC<TitleBarProps> = ({
     view: {
       label: 'View',
       items: [
-        { label: 'Note Editor', shortcut: 'Ctrl+1', action: () => { onLayoutChange('editor'); closeMenu(); }, disabled: layout === 'editor' },
+        { label: 'Notes', shortcut: 'Ctrl+1', action: () => { onLayoutChange('editor'); closeMenu(); }, disabled: layout === 'editor' },
         { label: 'Graph', shortcut: 'Ctrl+2', action: () => { onLayoutChange('graph'); closeMenu(); }, disabled: layout === 'graph' },
-        { label: 'Tags', shortcut: 'Ctrl+3', action: () => { onLayoutChange('topics'); closeMenu(); }, disabled: layout === 'topics' },
+        { label: 'Topics', shortcut: 'Ctrl+3', action: () => { onLayoutChange('topics'); closeMenu(); }, disabled: layout === 'topics' },
         { label: 'Notebook', shortcut: 'Ctrl+5', action: () => { onLayoutChange('notebook'); closeMenu(); }, disabled: layout === 'notebook' },
         { label: 'Split View', shortcut: 'Ctrl+4', action: () => { onLayoutChange('split'); closeMenu(); }, disabled: layout === 'split' },
         { divider: true, label: '' },
         { label: 'Ingestion Logs', action: () => { onToggleIngestionLogs(); closeMenu(); } },
         { divider: true, label: '' },
-        { label: `${showAI ? 'Hide' : 'Show'} AI Sidebar`, shortcut: 'Ctrl+Shift+A', action: () => { onToggleAI(); closeMenu(); } },
+        { label: `${showAI ? 'Hide' : 'Show'} AI assistant`, shortcut: 'Ctrl+Shift+A', action: () => { onToggleAI(); closeMenu(); } },
         { label: `${sidebarVisible ? 'Hide' : 'Show'} Sidebar`, shortcut: 'Ctrl+Shift+S', action: () => { onToggleSidebar(); closeMenu(); } },
       ],
     },
   };
 
-  const tabBtn = (id: Layout, Icon: React.FC<{ className?: string }>, label: string) => (
-    <button
-      onClick={() => onLayoutChange(id)}
-      title={label}
-      className={`p-1.5 rounded transition-colors ${
-        layout === id
-          ? 'bg-surface text-brand-400'
-          : 'text-text-muted hover:text-offwhite hover:bg-surface-hover'
-      }`}
-    >
-      <Icon className="w-3.5 h-3.5" />
-    </button>
-  );
+  const secondaryViews = [
+    { value: 'graph', label: 'Graph' },
+    { value: 'topics', label: 'Topics' },
+    { value: 'split', label: 'Split View' },
+    { value: 'notebook', label: 'Notebook' },
+  ] as const;
 
   return (
     <div ref={barRef} data-tauri-drag-region className="liquid-gloss-header relative flex items-center h-9 bg-base shrink-0 select-none z-40 rounded-none">
@@ -268,13 +262,13 @@ export const TitleBar: React.FC<TitleBarProps> = ({
         </>
       )}
 
-      {/* ── View tabs (icons) ── */}
-      <div className="flex items-center gap-0.5">
-        {tabBtn('editor', FileText, 'Note Editor')}
-        {tabBtn('split', SplitSquareVertical, 'Split View')}
-        {tabBtn('graph', Network, 'Graph Network')}
-        {tabBtn('topics', Tags, 'Topic Groups')}
-        {tabBtn('notebook', BookOpen, 'Notebook')}
+      <div className="flex items-center gap-0.5 shrink-0">
+        <button type="button" onClick={() => onLayoutChange('editor')} aria-pressed={layout === 'editor'}
+          className={`flex items-center gap-1 rounded px-2 py-1 text-xs ${layout === 'editor' ? 'bg-surface text-brand-400' : 'text-text-muted hover:text-offwhite hover:bg-surface-hover'}`}>
+          <FileText aria-hidden="true" className="w-3.5 h-3.5"/>Notes
+        </button>
+        <NavigationMenu label="More" value={layout} items={secondaryViews}
+          activeLabel={secondaryViews.find(view => view.value === layout)?.label} onSelect={onLayoutChange}/>
       </div>
 
       {/* ── Spacer (drag region) ── */}
@@ -283,7 +277,9 @@ export const TitleBar: React.FC<TitleBarProps> = ({
       {/* ── AI toggle (star icon) ── */}
       <button
         onClick={onToggleAI}
-        title="AI Co-Pilot"
+        title="AI assistant"
+        aria-label="AI assistant"
+        aria-pressed={showAI}
         className={`titlebar-action mr-1 p-1.5 rounded transition-colors ${
           showAI ? 'text-brand-400 bg-brand-600/10' : 'text-text-muted hover:text-offwhite hover:bg-surface-hover'
         }`}

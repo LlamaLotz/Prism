@@ -59,6 +59,8 @@ for (const theme of ['industrial','glass','gloss']) for (const mode of ['light',
   await expect(jobs).toBeFocused();
   await page.setViewportSize({width:1000,height:1100});
   await page.goto(`/tests/notebook/runtime-harness.html?theme=${theme}&mode=${mode}&noapproval&settings&collapsed`);
+  await expect(page.getByRole('heading',{name:'Provider by feature'})).not.toBeVisible();
+  await page.getByText('Advanced AI settings',{exact:true}).click();
   await expect(page.getByRole('heading',{name:'Provider by feature'})).toBeVisible();
   await page.screenshot({path:`test-results/routing-${theme}-${mode}.png`});
   await page.goto(`/tests/notebook/runtime-harness.html?theme=${theme}&mode=${mode}&noapproval&agent&collapsed`);
@@ -96,11 +98,17 @@ test('modal approvals trap focus and Escape denies only the current request',asy
 });
 test('feature routes preserve saved providers and explain execution boundaries',async({page})=>{
  await page.goto('/tests/notebook/runtime-harness.html?noapproval&settings&collapsed&theme=glass&mode=light');
+ await expect(page.getByRole('heading',{name:'Provider by feature'})).not.toBeVisible();
+ await page.getByText('Advanced AI settings',{exact:true}).click();
  await expect(page.getByRole('heading',{name:'Provider by feature'})).toBeVisible();
  await expect(page.getByText('Inherit: fixture · default-model').first()).toBeAttached();
  await page.getByLabel('Summarize',{exact:true}).selectOption('saved');
  await page.getByRole('button',{name:'Save settings'}).click();
  await page.reload();
+ await expect(page.getByText('Custom routing active')).toBeVisible();
+ await expect(page.getByLabel('External content processing')).toBeVisible();
+ await expect(page.getByLabel('Summarize',{exact:true})).not.toBeVisible();
+ await page.locator('summary').filter({hasText:'Advanced AI settings'}).click();
  await expect(page.getByLabel('Summarize',{exact:true})).toHaveValue('saved');
  const saved=await page.evaluate(()=>JSON.parse(localStorage.getItem('runtime-settings')!));
  expect(saved.models.providers[0].id).toBe('saved');

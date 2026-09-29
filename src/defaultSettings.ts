@@ -19,8 +19,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   appearance: {
     themeStyle: 'industrial',
     themeMode: 'dark',
-    startupView: 'graph',
-    defaultGraphMode: '3d',
+    startupView: 'editor',
+    defaultGraphMode: '2d',
     backgroundPattern: 'grid',
     aiPanelOpenOnStart: false,
     sidebarCollapsedOnStart: false,

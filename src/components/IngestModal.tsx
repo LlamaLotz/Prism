@@ -61,7 +61,7 @@ export const IngestModal: React.FC<IngestModalProps> = ({
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-neutral-800">
           <h2 className="text-base font-bold text-neutral-100 flex items-center gap-2">
-            <Play className="w-4.5 h-4.5 text-brand-400 fill-current" /> Ingest New Content
+            <Play className="w-4.5 h-4.5 text-brand-400 fill-current" /> Import content
           </h2>
           <button 
             onClick={onClose}

@@ -35,7 +35,7 @@ export const GraphViewContainer: React.FC<GraphViewContainerProps> = ({
   activeNote,
   onSelectNoteByTitle,
   backgroundPattern = 'grid',
-  defaultGraphMode = '3d',
+  defaultGraphMode = '2d',
   persistNodePositions = true,
   autoRotateOnLoad = false,
   autoRotateSpeed = 0.67,

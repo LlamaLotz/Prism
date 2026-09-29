@@ -33,27 +33,30 @@ export function AIRoutingSettings({ draft, setDraft }: {
         <option value="cloud_allowed">Cloud Allowed</option>
       </select>
     </label>
-    <label>Unload idle embedding model after (seconds)
-      <input type="number" min={30} value={draft.models?.idleSeconds ?? 300} onChange={e => update(() => ({ idleSeconds: Math.max(30, Number(e.target.value) || 300) }))} />
-    </label>
-    <button type="button" className="runtime-button" disabled={!draft.omniRoute.model || !draft.omniRoute.baseUrl} onClick={saveProvider}>Save current provider for feature routing</button>
-    <div className="runtime-routes">
-      <h3>Provider by feature</h3>
-      <p>Each feature uses its selected saved provider, or inherits the current Co-Pilot provider.</p>
-      {Object.entries(FEATURES).map(([task, label]) => <label key={task}>{label}
-        <select aria-label={label} value={draft.models?.routes[task] ?? ''} onChange={e => {
-          const providerId = e.target.value;
-          update(current => {
-            const routes = { ...current.routes };
-            if (providerId) routes[task] = providerId; else delete routes[task];
-            return { routes };
-          });
-        }}>
-          <option value="">Inherit: {draft.omniRoute.provider || 'No provider'} · {draft.omniRoute.model || 'No model selected'}</option>
-          {draft.models?.providers?.map(provider => <option key={provider.id} value={provider.id}>{provider.name} · {provider.config.model}</option>)}
-        </select>
-      </label>)}
-    </div>
+    <details>
+      <summary className="cursor-pointer">Advanced AI settings{Object.values(draft.models?.routes ?? {}).some(Boolean) && <span className="ml-2 text-xs">Custom routing active</span>}</summary>
+      <label>Unload idle embedding model after (seconds)
+        <input type="number" min={30} value={draft.models?.idleSeconds ?? 300} onChange={e => update(() => ({ idleSeconds: Math.max(30, Number(e.target.value) || 300) }))} />
+      </label>
+      <button type="button" className="runtime-button" disabled={!draft.omniRoute.model || !draft.omniRoute.baseUrl} onClick={saveProvider}>Save current provider for feature routing</button>
+      <div className="runtime-routes">
+        <h3>Provider by feature</h3>
+        <p>Each feature uses its selected saved provider, or inherits the current AI assistant provider.</p>
+        {Object.entries(FEATURES).map(([task, label]) => <label key={task}>{label}
+          <select aria-label={label} value={draft.models?.routes?.[task] ?? ''} onChange={e => {
+            const providerId = e.target.value;
+            update(current => {
+              const routes = { ...current.routes };
+              if (providerId) routes[task] = providerId; else delete routes[task];
+              return { routes };
+            });
+          }}>
+            <option value="">Inherit: {draft.omniRoute.provider || 'No provider'} · {draft.omniRoute.model || 'No model selected'}</option>
+            {draft.models?.providers?.map(provider => <option key={provider.id} value={provider.id}>{provider.name} · {provider.config.model}</option>)}
+          </select>
+        </label>)}
+      </div>
+    </details>
     <div className="runtime-local">
       <p><strong>Embeddings:</strong> built-in local</p>
       <p><strong>Standard formatting:</strong> deterministic local; optional AI formatting uses its selected provider</p>

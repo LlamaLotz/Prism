@@ -1,12 +1,13 @@
 import React, { useCallback, useEffect, useId, useRef, useState } from 'react';
 import ReactMarkdown, { defaultUrlTransform } from 'react-markdown';
-import { BookOpen, Plus, ArrowLeft, Upload, RefreshCw, Send, X, Settings2, Search, Headphones, Wand2, FolderOpen, Pencil, ChevronDown, ChevronUp, History, ExternalLink } from 'lucide-react';
+import { BookOpen, Plus, ArrowLeft, Upload, RefreshCw, Send, X, Search, FolderOpen, Pencil, ChevronDown, ChevronUp, History, ExternalLink } from 'lucide-react';
 import { NotebookClient, notebookRuntime, CHAT_COLLAPSE_THRESHOLD, recordId } from '../../services/notebook';
 import type { AppSettings, NoteFile } from '../../types';
 import type { NotebookResponse, SourceListResponse, SourceResponse, NoteResponse, ChatSessionResponse, ChatSessionWithMessagesResponse, SourceChatSessionWithMessagesResponse, ChatMessage, BuildContextResponse, SourceInsightResponse, TransformationResponse, SearchResponse, ModelResponse } from '../../types/notebook-api';
 import type { ChatLibrarySession } from '../../services/knowledge';
 import { useChatLibrary } from '../../services/chatLibrary';
 import { useDialog } from '../DialogProvider';
+import { NavigationMenu } from '../NavigationMenu';
 import { ResizeHandle } from '../ResizeHandle';
 import { NotebookManage } from './NotebookManage';
 import './notebook.css';
@@ -59,7 +60,7 @@ export interface NotebookChatOpenRequest {
   notebookId?: string;
   sourceId?: string;
   sessionId?: string;
-  /** Continue a Co-Pilot transcript here: creates a backend session seeded
+  /** Continue an AI assistant transcript here: creates a backend session seeded
    *  with the transcript as its opening context message. */
   seed?: { title: string; transcript: string };
   ts: number;
@@ -74,7 +75,7 @@ interface Props {
   onVaultExport: () => Promise<void>;
   openChatRequest?: NotebookChatOpenRequest | null;
   onOpenChatRequestConsumed?: () => void;
-  /** Continue a Notebook session in Co-Pilot (receives the library id). */
+  /** Continue a Notebook session in AI assistant (receives the library id). */
   onContinueInCopilot?: (sessionId: string) => void;
 }
 
@@ -230,7 +231,7 @@ function NotebookWorkspace({ client, vaultPath, vaultNotes, settings, onVaultExp
     msgs.map((m) => ({ role: (m.type === 'human' ? 'user' : 'assistant') as 'user' | 'assistant', content: m.content ?? '' }));
   // Mirror backend sessions + transcript into the shared chat library
   // (best-effort: the library must never break Notebook itself). Merges
-  // rather than overwrites: turns continued in Co-Pilot (cached locally but
+  // rather than overwrites: turns continued in AI assistant (cached locally but
   // absent from the backend) are preserved after the backend transcript.
   // Returns the linked library id (or null when the mirror failed).
   const mirrorTranscript = (sid: string, msgs: ChatMessage[], notebookId: string | null, sourceId: string | null, titleOverride?: string, modelOverride?: string | null): Promise<string | null> => {
@@ -400,16 +401,16 @@ function NotebookWorkspace({ client, vaultPath, vaultNotes, settings, onVaultExp
     if (sessionsRef.current.some((r) => r.id === sessionId)) setSession(sessionId);
     else pendingOpenSession.current = sessionId;
   };
-  // Continue a Co-Pilot transcript here: create a backend session seeded with
+  // Continue an AI assistant transcript here: create a backend session seeded with
   // the transcript as its opening context message (the backend has no raw
   // message-insert API, so continuation runs one model turn over it).
   const seedBackendFromTranscript = async (title: string, transcriptText: string) => {
     const nid = selectedRef.current;
     if (!nid) { setNotice('Select a notebook first to continue this chat there.'); return; }
-    const row = await client.request<ChatSessionResponse>('/chat/sessions', 'POST', { notebook_id: nid, title: `From Co-Pilot: ${title}`, model_override: model || null });
+    const row = await client.request<ChatSessionResponse>('/chat/sessions', 'POST', { notebook_id: nid, title: `From AI assistant: ${title}`, model_override: model || null });
     if (transcriptText.trim()) {
       const context = await client.request<BuildContextResponse>('/chat/context', 'POST', { notebook_id: nid, context_config: { sources: Object.fromEntries(sources.map(s => [s.id, sourceContext[s.id] ?? 'full content'])), notes: Object.fromEntries(notes.map(n => [n.id, 'full content'])) } });
-      await client.request('/chat/execute', 'POST', { session_id: row.id, message: `Continuing a Co-Pilot conversation ("${title}"). Transcript so far:\n\n${transcriptText}\n\nPlease continue.`, context: context.context, model_override: model || null });
+      await client.request('/chat/execute', 'POST', { session_id: row.id, message: `Continuing a AI assistant conversation ("${title}"). Transcript so far:\n\n${transcriptText}\n\nPlease continue.`, context: context.context, model_override: model || null });
     }
     const rows = await client.request<ChatSessionResponse[]>(`/chat/sessions?notebook_id=${encodeURIComponent(nid)}`);
     if (alive.current && selectedRef.current === nid) { setSessions(rows); setSession(row.id); }
@@ -450,9 +451,9 @@ function NotebookWorkspace({ client, vaultPath, vaultNotes, settings, onVaultExp
   const continueLibraryEntryInCopilot = (entry: ChatLibrarySession) => void run(async () => {
     if (entry.origin === 'notebook' && entry.notebookSessionId) {
       // Ensure the cached transcript is fresh, then hand over (merging keeps
-      // any turns previously continued in Co-Pilot).
+      // any turns previously continued in AI assistant).
       const data = await client.request<ChatSessionWithMessagesResponse | SourceChatSessionWithMessagesResponse>(librarySessionPath(entry));
-      // Wait for the merge before navigating so Co-Pilot opens the full copy.
+      // Wait for the merge before navigating so AI assistant opens the full copy.
       const linkedId = await mirrorTranscript(entry.notebookSessionId, data.messages ?? [], entry.notebookId, entry.sourceId, entry.title, entry.model);
       onContinueInCopilot?.(linkedId ?? entry.id);
     } else {
@@ -536,7 +537,10 @@ function NotebookWorkspace({ client, vaultPath, vaultNotes, settings, onVaultExp
     <div className="nb-toolbar">
       {selected && <Button aria-label="Notebook library" onClick={() => void run(() => selectNotebook(null))}><ArrowLeft size={16}/></Button>}
       <BookOpen size={18} className="text-brand-400"/><h1 className="text-sm font-semibold flex-1 truncate">{notebook?.name ?? 'Notebooks'}</h1>
-      <div className="nb-tabs">{([['workspace', BookOpen, 'Research'], ['search', Search, 'Search'], ['chats', History, 'Chats'], ['transformations', Wand2, 'Transform'], ['podcasts', Headphones, 'Podcasts'], ['settings', Settings2, 'Manage']] as const).map(([key, Icon, label]) => <Button key={key} aria-pressed={section === key} onClick={() => setSection(key)}><Icon size={14}/>{label}</Button>)}</div>
+      <div className="nb-tabs">{([['workspace', BookOpen, 'Research'], ['search', Search, 'Search'], ['chats', History, 'Chats']] as const).map(([key, Icon, label]) => <Button key={key} aria-pressed={section === key} onClick={() => setSection(key)}><Icon size={14}/>{label}</Button>)}<NavigationMenu label="Tools" align="end" value={section}
+        items={[{ value: 'transformations', label: 'Transform' }, { value: 'podcasts', label: 'Podcasts' }, { value: 'settings', label: 'Manage' }] as const}
+        activeLabel={section === 'transformations' ? 'Transform' : section === 'podcasts' ? 'Podcasts' : section === 'settings' ? 'Manage' : undefined}
+        onSelect={setSection}/></div>
       <Button title="Refresh" aria-label="Refresh notebooks" disabled={busy} onClick={() => void run(async () => { await refreshLibrary(); await refreshNotebook(); })}><RefreshCw size={14}/></Button>
     </div>
     {error && <div className="nb-error" role="alert"><span>{error}</span><Button aria-label="Dismiss error" onClick={clearError}><X size={14}/></Button></div>}
@@ -550,15 +554,15 @@ function NotebookWorkspace({ client, vaultPath, vaultNotes, settings, onVaultExp
       {results && <p className="nb-muted">{results.total_count} results</p>}
       {results?.results.map((r, i) => <article className="nb-card nb-stack" key={String(r.id ?? i)}><h3>{String(r.title ?? r.name ?? 'Result')}</h3><NotebookMarkdown text={String(r.content ?? r.full_text ?? r.text ?? '')} onReference={openReference}/><Button onClick={() => openReference(String(r.id))}>Open result</Button></article>)}
     </div> : section === 'chats' ? <div className="nb-scroll nb-stack">
-      <div className="nb-toolbar"><div className="flex-1"><h2 className="text-lg">Chat library</h2><p className="nb-muted">Co-Pilot and Notebook conversations in this vault, shared both ways.</p></div><input className="nb-input" style={{ maxWidth: 220 }} placeholder="Search chats…" aria-label="Search chats" value={library.search} onChange={e => library.setSearch(e.target.value)}/></div>
-      {!library.sessions.length && <p className="nb-muted">No chats yet. Notebook conversations appear here automatically; Co-Pilot chats arrive as you talk.</p>}
+      <div className="nb-toolbar"><div className="flex-1"><h2 className="text-lg">Chat library</h2><p className="nb-muted">AI assistant and Notebook conversations in this vault, shared both ways.</p></div><input className="nb-input" style={{ maxWidth: 220 }} placeholder="Search chats…" aria-label="Search chats" value={library.search} onChange={e => library.setSearch(e.target.value)}/></div>
+      {!library.sessions.length && <p className="nb-muted">No chats yet. Notebook conversations appear here automatically; AI assistant chats arrive as you talk.</p>}
       {library.sessions.map(entry => <article className="nb-card nb-stack" key={entry.id}>
         <h3 className="font-semibold">{entry.title}</h3>
-        <p className="nb-muted">{entry.origin === 'notebook' ? 'Notebook' : 'Co-Pilot'} · {entry.messageCount} msgs · {new Date(entry.updatedAt * 1000).toLocaleString()}</p>
+        <p className="nb-muted">{entry.origin === 'notebook' ? 'Notebook' : 'AI assistant'} · {entry.messageCount} msgs · {new Date(entry.updatedAt * 1000).toLocaleString()}</p>
         <div className="nb-tabs">
           {entry.origin === 'notebook'
-            ? <><Button disabled={busy} onClick={() => openLibraryEntry(entry)}>Open</Button><Button disabled={busy} onClick={() => continueLibraryEntryInCopilot(entry)}><ExternalLink size={14}/> Continue in Co-Pilot</Button></>
-            : <><Button disabled={busy} onClick={() => continueCopilotEntryHere(entry)}>Continue here</Button><Button disabled={busy} onClick={() => onContinueInCopilot?.(entry.id)}><ExternalLink size={14}/> Open in Co-Pilot</Button></>}
+            ? <><Button disabled={busy} onClick={() => openLibraryEntry(entry)}>Open</Button><Button disabled={busy} onClick={() => continueLibraryEntryInCopilot(entry)}><ExternalLink size={14}/> Continue in AI assistant</Button></>
+            : <><Button disabled={busy} onClick={() => continueCopilotEntryHere(entry)}>Continue here</Button><Button disabled={busy} onClick={() => onContinueInCopilot?.(entry.id)}><ExternalLink size={14}/> Open in AI assistant</Button></>}
           <Button disabled={busy} onClick={() => renameLibraryEntry(entry)}>Rename</Button>
           <Button disabled={busy} onClick={() => deleteLibraryEntry(entry)}>Delete</Button>
         </div>
@@ -595,7 +599,7 @@ function NotebookWorkspace({ client, vaultPath, vaultNotes, settings, onVaultExp
         <div className="nb-resize"><ResizeHandle direction="horizontal" onResize={d => setSourceWidth(w => Math.min(480, Math.max(200, w + d)))}/></div>
         <main className="nb-pane flex-1" data-active={mobilePane === 'chat'} aria-label="Notebook chat">
           <div className="nb-toolbar"><h2 className="font-semibold text-sm flex-1">{chatSource ? 'Source conversation' : 'Notebook conversation'}</h2>{chatSource && <Button disabled={busy} onClick={() => setChatSource('')}>All sources</Button>}<Button disabled={busy} onClick={() => void run(async () => { await newSession(); })}><Plus size={14}/>Chat</Button></div>
-          <div className="nb-toolbar"><select className="nb-input flex-1" aria-label="Conversation" value={session} disabled={busy} onChange={e => setSession(e.target.value)}><option value="">New conversation</option>{sessions.map(s => <option key={s.id} value={s.id}>{s.title}</option>)}</select>{session && <><Button disabled={busy} onClick={() => void run(async () => { const title = await dialogs.prompt('Conversation title'); if (!title?.trim()) return; await client.request(`${sessionPath}/${recordId(session)}`, 'PUT', { title }); setSessions(rows => rows.map(r => r.id === session ? { ...r, title } : r)); linkSessionRows([{ ...sessionsRef.current.find(r => r.id === session), id: session, title } as ChatSessionResponse], chatSourceRef.current ? null : selected, chatSourceRef.current || null); })}>Rename</Button><Button disabled={busy} onClick={() => void run(async () => { if (!(await dialogs.confirm('Delete this conversation?', { danger: true }))) return; await client.request(`${sessionPath}/${recordId(session)}`, 'DELETE'); setSessions(rows => rows.filter(r => r.id !== session)); setSession(''); try { await library.unlinkNotebook(session); } catch { /* best-effort */ } })}>Delete</Button><Button disabled={busy} title="Open this chat in the Co-Pilot sidebar (transcript is synced to the shared library)" onClick={() => void run(async () => { const row = sessionsRef.current.find(r => r.id === session); const linked = await library.linkNotebook(session, row?.title || 'Research conversation', chatSourceRef.current ? null : selected, chatSourceRef.current || null, (row as { model_override?: string | null } | undefined)?.model_override ?? null); await library.syncTranscript(linked.id, toLibraryTranscript(messages)); onContinueInCopilot?.(linked.id); })}>Continue in Co-Pilot</Button></>}</div>
+          <div className="nb-toolbar"><select className="nb-input flex-1" aria-label="Conversation" value={session} disabled={busy} onChange={e => setSession(e.target.value)}><option value="">New conversation</option>{sessions.map(s => <option key={s.id} value={s.id}>{s.title}</option>)}</select>{session && <><Button disabled={busy} onClick={() => void run(async () => { const title = await dialogs.prompt('Conversation title'); if (!title?.trim()) return; await client.request(`${sessionPath}/${recordId(session)}`, 'PUT', { title }); setSessions(rows => rows.map(r => r.id === session ? { ...r, title } : r)); linkSessionRows([{ ...sessionsRef.current.find(r => r.id === session), id: session, title } as ChatSessionResponse], chatSourceRef.current ? null : selected, chatSourceRef.current || null); })}>Rename</Button><Button disabled={busy} onClick={() => void run(async () => { if (!(await dialogs.confirm('Delete this conversation?', { danger: true }))) return; await client.request(`${sessionPath}/${recordId(session)}`, 'DELETE'); setSessions(rows => rows.filter(r => r.id !== session)); setSession(''); try { await library.unlinkNotebook(session); } catch { /* best-effort */ } })}>Delete</Button><Button disabled={busy} title="Open this chat in the AI assistant sidebar (transcript is synced to the shared library)" onClick={() => void run(async () => { const row = sessionsRef.current.find(r => r.id === session); const linked = await library.linkNotebook(session, row?.title || 'Research conversation', chatSourceRef.current ? null : selected, chatSourceRef.current || null, (row as { model_override?: string | null } | undefined)?.model_override ?? null); await library.syncTranscript(linked.id, toLibraryTranscript(messages)); onContinueInCopilot?.(linked.id); })}>Continue in AI assistant</Button></>}</div>
           <div ref={chatScrollRef} onScroll={handleChatScroll} className="nb-scroll nb-stack flex-1" aria-live="polite">{!messages.length && <div className="nb-center nb-muted">Ask a question about your sources. Choose which sources to include using the context controls.</div>}{messages.map(m => <article key={m.id} className="nb-card nb-stack"><span className="nb-muted">{m.type === 'human' ? 'You' : 'Notebook'}</span>{m.type !== 'human' ? <NotebookChatMessage message={m} onReference={openReference}/> : <NotebookMarkdown text={m.content} onReference={openReference}/>}{m.type !== 'human' && <div className="nb-tabs"><Button onClick={() => void run(async () => { await client.request('/notes', 'POST', { title: 'Research answer', content: m.content, note_type: 'ai', notebook_id: selected }); await refreshNotebook(); })}>Save as note</Button><Button onClick={() => void run(() => exportText('Research answer', m.content))}>Save to vault</Button></div>}</article>)}<div ref={chatEndRef}/>{!chatStick && messages.length > 0 && <div className="nb-toolbar justify-center"><Button onClick={() => setChatStick(true)}><ChevronDown size={14}/> Latest</Button></div>}</div>
           <form className="nb-compose" onSubmit={e => { e.preventDefault(); send(); }}><select className="nb-input text-xs" aria-label="Chat model" value={model} onChange={e => setModel(e.target.value)}><option value="">Default chat model</option>{models.filter(m => m.type === 'language').map(m => <option key={m.id} value={m.id}>{m.name}</option>)}</select><textarea className="nb-input" aria-label="Question" rows={3} value={question} onChange={e => setQuestion(e.target.value)} placeholder="Ask about your research…"/><Button type="submit" className="primary justify-self-end" disabled={busy || !question.trim()}><Send size={14}/>Send</Button></form>
         </main>

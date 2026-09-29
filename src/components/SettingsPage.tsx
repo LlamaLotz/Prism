@@ -76,7 +76,7 @@ const ACCENT_PRESETS = [
 
 const SECTIONS: { id: SectionId; label: string; icon: React.ReactNode }[] = [
   { id: 'general', label: 'Vault & Ingestion', icon: <FolderOpen className="w-4 h-4" /> },
-  { id: 'ai', label: 'AI Co-Pilot', icon: <Cpu className="w-4 h-4" /> },
+  { id: 'ai', label: 'AI assistant', icon: <Cpu className="w-4 h-4" /> },
   { id: 'appearance', label: 'Appearance', icon: <Palette className="w-4 h-4" /> },
   { id: 'editor', label: 'Editor', icon: <Gauge className="w-4 h-4" /> },
   { id: 'linking', label: 'Linking & Search', icon: <Link2 className="w-4 h-4" /> },
@@ -1129,8 +1129,8 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
             {section === 'ai' && <AIRoutingSettings draft={draft} setDraft={setDraft} />}
             {section === 'ai' && (
               <div>
-                <SectionTitle hint="Configure AI provider and model for the Co-Pilot sidebar panel.">
-                  AI Co-Pilot
+                <SectionTitle hint="Configure AI provider and model for the AI assistant sidebar panel.">
+                  AI assistant
                 </SectionTitle>
                 <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-5 space-y-4">
                   <div className="space-y-1.5">
@@ -1171,7 +1171,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                       <p className="text-[11px] text-slate-500 leading-relaxed">{aiProvider.note}</p>
                     ) : (
                       <p className="text-[11px] text-amber-500/90 leading-relaxed">
-                        Choose a provider above to configure the AI Co-Pilot — the fields below
+                        Choose a provider above to configure the AI assistant — the fields below
                         unlock once one is selected.
                       </p>
                     )}
@@ -1422,7 +1422,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                       themeStyle={draft.appearance.themeStyle}
                       options={[
                         { value: 'graph', label: 'Graph' },
-                        { value: 'editor', label: 'Editor' },
+                        { value: 'editor', label: 'Notes' },
                         { value: 'split', label: 'Split' },
                         { value: 'topics', label: 'Topics' },
                         { value: 'notebook', label: 'Notebook' },
@@ -1436,7 +1436,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                       }
                     />
                   </Field>
-                  <Field label="Default graph mode" hint="The 3D view is the default; 2D is lighter on CPU.">
+                  <Field label="Default graph mode" hint="2D is the default and lighter on CPU; 3D remains available.">
                     <Segmented
                       themeStyle={draft.appearance.themeStyle}
                       options={[
@@ -1485,7 +1485,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                       }
                     />
                   </Field>
-                  <Field label="Open AI Co-Pilot on start">
+                  <Field label="Open AI assistant on start">
                     <Toggle
                       themeStyle={draft.appearance.themeStyle}
                       checked={draft.appearance.aiPanelOpenOnStart}

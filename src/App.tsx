@@ -233,7 +233,7 @@ export default function App() {
   }, []);
 
   // Layout views: 'editor' | 'graph' | 'split' | 'topics'. Startup lands on
-  // the graph view (3D by default) with the AI panel minimized — the toolbar
+  // Notes by default with the AI panel minimized — the toolbar
   // toggles both.
   const [layout, setLayout] = useState<AppPage>(
     DEFAULT_SETTINGS.appearance.startupView

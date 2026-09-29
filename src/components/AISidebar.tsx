@@ -31,7 +31,7 @@ interface AISidebarProps {
   /** Open a library session pushed from elsewhere (Notebook deep-link). */
   openRequest?: { sessionId: string; ts: number } | null;
   onOpenRequestConsumed?: () => void;
-  /** Continue a Co-Pilot session in Notebook (App seeds a backend session). */
+  /** Continue an AI assistant session in Notebook (App seeds a backend session). */
   onOpenInNotebook?: (entry: ChatLibrarySession) => void;
 }
 
@@ -86,7 +86,7 @@ const fmtChatDate = (epochSeconds: number) => {
 };
 
 /**
- * Shared chat library: every Co-Pilot + Notebook conversation in this vault.
+ * Shared chat library: every AI assistant + Notebook conversation in this vault.
  * Notebook rows are linked entries kept in sync by the Notebook view;
  * opening one loads its mirrored transcript (synced on demand there).
  */
@@ -143,7 +143,7 @@ const ChatLibraryPanel: React.FC<{
         </button>
       </div>
       <div className="flex items-center gap-1">
-        {([['all', 'All'], ['copilot', 'Co-Pilot'], ['notebook', 'Notebook']] as const).map(([key, label]) => {
+        {([['all', 'All'], ['copilot', 'AI assistant'], ['notebook', 'Notebook']] as const).map(([key, label]) => {
           const active = (library.originFilter ?? 'all') === key;
           return (
             <button
@@ -176,7 +176,7 @@ const ChatLibraryPanel: React.FC<{
                 <div className="text-xs font-medium text-slate-200 truncate">{s.title}</div>
                 <div className="flex items-center gap-1.5 mt-0.5 text-[9px] text-slate-500">
                   <span className={`font-bold uppercase tracking-wide ${s.origin === 'notebook' ? 'text-violet-300/90' : 'text-brand-300/90'}`}>
-                    {s.origin === 'notebook' ? 'Notebook' : 'Co-Pilot'}
+                    {s.origin === 'notebook' ? 'Notebook' : 'AI assistant'}
                   </span>
                   <span>·</span><span>{s.messageCount} msgs</span>
                   <span>·</span><span>{fmtChatDate(s.updatedAt)}</span>
@@ -312,7 +312,7 @@ export const AISidebar: React.FC<AISidebarProps> = ({
   const openLibrarySession = useCallback(async (entry: ChatLibrarySession) => {
     const rows = await library.loadMessages(entry.id);
     if (!rows.length && entry.origin === 'notebook') {
-      setError(createUserErrorDetails('No synced transcript yet for this Notebook chat. Open it in Notebook (or press “Continue in Co-Pilot” there) to sync it here.'));
+      setError(createUserErrorDetails('No synced transcript yet for this Notebook chat. Open it in Notebook (or press “Continue in AI assistant” there) to sync it here.'));
     }
     persistedCount.current = rows.length;
     persistenceTarget.current = {id: entry.id};
@@ -666,7 +666,7 @@ export const AISidebar: React.FC<AISidebarProps> = ({
       <div className="p-4 border-b border-[var(--color-border)] flex flex-wrap gap-3 items-center justify-between bg-panel">
         <div className="flex items-center gap-2">
           <Sparkles className="w-4.5 h-4.5 text-brand-400 animate-pulse" />
-          <h2 className="text-sm font-bold text-slate-100">AI Co-Pilot</h2>
+          <h2 className="text-sm font-bold text-slate-100">AI assistant</h2>
         </div>
         <div className="flex items-center gap-2">
           <button
@@ -681,7 +681,7 @@ export const AISidebar: React.FC<AISidebarProps> = ({
             onClick={() => { setView('library'); void library.refresh(); }}
             aria-pressed={view === 'library'}
             className="runtime-button"
-            title="Shared chat library (Co-Pilot + Notebook history)"
+            title="Shared chat library (AI assistant + Notebook history)"
           >
             <History className="w-3 h-3" /> Library
           </button>
@@ -748,7 +748,7 @@ export const AISidebar: React.FC<AISidebarProps> = ({
               <Sparkles className="w-5 h-5" />
             </div>
             <div className="space-y-1 max-w-xs mx-auto">
-              <h3 className="text-xs font-semibold text-slate-300">Ask Prism Co-Pilot</h3>
+              <h3 className="text-xs font-semibold text-slate-300">Ask Prism AI assistant</h3>
               <p className="text-[10px] text-slate-500 leading-relaxed">
                 Connect ideas, find links, generate summaries, or chat recursively with your note's context using AI routing.
               </p>

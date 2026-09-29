@@ -147,8 +147,8 @@ impl Default for AppearanceConfig {
         Self {
             theme_style: "industrial".to_string(),
             theme_mode: "dark".to_string(),
-            startup_view: "graph".to_string(),
-            default_graph_mode: "3d".to_string(),
+            startup_view: "editor".to_string(),
+            default_graph_mode: "2d".to_string(),
             background_pattern: "grid".to_string(),
             ai_panel_open_on_start: false,
             sidebar_collapsed_on_start: false,
@@ -406,7 +406,23 @@ mod tests {
             effective_worker_concurrency(None),
             DEFAULT_WORKER_CONCURRENCY
         );
-        assert_eq!(restored.appearance.startup_view, "graph");
+        assert_eq!(restored.appearance.startup_view, "editor");
+    }
+
+    #[test]
+    fn focused_defaults_preserve_existing_appearance_choices() {
+        for appearance in [serde_json::json!({}), serde_json::json!({"themeMode": "light"})] {
+            let config: AppearanceConfig = serde_json::from_value(appearance).unwrap();
+            assert_eq!(config.startup_view, "editor");
+            assert_eq!(config.default_graph_mode, "2d");
+        }
+        for view in ["editor", "graph", "split", "topics", "notebook"] {
+            let saved = serde_json::json!({"startupView": view, "defaultGraphMode": "3d"});
+            let config: AppearanceConfig = serde_json::from_value(saved).unwrap();
+            let reopened: AppearanceConfig = serde_json::from_str(&serde_json::to_string(&config).unwrap()).unwrap();
+            assert_eq!(reopened.startup_view, view);
+            assert_eq!(reopened.default_graph_mode, "3d");
+        }
     }
 
     #[test]
@@ -484,7 +500,7 @@ mod tests {
 
         let back: RuntimeConfig = serde_json::from_str(&json).unwrap();
         assert_eq!(back.appearance.background_pattern, "grid");
-        assert_eq!(back.appearance.default_graph_mode, "3d");
+        assert_eq!(back.appearance.default_graph_mode, "2d");
         assert_eq!(back.appearance.accent_color, "#38BDF8");
         assert_eq!(back.appearance.app_icon, "");
         assert!((back.linking.similarity_threshold - 0.70).abs() < 1e-6);
