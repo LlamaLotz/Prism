@@ -183,6 +183,7 @@ export default function App() {
     root.style.setProperty('--liquid-glass-opacity', String(settings.appearance.liquidGlassOpacity));
   }, [settings.appearance.themeStyle, settings.appearance.themeMode, settings.appearance.liquidGlassOpacity]);
 
+  useEffect(() => () => sharedStudy.cancelAgents(settings.vaultPath), [settings.vaultPath]);
   const isRounded = settings.appearance.themeStyle === 'glass' || settings.appearance.themeStyle === 'gloss';
 
   // Panel rounding class (Rounded theme only)
@@ -1638,7 +1639,7 @@ export default function App() {
           {(notebookVisited || layout === 'notebook') && (
             <div className="flex-1 min-w-0 h-full" style={{ display: layout === 'notebook' ? undefined : 'none' }}>
               <ErrorBoundary fallbackTitle="Notebook encountered an error">
-                <StudyWorkspace unsavedPaths={studyUnsavedPaths} key={settings.vaultPath} vaultPath={settings.vaultPath}
+                <StudyWorkspace config={settings.omniRoute} onVaultChanged={handleAgentVaultChanged} unsavedPaths={studyUnsavedPaths} key={settings.vaultPath} vaultPath={settings.vaultPath}
                   onImport={() => setIsIngestModalOpen(true)} onOpenSettings={() => openSettings('ai')}
                   onOtherChatView={() => { setLayout('editor'); setShowAICoPilot(true); }}
                   onOpenNote={path => { const found = notes.find(n => n.relativePath === path); if (found) { setActiveNote(found); setLayout('editor'); } }}
@@ -1663,7 +1664,7 @@ export default function App() {
             onResize={(d) => saveAiWidth(Math.min(560, Math.max(240, aiWidth - d)))}
             className="absolute left-0 top-0 bottom-0"
           />
-          <AssistantWorkspace key={settings.vaultPath} vaultPath={settings.vaultPath} openRequest={copilotOpenRequest}
+          <AssistantWorkspace config={settings.omniRoute} onVaultChanged={handleAgentVaultChanged} key={settings.vaultPath} vaultPath={settings.vaultPath} openRequest={copilotOpenRequest}
             onConsumed={() => setCopilotOpenRequest(null)} onNotebook={() => setLayout('notebook')}
             onOpenSettings={() => openSettings('ai')} advanced={<AISidebar
             key={settings.vaultPath}

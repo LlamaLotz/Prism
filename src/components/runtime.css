@@ -35,7 +35,7 @@
 .runtime-routes { margin-top: 24px; padding-top: 20px; border-top: 1px solid var(--color-border); }
 .runtime-local { display: grid; gap: 8px; margin-top: 20px; padding: 14px; background: var(--color-surface); border-radius: 8px; }
 .agent-review, .agent-undo { padding: 12px; border-radius: 0; overflow-wrap: anywhere; }
-.agent-review { max-height: 240px; overflow: auto; }
+.agent-review { overflow: auto; }
 .agent-review article { margin-top: 10px; padding: 10px; background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 8px; }
 .agent-review pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 140px; overflow: auto; padding: 10px; margin: 8px 0; font-size: 11px; color: var(--color-text-body); background: var(--color-base); }
 .agent-review .runtime-actions { margin-top: 8px; justify-content: flex-start; }

@@ -67,3 +67,19 @@ test('multi-round retrieved sources persist through chat reload and navigate by 
   await expect(history.getByRole('button',{name:'Recheck recovery'})).not.toBeVisible();
   await expect(history.getByRole('button',{name:'Undo operation'})).toHaveCount(10);
  });
+
+ test('agent history dropdown is collapsible and stays within half the chat view',async({page})=>{
+  await page.setViewportSize({width:360,height:800});
+  await page.goto('/tests/notebook/runtime-harness.html?noapproval&agent&collapsed&manyoperations');
+  await page.getByRole('button',{name:'Agent OFF'}).click();
+  const toggle=page.getByRole('button',{name:/Agent history/});const drawer=page.locator('.agent-history');const sidebar=page.locator('.ai-sidebar');
+  await expect(page.getByLabel('Agent operation history')).toBeVisible();
+  await expect(toggle).toHaveAttribute('aria-expanded','true');
+  const sidebarHeight=await sidebar.evaluate(el=>el.getBoundingClientRect().height);
+  const drawerHeight=await drawer.evaluate(el=>el.getBoundingClientRect().height);
+  expect(drawerHeight).toBeLessThanOrEqual(sidebarHeight*0.5+1);
+  expect(await page.locator('.agent-history-body').evaluate(el=>el.scrollHeight>el.clientHeight)).toBe(true);
+  await toggle.click();await expect(toggle).toHaveAttribute('aria-expanded','false');
+  await expect(page.getByLabel('Agent operation history')).not.toBeVisible();
+  await toggle.click();await expect(page.getByLabel('Agent operation history')).toBeVisible();
+ });
