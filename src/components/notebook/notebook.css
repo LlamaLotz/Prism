@@ -49,11 +49,34 @@
 .nb-error span { overflow-wrap: anywhere; min-width: 0; }
 .nb-toolbar h1, .nb-toolbar h2 { font-family: var(--font-sans); }
 .nb-message ul, .nb-message ol { padding-left: 1.4rem; list-style: revert; }
-.nb-compose { margin-top: auto; padding: .8rem; display: grid; gap: .5rem; border-top: 1px solid var(--color-border); }
+/* The notebook composer is the shared PromptBar component, which owns its own
+   focus treatment (thin accent edge + caret) in PromptBar.css. */
+.nb-chat-status { padding: 0 0 .15rem; }
 .nb-mobile-tabs { display: none; }
 .nb-center { display: flex; align-items: center; justify-content: center; flex: 1; padding: 2rem; text-align: center; }
 .nb-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 1rem; }
 .nb-form .wide { grid-column: 1 / -1; }
+
+/* Notebook overview cards — presentation adapts to the design archetype:
+   industrial reads mechanical and technical (rigid edges, a hover sweep that
+   fires once, strong hierarchy); glass and gloss read soft and layered with a
+   coverflow-inspired lift. Notebook information stays immediately readable. */
+.nb-notebook-card { position: relative; transition: background-color .2s ease, border-color .2s ease, transform .25s cubic-bezier(.23, 1, .32, 1), box-shadow .25s ease; }
+.nb-notebook-open { display: grid; gap: .15rem; width: 100%; }
+.nb-notebook-index { font-family: var(--font-mono); font-size: 10px; letter-spacing: .18em; color: var(--nb-muted); transition: color .2s ease, background-color .2s ease; }
+.nb-notebook-meta { font-size: 10px; text-transform: uppercase; letter-spacing: .08em; }
+
+.theme-industrial .nb-notebook-card::before { content: ''; position: absolute; top: 0; right: 0; left: 0; height: 2px; background: var(--nb-link); transform: scaleX(0); transform-origin: left center; transition: transform .28s cubic-bezier(.23, 1, .32, 1); }
+.theme-industrial .nb-notebook-card:hover { background: var(--color-surface); border-color: var(--color-brand-400); }
+.theme-industrial .nb-notebook-card:hover::before { transform: scaleX(1); }
+.theme-industrial .nb-notebook-card:hover .nb-notebook-index { color: var(--nb-link); }
+
+.theme-glass .nb-notebook-card, .theme-gloss .nb-notebook-card { border-radius: 16px; box-shadow: 0 10px 26px -16px rgba(0, 0, 0, .55), inset 0 1px 0 color-mix(in srgb, var(--color-border) 70%, transparent); }
+.theme-glass .nb-notebook-card::before, .theme-gloss .nb-notebook-card::before { content: ''; position: absolute; right: 12px; bottom: -4px; left: 12px; height: 10px; border-radius: 0 0 16px 16px; background: color-mix(in srgb, var(--color-surface) 85%, transparent); opacity: .5; transition: opacity .25s ease; }
+.theme-glass .nb-notebook-card:hover, .theme-gloss .nb-notebook-card:hover { transform: translateY(-5px); box-shadow: 0 26px 52px -22px rgba(0, 0, 0, .65), inset 0 1px 0 var(--color-border); }
+.theme-glass .nb-notebook-card:hover::before, .theme-gloss .nb-notebook-card:hover::before { opacity: .85; }
+.theme-glass .nb-notebook-index, .theme-gloss .nb-notebook-index { padding: 1px 6px; border-radius: 999px; background: color-mix(in srgb, var(--color-brand-400) 16%, transparent); color: var(--nb-link); letter-spacing: .08em; }
+@media (prefers-reduced-motion: reduce) { .nb-notebook-card { transition: none; } .nb-notebook-card:hover { transform: none; } .theme-industrial .nb-notebook-card::before { transition: none; } }
 @container (max-width: 850px) {
   .nb-mobile-tabs { display: flex; }
   .nb-pane { width: 100% !important; flex: 1 !important; }

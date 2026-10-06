@@ -42,7 +42,7 @@ export function NavigationMenu<T extends string>({ label, activeLabel, value, it
     if (!event.currentTarget.contains(event.relatedTarget as Node | null) && !menu.current?.contains(event.relatedTarget as Node | null)) setOpen(false);
   }}>
     <button ref={trigger} type="button" aria-haspopup="menu" aria-expanded={open} aria-controls={open ? id : undefined}
-      className="flex items-center gap-1 rounded px-2 py-1 text-xs text-text-muted hover:text-offwhite hover:bg-surface-hover"
+      className="prism-navigation-trigger flex items-center gap-1 rounded px-2 py-1 text-xs text-text-muted hover:text-offwhite hover:bg-surface-hover"
       onClick={() => { initialFocus.current = 'first'; setOpen(v => !v); }}
       onKeyDown={event => {
         if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {

@@ -3,7 +3,7 @@ import { Columns3, Maximize2, Minimize2, PanelLeftClose, PanelLeftOpen } from 'l
 
 export type StudyPane = 'sources' | 'chat' | 'tools';
 const panes: StudyPane[] = ['sources', 'chat', 'tools'];
-const labels = { sources: 'Sources', chat: 'Chat', tools: 'Studio' };
+const labels = { sources: 'Sources', chat: 'Chat', tools: 'Tools' };
 const minimum = { sources: 240, chat: 320, tools: 300 };
 interface Layout { widths: number[]; collapsed: StudyPane[] }
 const defaults: Layout = { widths: [24, 40, 36], collapsed: [] };

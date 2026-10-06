@@ -8,13 +8,13 @@ export function extractToolCalls(text: string): Array<{ tool: string; input: unk
   return calls;
 }
 /** Shared bounded tool loop. Every await is followed by a cancellation check before dispatch. */
-export async function runAgentTurn({ messages, complete, post, approval, check = () => {} }: {
+export async function runAgentTurn({ messages, complete, post, approval, onTool, check = () => {} }: {
   messages: AgentMessage[]; complete: (messages: AgentMessage[]) => Promise<string>;
   post: (text: string, progress?: boolean) => void | Promise<void>; approval: (response: AgentToolResponse) => void | Promise<void>;
-  check?: () => void;
+  check?: () => void; onTool?:(name:string)=>void;
 }) {
   const work = [...messages];
-  const call = async (tool: string, input: unknown) => { check(); const result = await knowledge.agentCall(tool, input); check(); return result; };
+  const call = async (tool: string, input: unknown) => { check(); onTool?.(tool); const result = await knowledge.agentCall(tool, input); check(); return result; };
   let manual: { tool: string; input: unknown } | null = null;
   try { const value = JSON.parse(work.at(-1)?.content || ''); if (typeof value.tool === 'string' && value.input !== undefined) manual = value; } catch { /* Natural-language request. */ }
   if (manual) {

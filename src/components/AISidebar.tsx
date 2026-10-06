@@ -19,6 +19,10 @@ import type { AgentToolDefinition, ChatLibrarySession, Citation, RetrievedBlock 
 import { useChatLibrary } from '../services/chatLibrary';
 import { useDialog } from './DialogProvider';
 import { createErrorDetails, createUserErrorDetails, ErrorDetails } from '../utils/errors';
+import { PromptBar } from './ui/PromptBar';
+import { useRequestActivity } from './ui/useRequestActivity';
+import { AiStatusLine } from './ui/AiStatusLine';
+import type { ChatModelPicker } from './study/SharedChat';
 
 interface AISidebarProps {
   note: NoteFile | null;
@@ -35,6 +39,8 @@ interface AISidebarProps {
   onOpenRequestConsumed?: () => void;
   /** Continue an AI assistant session in Notebook (App seeds a backend session). */
   onOpenInNotebook?: (entry: ChatLibrarySession) => void;
+  /** Model chooser wired to the app's provider/route configuration. */
+  modelPicker?: ChatModelPicker;
 }
 
 interface ChatMessage {
@@ -227,6 +233,7 @@ export const AISidebar: React.FC<AISidebarProps> = ({
   openRequest,
   onOpenRequestConsumed,
   onOpenInNotebook,
+  modelPicker,
 }) => {
   const documentImports = useDocumentImports();
   const dialogs = useDialog();
@@ -235,6 +242,9 @@ export const AISidebar: React.FC<AISidebarProps> = ({
   const [inputValue, setInputValue] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isSearching, setIsSearching] = useState(false);
+  // High-level processing phase for the thinking indicator, set from the real
+  // request/tool lifecycle (never a timer). Cleared when a request settles.
+  const {phase,setPhase,activity,settle}=useRequestActivity();
   const [searchMode, setSearchMode] = useState(false);
   const [error, setError] = useState<ErrorDetails | null>(null);
   const [agentMode, setAgentMode] = useState(false);
@@ -254,6 +264,7 @@ export const AISidebar: React.FC<AISidebarProps> = ({
   const persistedCount = useRef(0);
   const persistenceQueue = useRef(Promise.resolve());
   const persistenceTarget = useRef<{ id: string | null }>({ id: null });
+  const cancelledRequest=useRef(false);
   const mounted = useRef(true);
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
 
@@ -389,10 +400,12 @@ export const AISidebar: React.FC<AISidebarProps> = ({
       return;
     }
 
+    cancelledRequest.current=false;
     setError(null);
     setMessages((prev) => [...prev, { role: 'user', content: trimmed }]);
     if (text === inputValue) setInputValue('');
     setIsLoading(true);
+    setPhase('Thinking…');
 
     try {
       // Build a full prompt context using the active note if it exists
@@ -415,12 +428,14 @@ export const AISidebar: React.FC<AISidebarProps> = ({
 
       // Retrieval-augmented: vault-aware context (active note + linked + backlinks + semantic + tags) is injected server-side.
       const activeForRetrieval = note ? { title: note.title, path: note.path, content: note.content } : null;
-      const { text: response, retrieval } = await sendChatMessageWithRetrieval(config, fullMessages, activeForRetrieval);
+      const { text: response, retrieval } = await sendChatMessageWithRetrieval(config, fullMessages, activeForRetrieval, 'CHAT', setPhase, modelPicker?.value);
+      if(cancelledRequest.current||!mounted.current)return;
       setMessages((prev) => [...prev, { role: 'assistant', content: response, citations: retrieval?.contextCitations ?? retrieval?.citations ?? undefined, degraded: retrieval?.degraded ?? null, retrievedBlocks: retrieval?.blocks ?? undefined }]);
     } catch (err: any) {
-      showError(err, 'An error occurred.');
+      if(!cancelledRequest.current){settle('failed');showError(err, 'An error occurred.');}
     } finally {
       setIsLoading(false);
+      setPhase('');
     }
   };
 
@@ -430,20 +445,22 @@ export const AISidebar: React.FC<AISidebarProps> = ({
 
   const handleAgentTurn = async (trimmed: string) => {
     if (isLoading) return true;
+    cancelledRequest.current=false;
     // Manual fast-path: a raw {"tool":..., "input":...} message dispatches
     // directly to the Tool Bus without involving the model.
     const asTool = (() => { try { return JSON.parse(trimmed); } catch { return null; } }) as any;
     if (asTool && typeof asTool.tool === 'string' && asTool.input !== undefined) {
       setMessages((prev) => [...prev, { role: 'user', content: trimmed }]);
-      setInputValue(''); setIsLoading(true);
+      setInputValue(''); setIsLoading(true); setPhase('Using tool…');
       try {
         const res = await knowledge.agentCall(asTool.tool, asTool.input);
+        if(cancelledRequest.current||!mounted.current)return true;
         if (res.requiresApproval && res.approvalId) {
           await postApprovalMessage(res.tool, res.preview);
         } else {
           setMessages((prev) => [...prev, { role: 'assistant', content: `Tool \`${res.tool}\` result:\n\`\`\`json\n${JSON.stringify(res.result, null, 2)}\n\`\`\`` }]);
         }
-      } catch (err: any) { showError(err, 'Agent tool failed.'); } finally { setIsLoading(false); }
+      } catch (err: any) { showError(err, 'Agent tool failed.'); } finally { setIsLoading(false); setPhase(''); }
       return true;
     }
     // Model-driven loop: the model gets the Tool Bus registry (reads + edit
@@ -459,9 +476,11 @@ export const AISidebar: React.FC<AISidebarProps> = ({
     // to plain chat (`handleSend` posts the user bubble itself).
     let registry: AgentToolDefinition[] = [];
     try { registry = await knowledge.agentTools(); } catch { registry = []; }
+    if(cancelledRequest.current||!mounted.current)return true;
     if (!registry.length) { await handleSend(trimmed); return true; }
     setMessages((prev) => [...prev, { role: 'user', content: trimmed }]);
     setIsLoading(true);
+    setPhase('Thinking…');
     try {
       const activeForRetrieval = note ? { title: note.title, path: note.path, content: note.content } : null;
       const history = messages.slice(-12).map((m) => ({ role: m.role as 'user' | 'assistant', content: m.content }));
@@ -474,18 +493,20 @@ export const AISidebar: React.FC<AISidebarProps> = ({
       await runAgentTurn({
         messages: work,
         complete: async messages => {
-          const { text, retrieval } = await sendChatMessageWithRetrieval(config, messages, activeForRetrieval);
+          const { text, retrieval } = await sendChatMessageWithRetrieval(config, messages, activeForRetrieval, 'CHAT', setPhase, modelPicker?.value);
           context = mergeAgentContext(context, retrieval);
           return text;
         },
-        check: () => { if (!mounted.current) throw new Error('Agent cancelled'); },
-        post: (content, progress) => { setMessages(previous => [...previous, { role: 'assistant', content, ...(progress ? {} : context) }]); },
-        approval: response => postApprovalMessage(response.tool, response.preview, context),
+        check: () => { if (!mounted.current||cancelledRequest.current) throw new Error('Agent cancelled'); },
+        onTool:tool=>setPhase(`Running ${tool}`),
+        post: (content, progress) => { setPhase(progress ? 'Using tool…' : 'Finalizing…'); setMessages(previous => [...previous, { role: 'assistant', content, ...(progress ? {} : context) }]); },
+        approval: response => { setPhase('Waiting for approval'); return postApprovalMessage(response.tool, response.preview, context); },
       });
     } catch (err: any) {
-      showError(err, 'Agent turn failed.');
+      if(!cancelledRequest.current){settle('failed');showError(err, 'Agent turn failed.');}
     } finally {
       setIsLoading(false);
+      setPhase('');
     }
     return true;
   };
@@ -495,6 +516,7 @@ export const AISidebar: React.FC<AISidebarProps> = ({
 
     setIsSearching(true);
     setError(null);
+    setPhase('Searching…');
     setMessages((prev) => [...prev, { role: 'user', content: `🔍 Search: ${query}` }]);
 
     try {
@@ -511,6 +533,7 @@ export const AISidebar: React.FC<AISidebarProps> = ({
       showError(err, 'Search failed.');
     } finally {
       setIsSearching(false);
+      setPhase('');
     }
   };
 
@@ -539,6 +562,7 @@ export const AISidebar: React.FC<AISidebarProps> = ({
 
     setError(null);
     setIsLoading(true);
+    setPhase('Generating…');
     setStickToBottom(true);
 
     const userMessageContent = 
@@ -563,11 +587,13 @@ export const AISidebar: React.FC<AISidebarProps> = ({
         response = await suggestMetadata(config, note.title, note.content ?? '');
       }
 
+      if(cancelledRequest.current||!mounted.current)return;
       setMessages((prev) => [...prev, { role: 'assistant', content: response }]);
     } catch (err: any) {
-      showError(err, 'An error occurred.');
+      if(!cancelledRequest.current){settle('failed');showError(err, 'An error occurred.');}
     } finally {
       setIsLoading(false);
+      setPhase('');
     }
   };
 
@@ -596,14 +622,7 @@ export const AISidebar: React.FC<AISidebarProps> = ({
           >
             <History className="w-3 h-3" /> Library
           </button>
-          <button
-            onClick={() => setAgentMode((v) => !v)}
-            title={agentMode ? 'Agent: ON — can read and prepare note edits (writes need your approval)' : 'Agent: OFF — chat only'}
-            aria-pressed={agentMode}
-            className="runtime-button"
-          >
-            <ShieldCheck className="w-3 h-3" /> Agent {agentMode ? 'ON' : 'OFF'}
-          </button>
+
           <button
             onClick={startNewChat}
             className="gloss-text-button ai-reset-button text-[10px] font-semibold text-slate-500 hover:text-slate-300 transition-colors"
@@ -749,13 +768,12 @@ export const AISidebar: React.FC<AISidebarProps> = ({
           })
         )}
 
-        {/* Loading Indicator */}
-        {isLoading && (
+        {/* Thinking / processing status — high-level phases only */}
+        {activity && (
           <div className="flex flex-col items-start max-w-[85%] mr-auto">
             <span className="text-[9px] font-bold text-slate-500 mb-0.5">PRISM AI</span>
             <div className="bg-slate-900 border border-border p-3.5 rounded-2xl rounded-tl-none flex items-center gap-2.5">
-              <Loader2 className="w-4 h-4 text-brand-400 animate-spin" />
-              <span className="text-xs text-slate-400">Fetching response...</span>
+              <AiStatusLine phase={phase} activity={activity} />
             </div>
           </div>
         )}
@@ -791,40 +809,7 @@ export const AISidebar: React.FC<AISidebarProps> = ({
 
       {/* Input section */}
       {agentMode && <AgentReview onVaultChanged={onVaultChanged} onMessage={async content => { setMessages(previous=>[...previous,{role:'assistant',content}]); }} />}
-      {view === 'chat' && <form
-        onSubmit={(e) => {
-          e.preventDefault();
-          handleSubmit();
-        }}
-        className="w-full min-w-0 box-border p-3 border-t border-slate-900 bg-panel flex items-center gap-2"
-      >
-        <button
-          type="button"
-          onClick={() => setSearchMode((m) => !m)}
-          title={searchMode ? 'Switch to chat mode' : 'Switch to search mode'}
-          className={`shrink-0 w-8 h-8 rounded-xl flex items-center justify-center transition-all border ${
-            searchMode
-              ? 'bg-brand-600 hover:bg-brand-500 border-brand-400/40 text-white shadow-[0_0_12px_var(--color-brand-400)]'
-              : 'bg-slate-800 hover:bg-slate-700 border-slate-700 text-slate-400 hover:text-slate-200'
-          }`}
-        >
-          <Globe className="w-3.5 h-3.5" />
-        </button>
-        <input
-          type="text"
-          value={inputValue}
-          onChange={(e) => setInputValue(e.target.value)}
-          placeholder={searchMode ? 'Search the web...' : (note ? 'Chat with active note context...' : 'Ask Prism AI anything...')}
-          className="min-w-0 flex-1 bg-slate-900/60 border border-border focus:border-slate-700 text-xs rounded-xl px-3.5 py-2 text-slate-200 focus:outline-none transition-colors"
-        />
-        <button
-          type="submit"
-          disabled={!inputValue.trim() || isLoading || isSearching}
-          className={`${searchMode ? 'bg-brand-600 hover:bg-brand-500 border-brand-400/20 shadow-[0_0_10px_var(--color-brand-400)]' : 'bg-brand-600 hover:bg-brand-500 border-brand-500/20'} disabled:opacity-30 disabled:pointer-events-none text-white w-9 h-8 shrink-0 p-0 rounded-xl transition-all flex items-center justify-center border`}
-        >
-          {(isLoading || isSearching) ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
-        </button>
-      </form>}
+      {view === 'chat' && <PromptBar value={inputValue} onChange={setInputValue} onSend={handleSubmit} running={isLoading||isSearching} onStop={()=>{cancelledRequest.current=true;settle('cancelled');}} model={modelPicker} agent={agentMode} onAgent={setAgentMode} context={note?'Active note context':'Vault context'} placeholder={searchMode?'Search the web...':note?'Chat with active note context...':'Ask Prism AI anything...'} extra={<button type="button" aria-pressed={searchMode} onClick={()=>setSearchMode(m=>!m)}><Globe size={14}/> Web</button>}/> }
     </div>
   );
 };

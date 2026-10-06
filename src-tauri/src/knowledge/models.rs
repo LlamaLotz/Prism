@@ -57,6 +57,8 @@ pub struct Approval {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ModelRequest {
+    #[serde(default)]
+    pub provider_id: Option<String>,
     pub task: String,
     pub messages: Vec<Message>,
 }
@@ -216,7 +218,7 @@ async fn execute_inner(app: &tauri::AppHandle, request: ModelRequest, callback: 
         return Err("Model capability is not available for this task".into());
     }
     let cfg = crate::config::load_runtime_config(app).ok_or("Configure an AI provider first")?;
-    let route = cfg.models.routes.get(&request.task);
+    let route = request.provider_id.as_ref().filter(|id| !id.is_empty()).or_else(|| if request.provider_id.is_none() {cfg.models.routes.get(&request.task)} else {None});
     let configured = route.and_then(|id| cfg.models.providers.iter().find(|p| &p.id == id));
     let model = if let Some(provider) = configured {
         if !provider.capabilities.iter().any(|c| c == "generation") {

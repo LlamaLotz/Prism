@@ -6,7 +6,7 @@ import type { RetrievalPlan } from './knowledge';
 function truncateForPrompt(content: string): string {
   return content.length <= MAX_NOTE_CONTEXT_CHARS ? content : `${content.slice(0, MAX_NOTE_CONTEXT_CHARS)}\n...[note truncated]`;
 }
-async function executeModel(request: { task: string; messages: Array<{ role: string; content: string }> }): Promise<string> {
+async function executeModel(request: { providerId?:string; task: string; messages: Array<{ role: string; content: string }> }): Promise<string> {
   try { return await invoke<string>('execute_model', { request }); }
   catch (error) {
     if (String(error).includes('SERVICE_UNAVAILABLE:') && await requestServiceRecovery(request.task)) {
@@ -19,8 +19,9 @@ export async function sendChatMessage(
   _config: OmniRouteConfig,
   messages: Array<{ role: 'user' | 'assistant' | 'system'; content: string }>,
   task = 'CHAT',
+  providerId?:string,
 ): Promise<string> {
-  const result = await executeModel({ task, messages });
+  const result = await executeModel({ task, messages, providerId });
   return result.replace(/<thought>[\s\S]*?<\/thought>\s*/gi, '').trim();
 }
 
@@ -29,12 +30,16 @@ export async function sendChatMessageWithRetrieval(
   messages: Array<{ role: 'user' | 'assistant' | 'system'; content: string }>,
   activeNote: { title: string; path: string; content?: string } | null,
   task = 'CHAT',
+  /** High-level processing phases, for the AI thinking indicator. */
+  onPhase?: (phase: 'Reading context…' | 'Generating…') => void,
+  providerId?:string,
 ): Promise<{ text: string; retrieval: RetrievalPlan | null }> {
   const userQuery = [...messages].reverse().find((m) => m.role === 'user')?.content ?? '';
   let retrieval: RetrievalPlan | null = null;
   let injected = messages;
   if (userQuery.trim() || activeNote) {
     try {
+      onPhase?.('Reading context…');
       retrieval = await invoke<RetrievalPlan>('plan_retrieval', {
         request: {
           query: userQuery,
@@ -58,7 +63,8 @@ export async function sendChatMessageWithRetrieval(
       // retrieval is best-effort — fall back to plain prompt
     }
   }
-  const result = await executeModel({ task, messages: injected });
+  onPhase?.('Generating…');
+  const result = await executeModel({ task, messages: injected, providerId });
   return { text: result.replace(/<thought>[\s\S]*?<\/thought>\s*/gi, '').trim(), retrieval };
 }
 

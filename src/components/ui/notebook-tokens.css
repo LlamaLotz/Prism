@@ -1,0 +1,26 @@
+/* Opaque content planes are shared by Notebook, assistant, and portaled controls.
+   Appearance affects the surrounding geometry and light, never text opacity. */
+:root{--nb-canvas:#101318;--nb-panel:#191e26;--nb-card:#222a35;--nb-menu:#252e3a;--nb-text:#f3f5f9;--nb-secondary:#bdc8d8;--nb-border:#69788c;--nb-focus:#93c5fd;--nb-selection:#34475e;--nb-radius:14px;--nb-accent-ink:#101318}
+:root.mode-light{--nb-canvas:#eef1f6;--nb-panel:#ffffff;--nb-card:#f4f6fa;--nb-menu:#ffffff;--nb-text:#172032;--nb-secondary:#4a586d;--nb-border:#7b899e;--nb-focus:#254fb4;--nb-selection:#dce7fa}
+:root.theme-industrial{--nb-radius:0px}
+:root.theme-gloss.mode-dark{--nb-canvas:#11121a;--nb-panel:#1b1c29;--nb-card:#242637;--nb-menu:#292c3c;--nb-border:#778099}
+:root.theme-gloss.mode-light{--nb-canvas:#ececf4;--nb-panel:#fafaff;--nb-card:#f0f0f8;--nb-menu:#fafaff;--nb-border:#818397}
+html :is(.study-workspace,.study-assistant,.ai-panel,.ai-sidebar,.notebook-page,.model-picker__menu,.prompt-bar){--color-base:var(--nb-canvas);--color-panel:var(--nb-panel);--color-surface:var(--nb-card);--color-surface-hover:var(--nb-selection);--color-border:var(--nb-border);--color-text-hi:var(--nb-text);--color-text-body:var(--nb-secondary);--color-text-muted:var(--nb-secondary);color:var(--nb-text)}
+html :is(.study-workspace,.study-assistant,.ai-panel,.ai-sidebar) button:disabled{opacity:1;color:var(--nb-secondary);cursor:not-allowed}
+html :is(.study-workspace,.study-assistant,.ai-panel,.ai-sidebar) :is(input,textarea)::placeholder{color:var(--nb-secondary);opacity:1}
+html :is(.study-workspace,.study-assistant,.ai-panel,.ai-sidebar) :focus-visible{outline-color:var(--nb-focus)}
+html :is(.study-send,.study-primary,.prompt-bar__send){background:var(--color-brand-400)!important;color:var(--nb-accent-ink)!important}
+html .study-table th{position:sticky;top:0;background:var(--nb-panel);z-index:1}
+html .ai-status-line__label{color:var(--nb-secondary);background:none;-webkit-text-fill-color:currentColor;animation:none;opacity:1}
+html .model-picker__menu{background:var(--nb-menu)!important;color:var(--nb-text);border:1px solid var(--nb-border);overflow-y:auto;overscroll-behavior:contain;border-radius:var(--nb-radius)!important}
+html .model-picker__option{flex-shrink:0;color:var(--nb-text)!important;border-radius:calc(var(--nb-radius) / 2)!important}
+html .model-picker__option:is([data-active],[aria-selected=true]){background:var(--nb-selection)!important}
+html .study-area-tabs button[aria-pressed=true]{background:var(--nb-selection);color:var(--nb-text)}
+.study-workspace__body{display:flex;flex:1;flex-direction:column;min-height:0;min-width:0;overflow:hidden}.study-workspace__body[hidden]{display:none!important}
+
+html .prism-navigation-trigger{color:var(--nb-text)!important;background:var(--nb-panel)!important;border:1px solid var(--nb-border)!important;box-shadow:none!important;border-radius:var(--nb-radius)!important}
+html .ai-sidebar{background:var(--nb-panel)!important;color:var(--nb-text)}
+html .ai-sidebar :is(.text-slate-200,.text-slate-300,.text-offwhite){color:var(--nb-text)!important}html .ai-sidebar :is(.text-slate-400,.text-slate-500,.text-text-muted){color:var(--nb-secondary)!important}
+html .ai-sidebar :is(.bg-slate-900,.bg-slate-800){background:var(--nb-card)!important}
+:root.mode-light{--status-done:#18703a;--status-error:#b42332}
+.study-task-status{max-height:180px;flex-shrink:0;overflow:auto}.study-task-row{flex-wrap:wrap}.study-task-actions{flex-wrap:wrap}

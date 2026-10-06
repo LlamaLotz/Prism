@@ -3,7 +3,7 @@ import { AssistantWorkspace } from './components/study/AssistantWorkspace';
 import { sharedStudy, study } from './services/study';
 import { ModelServiceRecovery } from './components/ModelServiceRecovery';
 import { DEFAULT_SETTINGS } from './defaultSettings';
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { NotebookPage, type NotebookSectionOpenRequest } from './components/notebook/NotebookPage';
 import { APP_PAGES, type AppPage } from './types';
 import { Sidebar } from './components/Sidebar';
@@ -12,6 +12,8 @@ import { ErrorBoundary } from './components/ErrorBoundary';
 import { GraphViewContainer } from './components/GraphViewContainer';
 import { TopicsView } from './components/TopicsView';
 import { AISidebar } from './components/AISidebar';
+import type { ChatModelPicker } from './components/study/SharedChat';
+import type { ModelPickerOption } from './components/ui/ModelPicker';
 import { SettingsPage, type SectionId } from './components/SettingsPage';
 import { IngestModal } from './components/IngestModal';
 import { IngestionLogPanel } from './components/IngestionLogPanel';
@@ -915,6 +917,34 @@ export default function App() {
     return saved;
   };
 
+  // Model chooser shared by the notebook and AI sidebar prompt bars. It edits
+  // the existing per-task route (models.routes.CHAT) over the saved provider
+  // registry — no separate model store — so the selection persists through the
+  // runtime config and drives every subsequent AI request. Empty value =
+  // inherit the default omniRoute provider/model.
+  const handleSetChatModel = async (providerId: string | null) => {
+    const models = { privacy: 'ask_before_cloud', idleSeconds: 300, routes: {}, ...settings.models } as NonNullable<AppSettings['models']>;
+    const routes = { ...models.routes };
+    if (providerId) routes.CHAT = providerId; else delete routes.CHAT;
+    await handleSaveSettings({ ...settings, models: { ...models, routes } });
+  };
+  const chatModelPicker = useMemo<ChatModelPicker>(() => {
+    const routes = settings.models?.routes ?? {};
+    const providers = settings.models?.providers ?? [];
+    const inherited = [settings.omniRoute.provider, settings.omniRoute.model].filter(Boolean).join(' · ');
+    const options: ModelPickerOption[] = [
+      { value: '', label: 'Default model', description: inherited || 'Configured in AI settings' },
+      ...providers.filter(p => p.capabilities.includes('generation')).map((p) => ({
+        value: p.id,
+        label: p.name,
+        description: p.config.model,
+        tag: p.capabilities.includes('generation') ? 'Chat' : undefined,
+      })),
+    ];
+    return { value: routes.CHAT ?? '', options, onChange: (next) => handleSetChatModel(next || null) };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [settings]);
+
   // 4. Folder Select Trigger
   const handleSelectVault = async () => {
     const path = await tauriAPI.selectFolder();
@@ -1639,7 +1669,7 @@ export default function App() {
           {(notebookVisited || layout === 'notebook') && (
             <div className="flex-1 min-w-0 h-full" style={{ display: layout === 'notebook' ? undefined : 'none' }}>
               <ErrorBoundary fallbackTitle="Notebook encountered an error">
-                <StudyWorkspace config={settings.omniRoute} onVaultChanged={handleAgentVaultChanged} unsavedPaths={studyUnsavedPaths} key={settings.vaultPath} vaultPath={settings.vaultPath}
+                <StudyWorkspace config={settings.omniRoute} modelPicker={chatModelPicker} onVaultChanged={handleAgentVaultChanged} unsavedPaths={studyUnsavedPaths} key={settings.vaultPath} vaultPath={settings.vaultPath}
                   onImport={() => setIsIngestModalOpen(true)} onOpenSettings={() => openSettings('ai')}
                   onOtherChatView={() => { setLayout('editor'); setShowAICoPilot(true); }}
                   onOpenNote={path => { const found = notes.find(n => n.relativePath === path); if (found) { setActiveNote(found); setLayout('editor'); } }}
@@ -1664,13 +1694,14 @@ export default function App() {
             onResize={(d) => saveAiWidth(Math.min(560, Math.max(240, aiWidth - d)))}
             className="absolute left-0 top-0 bottom-0"
           />
-          <AssistantWorkspace config={settings.omniRoute} onVaultChanged={handleAgentVaultChanged} key={settings.vaultPath} vaultPath={settings.vaultPath} openRequest={copilotOpenRequest}
+          <AssistantWorkspace config={settings.omniRoute} modelPicker={chatModelPicker} onVaultChanged={handleAgentVaultChanged} key={settings.vaultPath} vaultPath={settings.vaultPath} openRequest={copilotOpenRequest}
             onConsumed={() => setCopilotOpenRequest(null)} onNotebook={() => setLayout('notebook')}
-            onOpenSettings={() => openSettings('ai')} advanced={<AISidebar
+            onOpenSettings={() => openSettings('ai')} advanced={            <AISidebar
             key={settings.vaultPath}
             note={activeNote}
             allNotes={notes}
             config={settings.omniRoute}
+            modelPicker={chatModelPicker}
             onOpenSettings={() => openSettings('ai')}
             onInsertText={handleInsertText}
             onOpenSource={async source => {

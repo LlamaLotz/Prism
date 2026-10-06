@@ -1,7 +1,8 @@
+import { PromptBar } from '../ui/PromptBar';
 import { study, sharedStudy } from '../../services/study';
 import React, { useCallback, useEffect, useId, useRef, useState } from 'react';
 import ReactMarkdown, { defaultUrlTransform } from 'react-markdown';
-import { BookOpen, Plus, ArrowLeft, Upload, RefreshCw, Send, X, Search, FolderOpen, Pencil, ChevronDown, ChevronUp, History, ExternalLink } from 'lucide-react';
+import { BookOpen, Plus, ArrowLeft, Upload, RefreshCw, X, Search, FolderOpen, Pencil, ChevronDown, ChevronUp, History, ExternalLink } from 'lucide-react';
 import { NotebookClient, notebookRuntime, CHAT_COLLAPSE_THRESHOLD, recordId } from '../../services/notebook';
 import type { AppSettings, NoteFile } from '../../types';
 import type { NotebookResponse, SourceListResponse, SourceResponse, NoteResponse, ChatSessionResponse, ChatSessionWithMessagesResponse, SourceChatSessionWithMessagesResponse, ChatMessage, BuildContextResponse, SourceInsightResponse, TransformationResponse, SearchResponse, ModelResponse } from '../../types/notebook-api';
@@ -11,6 +12,9 @@ import { useDialog } from '../DialogProvider';
 import { NavigationMenu } from '../NavigationMenu';
 import { ResizeHandle } from '../ResizeHandle';
 import { NotebookManage } from './NotebookManage';
+import { type ModelPickerOption } from '../ui/ModelPicker';
+import { useRequestActivity } from '../ui/useRequestActivity';
+import { AiStatusLine } from '../ui/AiStatusLine';
 import './notebook.css';
 
 export const Button = ({ children, className = '', ...props }: React.ButtonHTMLAttributes<HTMLButtonElement>) => <button type="button" className={`nb-button ${className}`} {...props}>{children}</button>;
@@ -145,7 +149,20 @@ function NotebookWorkspace({ client, vaultPath, vaultNotes, settings, onVaultExp
   // Deep-link target session id, consumed once the sessions list arrives.
   const pendingOpenSession = useRef<string | null>(null);
   const [models, setModels] = useState<ModelResponse[]>([]);
-  const [model, setModel] = useState('');
+  // Chat model override, persisted per vault. Unknown saved ids fall back to
+  // the notebook default rather than breaking the prompt bar.
+  const [model, setModel] = useState(() => localStorage.getItem(`prism_notebook_${vaultPath}_model`) ?? '');
+  useEffect(() => { localStorage.setItem(`prism_notebook_${vaultPath}_model`, model); }, [vaultPath, model]);
+  useEffect(() => {
+    if (model && models.length && !models.some(m => m.id === model && m.type === 'language')) setModel('');
+  }, [models, model]);
+  const modelOptions: ModelPickerOption[] = [
+    { value: '', label: 'Default chat model', description: 'Uses the notebook default' },
+    ...models.filter(m => m.type === 'language').map(m => ({ value: m.id, label: m.name, tag: m.provider })),
+  ];
+  const {phase:aiPhase,setPhase:setAiPhase,activity,settle}=useRequestActivity();
+  const cancelledSend=useRef(false);const dispatchingSend=useRef(false);
+
   const [sourceContext, setSourceContext] = useState<Record<string, string>>({});
   const [preview, setPreview] = useState<SourceResponse | null>(null);
   const [insights, setInsights] = useState<SourceInsightResponse[]>([]);
@@ -371,32 +388,38 @@ function NotebookWorkspace({ client, vaultPath, vaultNotes, settings, onVaultExp
     linkSessionRows([row], chatSource ? null : selected, chatSource || null);
     return row.id;
   };
-  const send = () => { setChatStick(true); void run(async () => {
+  const send = async () => { if(dispatchingSend.current)return;dispatchingSend.current=true;cancelledSend.current=false;setChatStick(true);try{await run(async () => {
     if (!question.trim() || !selected) return;
-    const questionText = question; setQuestion('');
+    const questionText = question; setQuestion(''); setAiPhase('Thinking…');
     const notebookId = selected; const scope = chatSource;
     const sid = session || await newSession();
     const linked=await library.linkNotebook(sid,'Research conversation',scope?null:notebookId,scope||null,model||null);
     if(await study.request<boolean>(vaultPath,'isManaged',{id:linked.id}).catch(()=>false)){
+      setAiPhase('');
       await sharedStudy.open(vaultPath,linked.id);void sharedStudy.send(vaultPath,linked.id,questionText);onContinueInCopilot?.(linked.id);return;
     }
     try {
       if (scope) {
+        setAiPhase('Generating…');
         const result = await client.request<{ stream: string }>(`${sessionPath}/${recordId(sid)}/messages`, 'POST', { message: questionText, model_override: model || null });
         for (const line of result.stream.split('\n')) {
           if (line.startsWith('data: ')) { const event = JSON.parse(line.slice(6)); if (event.type === 'error') throw new Error(event.message || event.error || 'Source chat failed'); }
         }
       } else {
+        setAiPhase('Reading context…');
         const context = await client.request<BuildContextResponse>('/chat/context', 'POST', { notebook_id: notebookId, context_config: { sources: Object.fromEntries(sources.map(s => [s.id, sourceContext[s.id] ?? 'full content'])), notes: Object.fromEntries(notes.map(n => [n.id, 'full content'])) } });
+        if(cancelledSend.current)return;setAiPhase('Generating…');
         await client.request('/chat/execute', 'POST', { session_id: sid, message: questionText, context: context.context, model_override: model || null });
       }
+      if(cancelledSend.current)return;setAiPhase('Finalizing…');
       const data = await client.request<ChatSessionWithMessagesResponse>(`${sessionPath}/${recordId(sid)}`);
       if (selectedRef.current === notebookId) {
         setMessages(data.messages ?? []);
         mirrorTranscript(sid, data.messages ?? [], scope ? null : notebookId, scope || null);
       }
-    } catch (e) { setQuestion(questionText); throw e; }
-  }); };
+    } catch (e) { settle('failed');setQuestion(questionText); throw e; }
+    finally { setAiPhase(''); }
+  });}finally{dispatchingSend.current=false;} };
   // Open a backend session from the shared library (deep-link): switch
   // scope when needed and let the sessions-list effect consume the pending id.
   const openNotebookSession = async (notebookId: string | null, sourceId: string | null, sessionId: string) => {
@@ -595,7 +618,7 @@ function NotebookWorkspace({ client, vaultPath, vaultNotes, settings, onVaultExp
     : !selected ? <div className="nb-scroll nb-stack">
       <div className="nb-toolbar"><div className="flex-1"><h2 className="text-lg">Your research library</h2><p className="nb-muted">Bring sources together. Ask questions. Keep what you discover.</p></div><label className="nb-muted"><input type="checkbox" checked={archived} onChange={e => setArchived(e.target.checked)}/> Archived</label><Button className="primary" disabled={busy} onClick={() => void run(async () => { const name = await dialogs.prompt('Notebook name', { title: 'Create notebook' }); if (!name?.trim()) return; const row = await client.request<NotebookResponse>('/notebooks', 'POST', { name: name.trim(), description: '' }); await refreshLibrary(); await selectNotebook(row.id); })}><Plus size={14}/>New notebook</Button></div>
       {!notebooks.length && <div className="nb-center"><div className="nb-stack"><BookOpen size={44} className="text-brand-400 mx-auto"/><p>Create your first notebook to start researching.</p></div></div>}
-      <div className="nb-grid">{notebooks.filter(n => n.archived === archived).map(n => <article className="nb-card nb-stack" key={n.id}><button className="text-left" onClick={() => void run(() => selectNotebook(n.id))}><h3 className="font-semibold">{n.name}</h3><p className="nb-muted mt-2">{n.description || 'A space for your next discovery'}</p></button><p className="nb-muted">{n.source_count} sources · {n.note_count} notes</p><div className="nb-tabs"><Button disabled={busy} onClick={() => void run(async () => { const name = await dialogs.prompt('Notebook name', { initialValue: n.name }); if (!name?.trim()) return; const description = await dialogs.prompt('Description', { initialValue: n.description }); if (description === null) return; await client.request(`/notebooks/${recordId(n.id)}`, 'PUT', { name, description }); await refreshLibrary(); })}>Edit</Button><Button disabled={busy} onClick={() => void run(async () => { await client.request(`/notebooks/${recordId(n.id)}`, 'PUT', { archived: !n.archived }); await refreshLibrary(); })}>{n.archived ? 'Restore' : 'Archive'}</Button><Button disabled={busy} onClick={() => void run(async () => { const preview = await client.request<{ note_count: number; exclusive_source_count: number }>(`/notebooks/${recordId(n.id)}/delete-preview`); if (!(await dialogs.confirm(`Delete ${n.name}, ${preview.note_count} notes and ${preview.exclusive_source_count} exclusive sources?`, { danger: true, confirmLabel: 'Delete' }))) return; await client.request(`/notebooks/${recordId(n.id)}`, 'DELETE'); await refreshLibrary(); })}>Delete</Button></div></article>)}</div>
+      <div className="nb-grid">{notebooks.filter(n => n.archived === archived).map((n, index) => <article className="nb-card nb-stack nb-notebook-card" key={n.id}><button className="text-left nb-notebook-open" onClick={() => void run(() => selectNotebook(n.id))}><span className="nb-notebook-index" aria-hidden="true">{String(index + 1).padStart(2, '0')}</span><h3 className="font-semibold">{n.name}</h3><p className="nb-muted mt-2">{n.description || 'A space for your next discovery'}</p></button><p className="nb-muted nb-notebook-meta">{n.source_count} sources · {n.note_count} notes</p><div className="nb-tabs"><Button disabled={busy} onClick={() => void run(async () => { const name = await dialogs.prompt('Notebook name', { initialValue: n.name }); if (!name?.trim()) return; const description = await dialogs.prompt('Description', { initialValue: n.description }); if (description === null) return; await client.request(`/notebooks/${recordId(n.id)}`, 'PUT', { name, description }); await refreshLibrary(); })}>Edit</Button><Button disabled={busy} onClick={() => void run(async () => { await client.request(`/notebooks/${recordId(n.id)}`, 'PUT', { archived: !n.archived }); await refreshLibrary(); })}>{n.archived ? 'Restore' : 'Archive'}</Button><Button disabled={busy} onClick={() => void run(async () => { const preview = await client.request<{ note_count: number; exclusive_source_count: number }>(`/notebooks/${recordId(n.id)}/delete-preview`); if (!(await dialogs.confirm(`Delete ${n.name}, ${preview.note_count} notes and ${preview.exclusive_source_count} exclusive sources?`, { danger: true, confirmLabel: 'Delete' }))) return; await client.request(`/notebooks/${recordId(n.id)}`, 'DELETE'); await refreshLibrary(); })}>Delete</Button></div></article>)}</div>
     </div> : <>
       <div className="nb-toolbar nb-mobile-tabs">{['sources', 'chat', 'notes'].map(p => <Button key={p} aria-pressed={mobilePane === p} onClick={() => setMobilePane(p)}>{p[0].toUpperCase() + p.slice(1)}</Button>)}</div>
       <div className="nb-workspace">
@@ -624,8 +647,8 @@ function NotebookWorkspace({ client, vaultPath, vaultNotes, settings, onVaultExp
         <main className="nb-pane flex-1" data-active={mobilePane === 'chat'} aria-label="Notebook chat">
           <div className="nb-toolbar"><h2 className="font-semibold text-sm flex-1">{chatSource ? 'Source conversation' : 'Notebook conversation'}</h2>{chatSource && <Button disabled={busy} onClick={() => setChatSource('')}>All sources</Button>}<Button disabled={busy} onClick={() => void run(async () => { await newSession(); })}><Plus size={14}/>Chat</Button></div>
           <div className="nb-toolbar"><select className="nb-input flex-1" aria-label="Conversation" value={session} disabled={busy} onChange={e => setSession(e.target.value)}><option value="">New conversation</option>{sessions.map(s => <option key={s.id} value={s.id}>{s.title}</option>)}</select>{session && <><Button disabled={busy} onClick={() => void run(async () => { const title = await dialogs.prompt('Conversation title'); if (!title?.trim()) return; await client.request(`${sessionPath}/${recordId(session)}`, 'PUT', { title }); setSessions(rows => rows.map(r => r.id === session ? { ...r, title } : r)); linkSessionRows([{ ...sessionsRef.current.find(r => r.id === session), id: session, title } as ChatSessionResponse], chatSourceRef.current ? null : selected, chatSourceRef.current || null); })}>Rename</Button><Button disabled={busy} onClick={() => void run(async () => { if (!(await dialogs.confirm('Delete this conversation?', { danger: true }))) return; await client.request(`${sessionPath}/${recordId(session)}`, 'DELETE'); setSessions(rows => rows.filter(r => r.id !== session)); setSession(''); try { await library.unlinkNotebook(session); } catch { /* best-effort */ } })}>Delete</Button><Button disabled={busy} title="Open this chat in the AI assistant sidebar (transcript is synced to the shared library)" onClick={() => void run(async () => { const row = sessionsRef.current.find(r => r.id === session); const linked = await library.linkNotebook(session, row?.title || 'Research conversation', chatSourceRef.current ? null : selected, chatSourceRef.current || null, (row as { model_override?: string | null } | undefined)?.model_override ?? null); await library.syncTranscript(linked.id, toLibraryTranscript(messages)); onContinueInCopilot?.(linked.id); })}>Continue in AI assistant</Button></>}</div>
-          <div ref={chatScrollRef} onScroll={handleChatScroll} className="nb-scroll nb-stack flex-1" aria-live="polite">{!messages.length && <div className="nb-center nb-muted">Ask a question about your sources. Choose which sources to include using the context controls.</div>}{messages.map(m => <article key={m.id} className="nb-card nb-stack"><span className="nb-muted">{m.type === 'human' ? 'You' : 'Notebook'}</span>{m.type !== 'human' ? <NotebookChatMessage message={m} onReference={openReference}/> : <NotebookMarkdown text={m.content} onReference={openReference}/>}{m.type !== 'human' && <div className="nb-tabs"><Button onClick={() => void run(async () => { await client.request('/notes', 'POST', { title: 'Research answer', content: m.content, note_type: 'ai', notebook_id: selected }); await refreshNotebook(); })}>Save as note</Button><Button onClick={() => void run(() => exportText('Research answer', m.content))}>Save to vault</Button></div>}</article>)}<div ref={chatEndRef}/>{!chatStick && messages.length > 0 && <div className="nb-toolbar justify-center"><Button onClick={() => setChatStick(true)}><ChevronDown size={14}/> Latest</Button></div>}</div>
-          <form className="nb-compose" onSubmit={e => { e.preventDefault(); send(); }}><select className="nb-input text-xs" aria-label="Chat model" value={model} onChange={e => setModel(e.target.value)}><option value="">Default chat model</option>{models.filter(m => m.type === 'language').map(m => <option key={m.id} value={m.id}>{m.name}</option>)}</select><textarea className="nb-input" aria-label="Question" rows={3} value={question} onChange={e => setQuestion(e.target.value)} placeholder="Ask about your research…"/><Button type="submit" className="primary justify-self-end" disabled={busy || !question.trim()}><Send size={14}/>Send</Button></form>
+          <div ref={chatScrollRef} onScroll={handleChatScroll} className="nb-scroll nb-stack flex-1" aria-live="polite">{!messages.length && <div className="nb-center nb-muted">Ask a question about your sources. Choose which sources to include using the context controls.</div>}{messages.map(m => <article key={m.id} className="nb-card nb-stack"><span className="nb-muted">{m.type === 'human' ? 'You' : 'Notebook'}</span>{m.type !== 'human' ? <NotebookChatMessage message={m} onReference={openReference}/> : <NotebookMarkdown text={m.content} onReference={openReference}/>}{m.type !== 'human' && <div className="nb-tabs"><Button onClick={() => void run(async () => { await client.request('/notes', 'POST', { title: 'Research answer', content: m.content, note_type: 'ai', notebook_id: selected }); await refreshNotebook(); })}>Save as note</Button><Button onClick={() => void run(() => exportText('Research answer', m.content))}>Save to vault</Button></div>}</article>)}{activity && <div className="nb-chat-status"><AiStatusLine phase={aiPhase} activity={activity}/></div>}<div ref={chatEndRef}/>{!chatStick && messages.length > 0 && <div className="nb-toolbar justify-center"><Button onClick={() => setChatStick(true)}><ChevronDown size={14}/> Latest</Button></div>}</div>
+          <PromptBar value={question} onChange={setQuestion} onSend={send} disabled={busy&&!aiPhase} running={!!aiPhase} onStop={()=>{cancelledSend.current=true;settle('cancelled');}} label="Question" placeholder="Ask about your research…" model={{options:modelOptions,value:model,onChange:setModel}} context="Selected notebook sources"/>
         </main>
         <div className="nb-resize"><ResizeHandle direction="horizontal" onResize={d => setNoteWidth(w => Math.min(480, Math.max(200, w - d)))}/></div>
         <aside className="nb-pane" style={{ width: noteWidth }} data-active={mobilePane === 'notes'} aria-label="Notebook notes"><div className="nb-toolbar"><h2 className="font-semibold text-sm flex-1">Notes</h2><Button disabled={busy} aria-label="New note" onClick={() => void run(async () => { if (!(await discardDraft())) return; draftSnapshot.current = null; setDraft({ id: '', title: 'New note', content: '', note_type: 'human', created: '', updated: '' }); setDirty(true); requestAnimationFrame(() => noteTitleRef.current?.focus()); })}><Plus size={14}/></Button></div><div className="nb-scroll nb-stack">{notes.map(n => <div key={n.id} className="nb-note-row flex items-center gap-1"><Button className="flex-1 text-left" aria-pressed={draft?.id === n.id} onClick={() => void run(() => editNote(n.id))}>{n.title || 'Untitled note'}</Button><Button aria-label={`Edit ${n.title || 'untitled note'}`} title="Edit note" disabled={busy} onClick={() => void run(() => editNote(n.id))}><Pencil size={14}/></Button></div>)}{!notes.length && !draft && <p className="nb-muted">Write a note or save an answer from your conversation.</p>}{draft && <div className="nb-stack"><Field label="Title"><input ref={noteTitleRef} className="nb-input" value={draft.title ?? ''} onChange={e => { setDraft({ ...draft, title: e.target.value }); setDirty(true); }}/></Field><Field label="Note"><textarea className="nb-input min-h-64" value={draft.content ?? ''} onChange={e => { setDraft({ ...draft, content: e.target.value }); setDirty(true); }}/></Field><div className="nb-tabs"><Button disabled={busy || savingNote || !dirty} className="primary" onClick={() => void run(saveNote)}>{savingNote ? 'Saving…' : 'Save'}</Button><Button disabled={busy || savingNote} onClick={() => void cancelNoteEdit()}>Cancel</Button><Button disabled={busy || savingNote} onClick={() => void run(() => exportText(draft.title || 'Note', draft.content || ''))}>Save to vault</Button>{draft.id && <Button disabled={busy || savingNote} onClick={() => void run(async () => { if (!(await dialogs.confirm('Delete this notebook note?', { danger: true }))) return; await client.request(`/notes/${recordId(draft.id)}`, 'DELETE'); draftSnapshot.current = null; setDraft(null); setDirty(false); await refreshNotebook(); })}>Delete</Button>}</div></div>}</div></aside>
