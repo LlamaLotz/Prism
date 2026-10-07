@@ -47,7 +47,8 @@ test.describe('full application composition', () => {
       await expect(page.getByRole('group', { name: 'Notebook covers' })).toBeVisible();
       await expect(page.getByRole('button', { name: /Open notebook/ }).first()).toBeVisible();
       await expect(page.getByRole('button', { name: 'New notebook', exact: true })).toBeVisible();
-      await expect(page.getByRole('button', { name: 'Advanced Notebook', exact: true })).toBeVisible();
+      // The retired Advanced Notebook entry point must not come back.
+      await expect(page.getByRole('button', { name: 'Advanced Notebook', exact: true })).toHaveCount(0);
 
       const ratios = await contrast(page, '.notebook-library');
       expect(ratios.text).toBeGreaterThanOrEqual(4.5);

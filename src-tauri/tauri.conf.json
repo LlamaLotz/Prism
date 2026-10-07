@@ -31,8 +31,7 @@
     "createUpdaterArtifacts": true,
     "targets": ["app", "nsis", "msi", "dmg"],
     "resources": [
-      "../Extractor Final",
-      "notebook-runtime/"
+      "../Extractor Final"
     ],
     "windows": {
       "nsis": {

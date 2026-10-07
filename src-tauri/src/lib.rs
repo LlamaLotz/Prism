@@ -19,7 +19,6 @@ mod engine;
 mod knowledge;
 pub mod linker;
 pub mod menu;
-mod notebook;
 mod watcher;
 
 use linker::{LinkMention, LinkerEngine, NoteLinker};
@@ -2105,32 +2104,6 @@ async fn replace_chat_transcript(
 }
 
 #[tauri::command]
-async fn link_notebook_session(
-    app_handle: tauri::AppHandle,
-    notebook_session_id: String,
-    title: String,
-    notebook_id: Option<String>,
-    source_id: Option<String>,
-    model: Option<String>,
-) -> Result<db::chat::ChatSession, String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        let scope = knowledge::current(&app_handle)?;
-        let conn = db::init_db(&app_handle)?;
-        db::chat::link_notebook_session(
-            &conn,
-            &scope.vault_id,
-            &notebook_session_id,
-            &title,
-            notebook_id.as_deref(),
-            source_id.as_deref(),
-            model.as_deref(),
-        )
-    })
-    .await
-    .map_err(|e| e.to_string())?
-}
-
-#[tauri::command]
 async fn unlink_notebook_session(
     app_handle: tauri::AppHandle,
     notebook_session_id: String,
@@ -2149,11 +2122,7 @@ async fn unlink_notebook_session(
 /// process so anything initialized at startup (watcher, DB caches, etc.) is
 /// rebuilt. The new process is detached so it survives the exit of this one.
 #[tauri::command]
-async fn relaunch_app(
-    app: tauri::AppHandle,
-    notebook_state: tauri::State<'_, notebook::NotebookState>,
-) -> Result<(), String> {
-    notebook::shutdown(&notebook_state).await;
+async fn relaunch_app(app: tauri::AppHandle) -> Result<(), String> {
     let exe = std::env::current_exe().map_err(|e| format!("Failed to resolve executable: {e}"))?;
     std::process::Command::new(exe)
         .stdin(Stdio::null())
@@ -2238,7 +2207,6 @@ async fn web_search(app: tauri::AppHandle, query: String) -> Result<Vec<WebSearc
 pub fn run() {
     tauri::Builder::default()
         .manage(knowledge::KnowledgeRuntime::default())
-        .manage(notebook::NotebookState::default())
         // Rust-backed fetch (reqwest) so the AI Co-Pilot's OpenAI SDK calls
         // don't depend on the webview's network stack (see Cargo.toml note).
         .plugin(tauri_plugin_http::init())
@@ -2349,16 +2317,6 @@ pub fn run() {
             knowledge::models::model_service_status,
             knowledge::models::list_approvals,
             knowledge::models::resolve_approval,
-            notebook::notebook_start,
-            notebook::notebook_import_copilot,
-            notebook::notebook_stop,
-            notebook::notebook_status,
-            notebook::notebook_request,
-            notebook::notebook_add_source,
-            notebook::notebook_media,
-            notebook::notebook_download,
-            notebook::notebook_export,
-            notebook::notebook_read_vault_note,
             init_linker,
             get_vault_dictionary,
             get_topic_groups,
@@ -2414,18 +2372,13 @@ pub fn run() {
             get_chat_messages,
             append_chat_message,
             replace_chat_transcript,
-            link_notebook_session,
             unlink_notebook_session,
             relaunch_app,
             web_search
         ])
         .build(app_context())
         .expect("error while building tauri application")
-        .run(|app, event| {
-            if matches!(event, tauri::RunEvent::Exit) {
-                tauri::async_runtime::block_on(notebook::shutdown(&app.state::<notebook::NotebookState>()));
-            }
-        });
+        .run(|_, _| {});
 }
 
 #[cfg(feature = "settings-smoke")]

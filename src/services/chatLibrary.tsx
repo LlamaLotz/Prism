@@ -46,13 +46,6 @@ interface ChatLibrary {
     content: string,
     metadata?: string | null,
   ) => Promise<ChatLibraryMessage>;
-  linkNotebook: (
-    notebookSessionId: string,
-    title: string,
-    notebookId?: string | null,
-    sourceId?: string | null,
-    model?: string | null,
-  ) => Promise<ChatLibrarySession>;
   unlinkNotebook: (notebookSessionId: string) => Promise<void>;
 }
 
@@ -143,27 +136,6 @@ export const ChatLibraryProvider: React.FC<{ children: React.ReactNode }> = ({
     [refresh],
   );
 
-  const linkNotebook = useCallback(
-    async (
-      notebookSessionId: string,
-      title: string,
-      notebookId?: string | null,
-      sourceId?: string | null,
-      model?: string | null,
-    ) => {
-      const row = await knowledge.linkNotebookChat(
-        notebookSessionId,
-        title,
-        notebookId,
-        sourceId,
-        model,
-      );
-      await refresh();
-      return row;
-    },
-    [refresh],
-  );
-
   const unlinkNotebook = useCallback(
     async (notebookSessionId: string) => {
       await knowledge.unlinkNotebookChat(notebookSessionId);
@@ -187,7 +159,6 @@ export const ChatLibraryProvider: React.FC<{ children: React.ReactNode }> = ({
       loadMessages,
       syncTranscript,
       append,
-      linkNotebook,
       unlinkNotebook,
     }),
     [
@@ -202,7 +173,6 @@ export const ChatLibraryProvider: React.FC<{ children: React.ReactNode }> = ({
       loadMessages,
       syncTranscript,
       append,
-      linkNotebook,
       unlinkNotebook,
     ],
   );

@@ -619,7 +619,7 @@ input[type='range'].hue-slider::-moz-range-thumb {
   --color-panel: rgba(18, 20, 24, 0.72);
   --color-surface: rgba(30, 34, 42, 0.6);
   --color-surface-hover: rgba(45, 52, 64, 0.8);
-  --color-border: rgba(255, 255, 255, 0.12);
+  --color-border: rgba(255, 255, 255, 0.3);
   --color-text-hi: #ffffff;
   --color-text-body: #d1d5db;
   --color-text-muted: #9ca3af;
@@ -663,7 +663,9 @@ input[type='range'].hue-slider::-moz-range-thumb {
   --color-panel: rgba(255, 255, 255, 0.68);
   --color-surface: rgba(255, 255, 255, 0.82);
   --color-surface-hover: rgba(255, 255, 255, 0.95);
-  --color-border: rgba(255, 255, 255, 0.9);
+  /* Frosted panes still need a visible edge: a white hairline on a light
+     canvas composites to nothing, so light modes draw a dark translucent one. */
+  --color-border: rgba(15, 23, 42, 0.18);
   --color-text-hi: #000000;
   --color-text-body: #1f2937;
   --color-text-muted: #4b5563;
@@ -708,7 +710,7 @@ input[type='range'].hue-slider::-moz-range-thumb {
   --color-panel: rgba(15, 15, 15, 0.35);
   --color-surface: rgba(255, 255, 255, 0.03);
   --color-surface-hover: rgba(255, 255, 255, 0.08);
-  --color-border: rgba(255, 255, 255, 0.12);
+  --color-border: rgba(255, 255, 255, 0.32);
   --color-text-hi: #ffffff;
   --color-text-body: #cbd5e1;
   --color-text-muted: #94a3b8;
@@ -752,7 +754,7 @@ input[type='range'].hue-slider::-moz-range-thumb {
   --color-panel: rgba(255, 255, 255, 0.08);
   --color-surface: rgba(255, 255, 255, 0.04);
   --color-surface-hover: rgba(255, 255, 255, 0.08);
-  --color-border: rgba(255, 255, 255, 0.12);
+  --color-border: rgba(15, 23, 42, 0.2);
   --color-text-hi: #0f172a;
   --color-text-body: #1e293b;
   --color-text-muted: #64748b;
@@ -1798,13 +1800,17 @@ html.theme-gloss {
    modes across settings, view modes, tab switchers, and toolbar toggles.
    ===================================================================== */
 
-/* Any element explicitly marked active / pressed */
+/* Any element explicitly marked active / pressed.
+   NOTE: dark ink is only correct when the pressed fill is the accent pill.
+   The Notebook, AI sidebar and legacy notebook style their own pressed state
+   on neutral or translucent surfaces, where dark ink would be unreadable, so
+   they opt out here and own both fill and ink. */
 tab-active,
 .tab-active,
-button[aria-pressed="true"],
-button[aria-selected="true"],
-button[role="tab"][data-state="active"],
-button[role="tab"][aria-selected="true"] {
+button[aria-pressed="true"]:not(:where(.study-workspace *, .study-assistant *, .ai-sidebar *, .prompt-bar *, .notebook-page *, .prism-navigation-menu *)),
+button[aria-selected="true"]:not(:where(.study-workspace *, .study-assistant *, .ai-sidebar *, .prompt-bar *, .notebook-page *, .prism-navigation-menu *)),
+button[role="tab"][data-state="active"]:not(:where(.study-workspace *, .study-assistant *, .ai-sidebar *, .prompt-bar *, .notebook-page *, .prism-navigation-menu *)),
+button[role="tab"][aria-selected="true"]:not(:where(.study-workspace *, .study-assistant *, .ai-sidebar *, .prompt-bar *, .notebook-page *, .prism-navigation-menu *)) {
   color: #0F172A !important;
   font-weight: 600 !important;
 }

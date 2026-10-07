@@ -38,6 +38,10 @@ export interface AgentWriteResult { operationId: string; undoAvailable: boolean;
 export interface AgentUndoResult { operationId: string; notePath: string; relativePath: string; restoredVersion: number | null; preview: string }
 
 /** One entry in the unified chat library (Co-Pilot + Notebook history). */
+/** Assistant responses longer than this collapse behind a "View response"
+ *  toggle in the AI sidebar and shared notebook chat. */
+export const CHAT_COLLAPSE_THRESHOLD = 50;
+
 export type ChatOrigin = 'copilot' | 'notebook';
 export interface ChatLibrarySession {
   id: string;
@@ -83,6 +87,5 @@ export const knowledge = {
   chatMessages: (sessionId: string, limit = 200, offset = 0) => invoke<ChatLibraryMessage[]>('get_chat_messages', { sessionId, limit, offset }),
   appendChat: (sessionId: string, role: 'user' | 'assistant', content: string, metadata?: string | null) => invoke<ChatLibraryMessage>('append_chat_message', { sessionId, role, content, metadata: metadata ?? null }),
   replaceTranscript: (sessionId: string, messages: Array<{ role: 'user' | 'assistant'; content: string; metadata?: string | null }>) => invoke<number>('replace_chat_transcript', { sessionId, messages: messages.map((m) => [m.role, m.content, m.metadata ?? null] as [string, string, string | null]) }),
-  linkNotebookChat: (notebookSessionId: string, title: string, notebookId?: string | null, sourceId?: string | null, model?: string | null) => invoke<ChatLibrarySession>('link_notebook_session', { notebookSessionId, title, notebookId: notebookId ?? null, sourceId: sourceId ?? null, model: model ?? null }),
   unlinkNotebookChat: (notebookSessionId: string) => invoke<boolean>('unlink_notebook_session', { notebookSessionId }),
 };

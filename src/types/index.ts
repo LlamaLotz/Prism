@@ -94,14 +94,6 @@ export interface ReconstructedVersion {
 
 export interface AppSettings {
   models?: { privacy: 'strict_local' | 'ask_before_cloud' | 'hybrid' | 'cloud_allowed'; idleSeconds: number; routes: Record<string, string>; providers?: Array<{ id: string; name: string; config: OmniRouteConfig; capabilities: string[] }> };
-  notebook: {
-    embedByDefault: boolean;
-    sourcePanelWidth: number;
-    notesPanelWidth: number;
-    /** Worker-queue concurrency override (parallel background jobs).
-     *  Undefined = no override, the system default (2) is used. */
-    workerConcurrency?: number;
-  };
   vaultPath: string;
   ingestionScript: string;
   ingestionEngine: 'python' | 'rust';

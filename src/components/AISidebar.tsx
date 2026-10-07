@@ -12,7 +12,7 @@ import {
 import ReactMarkdown from 'react-markdown';
 import { NoteFile, OmniRouteConfig, tauriAPI } from '../types';
 import { summarizeNote, suggestConnections, suggestMetadata, sendChatMessage, sendChatMessageWithRetrieval } from '../services/apiService';
-import { CHAT_COLLAPSE_THRESHOLD } from '../services/notebook';
+import { CHAT_COLLAPSE_THRESHOLD } from '../services/knowledge';
 import { buildAgentSystemPrompt, buildChatSystemPrompt } from '../services/systemMessages';
 import { knowledge } from '../services/knowledge';
 import type { AgentToolDefinition, ChatLibrarySession, Citation, RetrievedBlock } from '../services/knowledge';

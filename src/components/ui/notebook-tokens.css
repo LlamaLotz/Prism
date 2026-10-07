@@ -1,26 +1,316 @@
-/* Opaque content planes are shared by Notebook, assistant, and portaled controls.
-   Appearance affects the surrounding geometry and light, never text opacity. */
-:root{--nb-canvas:#101318;--nb-panel:#191e26;--nb-card:#222a35;--nb-menu:#252e3a;--nb-text:#f3f5f9;--nb-secondary:#bdc8d8;--nb-border:#69788c;--nb-focus:#93c5fd;--nb-selection:#34475e;--nb-radius:14px;--nb-accent-ink:#101318}
-:root.mode-light{--nb-canvas:#eef1f6;--nb-panel:#ffffff;--nb-card:#f4f6fa;--nb-menu:#ffffff;--nb-text:#172032;--nb-secondary:#4a586d;--nb-border:#7b899e;--nb-focus:#254fb4;--nb-selection:#dce7fa}
-:root.theme-industrial{--nb-radius:0px}
-:root.theme-gloss.mode-dark{--nb-canvas:#11121a;--nb-panel:#1b1c29;--nb-card:#242637;--nb-menu:#292c3c;--nb-border:#778099}
-:root.theme-gloss.mode-light{--nb-canvas:#ececf4;--nb-panel:#fafaff;--nb-card:#f0f0f8;--nb-menu:#fafaff;--nb-border:#818397}
-html :is(.study-workspace,.study-assistant,.ai-panel,.ai-sidebar,.notebook-page,.model-picker__menu,.prompt-bar){--color-base:var(--nb-canvas);--color-panel:var(--nb-panel);--color-surface:var(--nb-card);--color-surface-hover:var(--nb-selection);--color-border:var(--nb-border);--color-text-hi:var(--nb-text);--color-text-body:var(--nb-secondary);--color-text-muted:var(--nb-secondary);color:var(--nb-text)}
-html :is(.study-workspace,.study-assistant,.ai-panel,.ai-sidebar) button:disabled{opacity:1;color:var(--nb-secondary);cursor:not-allowed}
-html :is(.study-workspace,.study-assistant,.ai-panel,.ai-sidebar) :is(input,textarea)::placeholder{color:var(--nb-secondary);opacity:1}
-html :is(.study-workspace,.study-assistant,.ai-panel,.ai-sidebar) :focus-visible{outline-color:var(--nb-focus)}
-html :is(.study-send,.study-primary,.prompt-bar__send){background:var(--color-brand-400)!important;color:var(--nb-accent-ink)!important}
-html .study-table th{position:sticky;top:0;background:var(--nb-panel);z-index:1}
-html .ai-status-line__label{color:var(--nb-secondary);background:none;-webkit-text-fill-color:currentColor;animation:none;opacity:1}
-html .model-picker__menu{background:var(--nb-menu)!important;color:var(--nb-text);border:1px solid var(--nb-border);overflow-y:auto;overscroll-behavior:contain;border-radius:var(--nb-radius)!important}
-html .model-picker__option{flex-shrink:0;color:var(--nb-text)!important;border-radius:calc(var(--nb-radius) / 2)!important}
-html .model-picker__option:is([data-active],[aria-selected=true]){background:var(--nb-selection)!important}
-html .study-area-tabs button[aria-pressed=true]{background:var(--nb-selection);color:var(--nb-text)}
-.study-workspace__body{display:flex;flex:1;flex-direction:column;min-height:0;min-width:0;overflow:hidden}.study-workspace__body[hidden]{display:none!important}
+/* ==========================================================================
+   Notebook surface contract
+   --------------------------------------------------------------------------
+   One set of semantic tokens, resolved six ways: Industrial precision,
+   Liquid Glass (rounded) and Liquid Gloss, each in light and dark.
 
-html .prism-navigation-trigger{color:var(--nb-text)!important;background:var(--nb-panel)!important;border:1px solid var(--nb-border)!important;box-shadow:none!important;border-radius:var(--nb-radius)!important}
-html .ai-sidebar{background:var(--nb-panel)!important;color:var(--nb-text)}
-html .ai-sidebar :is(.text-slate-200,.text-slate-300,.text-offwhite){color:var(--nb-text)!important}html .ai-sidebar :is(.text-slate-400,.text-slate-500,.text-text-muted){color:var(--nb-secondary)!important}
-html .ai-sidebar :is(.bg-slate-900,.bg-slate-800){background:var(--nb-card)!important}
-:root.mode-light{--status-done:#18703a;--status-error:#b42332}
-.study-task-status{max-height:180px;flex-shrink:0;overflow:auto}.study-task-row{flex-wrap:wrap}.study-task-actions{flex-wrap:wrap}
+   Rules this file exists to enforce:
+   1. Text never drops below 4.5:1 (3:1 for large text) against the surface it
+      is actually composited over — including translucent glass/gloss planes,
+      whose effective colour is resolved against the canvas behind them.
+   2. Menus and reading surfaces get an opaque-enough backing so content can
+      never bleed through and destroy legibility.
+   3. Appearance changes geometry, depth and edge treatment. It never changes
+      text opacity, and it never disables a whole component to signal state.
+   4. Frost is composed from *static* translucency — alpha, a specular edge and
+      a sheen band — never from per-element `backdrop-filter`. Two reasons, in
+      order of importance:
+        a. The panes composite over the notebook canvas, which is a flat opaque
+           fill, so a backdrop filter has nothing to sample and changes the
+           rendered result not at all. It is pure GPU cost.
+        b. The host app already guards against stacked backdrop filters on its
+           real target runtime (index.css): "WebView2 renders backdrop-filter
+           as a large continuously recomposited surface. Keep Gloss
+           translucent, but use static fills for stable GPU use."
+      Measured on a 1440x960 repaint of this harness, adding the filter to the
+      panels, covers, composer and card faces moved screenshot cost by ~10ms —
+      i.e. it was never buying the frosted look it appeared to.
+   ========================================================================== */
+
+/* --- Shared geometry tokens (overridden per archetype below) -------------- */
+:root {
+  --nb-radius: 16px;
+  --nb-radius-sm: 8px;
+  /* Always a valid box-shadow component: `none` would make any composed
+     `box-shadow: var(--nb-edge), var(--nb-shadow)` invalid and drop it whole. */
+  --nb-edge: inset 0 0 0 0 transparent;
+  --nb-shadow: 0 1px 2px rgb(0 0 0 / 0.18);
+  --nb-sheen: none;
+  --nb-accent-ink: #0b0e13;
+  /* Fallback palette (Industrial dark) so the notebook is still legible if it
+     is ever mounted before a theme class is applied to <html>. */
+  --nb-canvas: #0f1216;
+  --nb-panel: #171b21;
+  --nb-card: #1f242c;
+  --nb-menu: #232a33;
+  --nb-text: #f4f6fa;
+  --nb-secondary: #bbc5d3;
+  --nb-border: #69768a;
+  --nb-hairline: #39424f;
+  --nb-focus: #8ec5ff;
+  --nb-selection: #23303f;
+}
+
+/* ==========================================================================
+   1. INDUSTRIAL — precision drafting. Opaque planes, square corners, hairline
+   borders, no blur, no sheen. Contrast comes from flat, solid surfaces.
+   ========================================================================== */
+:root.theme-industrial {
+  --nb-radius: 0px;
+  --nb-radius-sm: 0px;
+  --nb-edge: inset 0 0 0 0 transparent;
+  --nb-shadow: inset 0 0 0 0 transparent;
+  --nb-sheen: none;
+}
+:root.theme-industrial.mode-dark {
+  --nb-canvas: #0f1216;
+  --nb-panel: #171b21;
+  --nb-card: #1f242c;
+  --nb-menu: #232a33;
+  --nb-text: #f4f6fa;
+  --nb-secondary: #bbc5d3;
+  --nb-border: #69768a;
+  --nb-hairline: #39424f;
+  --nb-focus: #8ec5ff;
+  --nb-selection: #23303f;
+}
+:root.theme-industrial.mode-light {
+  --nb-canvas: #e9ebee;
+  --nb-panel: #ffffff;
+  --nb-card: #f4f6f8;
+  --nb-menu: #ffffff;
+  --nb-text: #101520;
+  --nb-secondary: #46536a;
+  --nb-border: #75808f;
+  --nb-hairline: #ccd2db;
+  --nb-focus: #1f4ea8;
+  --nb-selection: #dde6f4;
+}
+
+/* ==========================================================================
+   2. LIQUID GLASS — rounded, frosted. Soft translucent panes lifted off the
+   canvas by a specular top edge and a wide, low-contrast shadow. Frost comes
+   from the pane's own alpha over the canvas, not from a backdrop filter
+   (see rule 4).
+   ========================================================================== */
+:root.theme-glass {
+  --nb-radius: 16px;
+  --nb-radius-sm: 10px;
+  --nb-edge: inset 0 1px 0 0 rgb(255 255 255 / 0.28), inset 0 0 0 1px rgb(255 255 255 / 0.06);
+  --nb-shadow: 0 10px 30px -18px rgb(0 0 0 / 0.55);
+  --nb-sheen: none;
+}
+:root.theme-glass.mode-dark {
+  --nb-canvas: #0a0c10;
+  --nb-panel: rgb(26 30 37 / 0.78);
+  --nb-card: rgb(38 44 54 / 0.72);
+  --nb-menu: rgb(28 33 41 / 0.97);
+  --nb-text: #ffffff;
+  --nb-secondary: #cbd5e1;
+  --nb-border: rgb(255 255 255 / 0.38);
+  --nb-hairline: rgb(255 255 255 / 0.16);
+  --nb-focus: #8ec5ff;
+  --nb-selection: rgb(255 255 255 / 0.16);
+}
+:root.theme-glass.mode-light {
+  --nb-canvas: #dfe4ec;
+  --nb-panel: rgb(255 255 255 / 0.78);
+  --nb-card: rgb(255 255 255 / 0.92);
+  --nb-menu: rgb(255 255 255 / 0.98);
+  --nb-text: #0c1220;
+  --nb-secondary: #3f4c60;
+  --nb-border: rgb(51 65 85 / 0.62);
+  --nb-hairline: rgb(51 65 85 / 0.22);
+  --nb-focus: #1f4ea8;
+  --nb-selection: rgb(31 78 168 / 0.14);
+  --nb-edge: inset 0 1px 0 0 rgb(255 255 255 / 0.95), inset 0 0 0 1px rgb(15 23 42 / 0.05);
+  --nb-shadow: 0 10px 28px -20px rgb(15 23 42 / 0.45);
+}
+
+/* ==========================================================================
+   3. LIQUID GLOSS — deepest translucency, the largest radii, a specular
+   highlight band across the top of raised panes and a heavier drop shadow.
+   ========================================================================== */
+:root.theme-gloss {
+  --nb-radius: 20px;
+  --nb-radius-sm: 12px;
+  --nb-edge: inset 0 1px 0 0 rgb(255 255 255 / 0.32), inset 0 0 0 1px rgb(255 255 255 / 0.07);
+  --nb-shadow: 0 22px 48px -24px rgb(0 0 0 / 0.62);
+  --nb-sheen: linear-gradient(180deg, rgb(255 255 255 / 0.12), rgb(255 255 255 / 0) 42%);
+}
+:root.theme-gloss.mode-dark {
+  --nb-canvas: #0d0e12;
+  --nb-panel: rgb(24 25 32 / 0.66);
+  --nb-card: rgb(40 42 54 / 0.62);
+  --nb-menu: rgb(30 32 41 / 0.97);
+  --nb-text: #ffffff;
+  --nb-secondary: #cfd6e2;
+  --nb-border: rgb(255 255 255 / 0.4);
+  --nb-hairline: rgb(255 255 255 / 0.18);
+  --nb-focus: #8ec5ff;
+  --nb-selection: rgb(255 255 255 / 0.18);
+}
+:root.theme-gloss.mode-light {
+  --nb-canvas: #e8e9ef;
+  --nb-panel: rgb(255 255 255 / 0.64);
+  --nb-card: rgb(255 255 255 / 0.78);
+  --nb-menu: rgb(255 255 255 / 0.98);
+  --nb-text: #0b1020;
+  --nb-secondary: #3b4757;
+  --nb-border: rgb(51 65 85 / 0.66);
+  --nb-hairline: rgb(51 65 85 / 0.24);
+  --nb-focus: #1f4ea8;
+  --nb-selection: rgb(31 78 168 / 0.16);
+  --nb-edge: inset 0 1px 0 0 rgb(255 255 255 / 0.6), inset 0 0 0 1px rgb(255 255 255 / 0.08);
+  --nb-shadow: 0 18px 44px -26px rgb(15 23 42 / 0.5);
+  --nb-sheen: linear-gradient(180deg, rgb(255 255 255 / 0.55), rgb(255 255 255 / 0) 46%);
+}
+
+/* --------------------------------------------------------------------------
+   Remap the host app tokens inside every notebook-owned subtree so Tailwind
+   utility classes (used by the shared chat and the AI sidebar) inherit the
+   same legible palette instead of the shell's translucent one.
+   -------------------------------------------------------------------------- */
+html :is(.study-workspace, .study-assistant, .ai-sidebar, .ai-panel, .prompt-bar, .model-picker__menu) {
+  --color-base: var(--nb-canvas);
+  --color-panel: var(--nb-panel);
+  --color-surface: var(--nb-card);
+  --color-surface-hover: var(--nb-selection);
+  --color-border: var(--nb-border);
+  --color-text-hi: var(--nb-text);
+  --color-text-body: var(--nb-secondary);
+  --color-text-muted: var(--nb-secondary);
+  --color-offwhite: var(--nb-text);
+  color: var(--nb-text);
+}
+
+/* Disabled controls stay legible: dim the chrome, never the label. */
+html :is(.study-workspace, .study-assistant, .ai-sidebar) :is(button, input, select, textarea):disabled {
+  opacity: 1;
+  color: var(--nb-secondary);
+  border-color: color-mix(in srgb, var(--nb-border) 70%, transparent);
+  cursor: not-allowed;
+}
+html :is(.study-workspace, .study-assistant, .ai-sidebar) :is(input, textarea)::placeholder {
+  color: var(--nb-secondary);
+  opacity: 1;
+}
+html :is(.study-workspace, .study-assistant, .ai-sidebar) :focus-visible {
+  outline: 2px solid var(--nb-focus);
+  outline-offset: 2px;
+}
+
+/* The universal app rule forces dark ink on every pressed button, which only
+   holds when the fill is the accent. Notebook toggles sit on neutral and
+   translucent surfaces, so the subtree opts out and styles itself. */
+html body :is(.study-workspace, .study-assistant, .ai-sidebar, .prompt-bar)
+  :is(button[aria-pressed='true'], button[aria-selected='true'], button[role='tab'][aria-selected='true']) {
+  color: var(--nb-text) !important;
+}
+
+/* Tailwind text utilities inside the shared surfaces resolve to the palette. */
+html :is(.study-workspace, .study-assistant, .ai-sidebar)
+  :is(.text-slate-100, .text-slate-200, .text-slate-300, .text-offwhite, .text-white) {
+  color: var(--nb-text) !important;
+}
+html :is(.study-workspace, .study-assistant, .ai-sidebar)
+  :is(.text-slate-400, .text-slate-500, .text-slate-600, .text-text-muted) {
+  color: var(--nb-secondary) !important;
+}
+html :is(.study-workspace, .study-assistant, .ai-sidebar)
+  :is(.bg-slate-800, .bg-slate-900, .bg-slate-950, .bg-panel) {
+  background: var(--nb-card) !important;
+}
+
+/* Portaled / floating surfaces are opaque enough to read over any content. */
+html .model-picker__menu {
+  background: var(--nb-menu) !important;
+  color: var(--nb-text);
+  border: 1px solid var(--nb-border);
+  border-radius: var(--nb-radius-sm) !important;
+  box-shadow: var(--nb-shadow), var(--nb-edge);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+html .model-picker__option {
+  flex-shrink: 0;
+  color: var(--nb-text) !important;
+  border-radius: calc(var(--nb-radius-sm) * 0.6) !important;
+}
+html .model-picker__option:is([data-active], [aria-selected='true']) {
+  background: var(--nb-selection) !important;
+  color: var(--nb-text) !important;
+}
+html .model-picker__error {
+  color: var(--nb-text) !important;
+}
+
+/* Accent-filled primary actions take ink derived from the accent luminance. */
+html :is(.study-send, .study-primary, .prompt-bar__send) {
+  background: var(--color-brand-400) !important;
+  color: var(--nb-accent-ink) !important;
+  border-color: color-mix(in srgb, var(--color-brand-400) 70%, var(--nb-border)) !important;
+}
+html :is(.study-send, .study-primary, .prompt-bar__send) svg {
+  color: inherit !important;
+}
+
+/* Reading surfaces and status text never animate their own legibility. */
+html .ai-status-line__label {
+  color: var(--nb-secondary);
+  background: none;
+  -webkit-text-fill-color: currentColor;
+  animation: none;
+  opacity: 1;
+}
+html .study-table th {
+  position: sticky;
+  top: 0;
+  background: var(--nb-panel);
+  z-index: 1;
+}
+html .study-area-tabs button[aria-pressed='true'] {
+  background: var(--nb-selection);
+  color: var(--nb-text);
+  border-color: var(--nb-focus);
+}
+html .prism-navigation-trigger {
+  color: var(--nb-text) !important;
+  background: var(--nb-panel) !important;
+  border: 1px solid var(--nb-border) !important;
+  box-shadow: none !important;
+  border-radius: var(--nb-radius-sm) !important;
+}
+html .ai-sidebar {
+  background: var(--nb-panel) !important;
+  color: var(--nb-text);
+}
+
+:root.mode-light {
+  --status-done: #14653a;
+  --status-error: #a81b2b;
+}
+.study-task-status {
+  max-height: 180px;
+  flex-shrink: 0;
+  overflow: auto;
+}
+.study-task-row {
+  flex-wrap: wrap;
+}
+.study-task-actions {
+  flex-wrap: wrap;
+}
+
+/* Library/workspace mount wrapper (layout owned by the study workspace). */
+.study-workspace__body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+}
+.study-workspace__body[hidden] {
+  display: none !important;
+}

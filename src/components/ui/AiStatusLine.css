@@ -1,1 +1,82 @@
-.ai-status-line{font-size:12px;color:var(--nb-secondary,var(--color-text-body));flex-shrink:0;max-height:150px;overflow:auto;padding:6px 0}.ai-status-line summary{display:flex;align-items:center;gap:8px;cursor:pointer;list-style:none}.ai-status-line summary::-webkit-details-marker{display:none}.ai-status-line summary:after{content:'⌄';margin-left:auto}.ai-status-line__glyph{display:inline-block;color:var(--nb-focus,var(--color-brand-400));flex:none}.ai-status-line[data-running=true] .ai-status-line__glyph{animation:activity-breathe 1.8s ease-in-out infinite}.ai-status-line__label{color:inherit}.ai-status-line ol{padding:10px 0 0 23px;margin:0;list-style:none}.ai-status-line li{display:flex;justify-content:space-between;gap:10px;padding:3px 0}.ai-status-line time,.ai-status-line__time{font-variant-numeric:tabular-nums;font-size:11px}@keyframes activity-breathe{50%{transform:scale(.7);opacity:.55}}@media(prefers-reduced-motion:reduce){.ai-status-line__glyph{animation:none!important}}
+/* AiStatusLine — real request activity (Thinking…, reading sources, running a
+   named tool, saving the response).
+
+   Only the decorative glyph animates. The readable label, the elapsed timer
+   and the event list stay at full opacity and full contrast at every moment,
+   including while a request is running. */
+
+.ai-status-line {
+  font-size: 12px;
+  color: var(--nb-secondary, var(--color-text-body));
+  flex-shrink: 0;
+  max-height: 150px;
+  overflow: auto;
+  padding: 6px 0;
+}
+.ai-status-line summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  list-style: none;
+}
+.ai-status-line summary::-webkit-details-marker {
+  display: none;
+}
+.ai-status-line summary:after {
+  content: '⌄';
+  margin-left: auto;
+  color: var(--nb-secondary, var(--color-text-body));
+}
+.ai-status-line__glyph {
+  display: inline-block;
+  color: var(--nb-focus, var(--color-brand-400));
+  flex: none;
+}
+.ai-status-line[data-running='true'] .ai-status-line__glyph {
+  animation: activity-breathe 1.8s ease-in-out infinite;
+}
+
+/* The label is text: no opacity animation, no background, no text-fill tricks. */
+.ai-status-line__label {
+  color: var(--nb-secondary, var(--color-text-body));
+  opacity: 1;
+}
+html .ai-status-line[data-running='true'] .ai-status-line__label {
+  color: var(--nb-text, var(--color-text-hi));
+}
+
+.ai-status-line ol {
+  padding: 10px 0 0 23px;
+  margin: 0;
+  list-style: none;
+}
+.ai-status-line li {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 3px 0;
+  color: var(--nb-secondary, var(--color-text-body));
+}
+.ai-status-line li > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.ai-status-line time,
+.ai-status-line__time {
+  font-variant-numeric: tabular-nums;
+  font-size: 11px;
+  color: var(--nb-secondary, var(--color-text-body));
+}
+
+@keyframes activity-breathe {
+  50% {
+    transform: scale(0.7);
+    opacity: 0.55;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ai-status-line__glyph {
+    animation: none !important;
+  }
+}

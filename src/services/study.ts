@@ -6,7 +6,6 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { useSyncExternalStore } from 'react';
 import { knowledge, type ChatLibraryMessage, type ChatLibrarySession } from './knowledge';
-import { NotebookClient, notebookRuntime, recordId } from './notebook';
 import type { RetrievalPlan } from './knowledge';
 export type ToolKind = 'table'|'quiz'|'flashcards'|'podcast'|'slides'|'mindmap';
 // Slideshows ('slides') stay in ToolKind so saved decks keep opening and export,
@@ -25,19 +24,12 @@ export const study = {
  request:studyRequest,
  generate:(vaultPath:string,collectionId:string,kind:ToolKind,instructions:string,parentId:string|null=null,requestId?:string)=>invoke<Artifact>('study_generate',{vaultPath,collectionId,kind,instructions,parentId,requestId}),
  export:(vaultPath:string,id:string,format:string)=>invoke<boolean>('study_export',{vaultPath,id,format}),
- async legacy(vault:string,entry:ChatLibrarySession){
+ /** Make a chat-library conversation writable by the notebook. Sessions that
+  * came from the retired Advanced Notebook have no retrievable transcript, so
+  * they are adopted with whatever Prism already stored locally. */
+ async adopt(vault:string,entry:ChatLibrarySession){
   if(await studyRequest<boolean>(vault,'isManaged',{id:entry.id}))return;
-  if(entry.notebookSessionId){
-   const status=await notebookRuntime.start(vault);if(!status.workspaceId)throw new Error('Notebook runtime unavailable. Retry to import this conversation.');
-   const client=new NotebookClient(status.workspaceId);
-   const path=entry.sourceId?`/sources/${recordId(entry.sourceId)}/chat/sessions/${recordId(entry.notebookSessionId)}`:`/chat/sessions/${recordId(entry.notebookSessionId)}`;
-   const transcript=await client.request<{messages:{id:string;type:string;content:string;[key:string]:unknown}[]}>(path);
-   const legacySources:StudySource[]=[];const seen=new Set<string>();
-   const sources=entry.sourceId?[{id:entry.sourceId}]:entry.notebookId?await client.listAllSources(entry.notebookId):[];
-   for(const source of sources){try{const row=await client.request<any>(`/sources/${recordId(source.id)}`);const id=`legacy:${row.id}`;if(!seen.has(id)){seen.add(id);legacySources.push({id,title:row.title||'Notebook source',path:`Notebook/${row.title||row.id}`,text:row.full_text||'',hash:'',missing:false});}}catch{/* Retain chats even when an old source was removed. */}}
-   if(entry.notebookId&&!entry.sourceId){try{const notes=await client.request<any[]>(`/notes?notebook_id=${encodeURIComponent(entry.notebookId)}`);for(const note of notes){const row=await client.request<any>(`/notes/${recordId(note.id)}`);const id=`legacy:note:${row.id}`;if(!seen.has(id)){seen.add(id);legacySources.push({id,title:row.title||'Notebook note',path:`Notebook/${row.title||row.id}`,text:row.content||'',hash:'',missing:false});}}}catch{/* Preserve conversations if note listing is unavailable. */}}
-   await studyRequest(vault,'importLegacy',{id:entry.id,sources:legacySources,messages:transcript.messages.map(m=>({...m,role:m.type==='human'?'user':'assistant'}))});
-  }else await studyRequest(vault,'adoptChat',{id:entry.id});
+  await studyRequest(vault,'adoptChat',{id:entry.id});
  }
 };
 // App-wide, vault-keyed state survives either surface unmounting. Never replays a request.

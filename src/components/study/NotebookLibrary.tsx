@@ -5,8 +5,8 @@ import './notebook-library.css';
 
 /** Collections remain the storage identity; covers are local, deterministic artwork. */
 function coverHue(id: string) { return [...id].reduce((hash, c) => (hash * 31 + c.charCodeAt(0)) >>> 0, 17) % 360; }
-export function NotebookLibrary({ vaultPath, notebooks, materials, onOpen, onCreate, onLegacy }: {
-  vaultPath: string; notebooks: Collection[]; materials: Artifact[]; onOpen: (id: string) => void; onCreate: () => void; onLegacy: () => void;
+export function NotebookLibrary({ vaultPath, notebooks, materials, onOpen, onCreate }: {
+  vaultPath: string; notebooks: Collection[]; materials: Artifact[]; onOpen: (id: string) => void; onCreate: () => void;
 }) {
   const [appearance, setAppearance] = useState(() => document.documentElement.className);
   useEffect(() => { const observer = new MutationObserver(() => setAppearance(document.documentElement.className)); observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] }); return () => observer.disconnect(); }, []);
@@ -40,6 +40,5 @@ export function NotebookLibrary({ vaultPath, notebooks, materials, onOpen, onCre
       </div>
       {mode === 'cards' && <footer className="notebook-library__caption"><button aria-label="Previous notebook" disabled={index === 0} onClick={() => select(index - 1)}><ArrowLeft size={18}/></button><div><h2>{active.title}</h2><p className="study-muted">{active.sourceIds.length} sources · {materials.filter(a => a.collectionId === active.id).length} materials</p><button onClick={() => onOpen(active.id)}>Open notebook <ArrowRight size={15}/></button></div><button aria-label="Next notebook" disabled={index === rows.length - 1} onClick={() => select(index + 1)}><ArrowRight size={18}/></button></footer>}
     </>}
-    <footer className="notebook-library__secondary"><button onClick={onLegacy}>Advanced Notebook</button></footer>
   </section>;
 }

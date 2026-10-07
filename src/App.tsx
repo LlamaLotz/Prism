@@ -4,7 +4,6 @@ import { sharedStudy, study } from './services/study';
 import { ModelServiceRecovery } from './components/ModelServiceRecovery';
 import { DEFAULT_SETTINGS } from './defaultSettings';
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { NotebookPage, type NotebookSectionOpenRequest } from './components/notebook/NotebookPage';
 import { APP_PAGES, type AppPage } from './types';
 import { Sidebar } from './components/Sidebar';
 import { Editor } from './components/Editor';
@@ -1492,26 +1491,10 @@ export default function App() {
   // Cross-surface chat navigation for the shared library. Either side drops a
   // request here; the target consumes it once (then clears it via callback).
   const [copilotOpenRequest, setCopilotOpenRequest] = useState<{ sessionId: string; ts: number } | null>(null);
-  const [notebookChatRequest, setNotebookChatRequest] = useState<{
-    notebookId?: string; sourceId?: string; sessionId?: string;
-    seed?: { title: string; transcript: string }; ts: number;
-  } | null>(null);
-  // Section handoff into the legacy Notebook (study workspace Advanced menu).
-  const [notebookSectionRequest, setNotebookSectionRequest] = useState<NotebookSectionOpenRequest | null>(null);
-
-  // Continue a Notebook/session-library chat in Co-Pilot: ensure the panel is
-  // visible, then hand the library id over for opening.
-  const handleContinueInCopilot = (sessionId: string) => {
-    if (layout === 'graph' || layout === 'topics' || layout === 'notebook') setLayout('split');
-    setShowAICoPilot(true);
-    setCopilotOpenRequest({ sessionId, ts: Date.now() });
-  };
-
-  // Continue a Co-Pilot library chat in Notebook: load its transcript and ask
-  // Notebook to seed a backend session with it as opening context.
+  // Continue a Co-Pilot library chat in Notebook: open the same library session
+  // as a notebook conversation so it keeps its transcript and its sources.
   const handleOpenInNotebook = async (entry: ChatLibrarySession) => {
     try {
-      await study.legacy(settings.vaultPath, entry);
       await sharedStudy.open(settings.vaultPath, entry.id);
       setLayout('notebook');
     } catch (e) { await alert(String(e), { title: 'Could not open conversation' }); }
@@ -1672,9 +1655,7 @@ export default function App() {
                 <StudyWorkspace config={settings.omniRoute} modelPicker={chatModelPicker} onVaultChanged={handleAgentVaultChanged} unsavedPaths={studyUnsavedPaths} key={settings.vaultPath} vaultPath={settings.vaultPath}
                   onImport={() => setIsIngestModalOpen(true)} onOpenSettings={() => openSettings('ai')}
                   onOtherChatView={() => { setLayout('editor'); setShowAICoPilot(true); }}
-                  onOpenNote={path => { const found = notes.find(n => n.relativePath === path); if (found) { setActiveNote(found); setLayout('editor'); } }}
-                  onOpenLegacy={section => setNotebookSectionRequest({ section, ts: Date.now() })}
-                  legacy={<NotebookPage key={settings.vaultPath} active={layout === 'notebook'} vaultPath={settings.vaultPath} vaultNotes={notes} settings={settings} onSelectVault={handleSelectVault} onVaultExport={async () => { await fetchNotes(); await loadGraph(); }} openChatRequest={notebookChatRequest} onOpenChatRequestConsumed={() => setNotebookChatRequest(null)} openSectionRequest={notebookSectionRequest} onOpenSectionRequestConsumed={() => setNotebookSectionRequest(null)} onContinueInCopilot={handleContinueInCopilot} />} />
+                  onOpenNote={path => { const found = notes.find(n => n.relativePath === path); if (found) { setActiveNote(found); setLayout('editor'); } }} />
               </ErrorBoundary>
             </div>
           )}

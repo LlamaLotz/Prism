@@ -2,20 +2,6 @@ import { test, expect } from '@playwright/test';
 
 const studyUrl = '/tests/notebook/study-harness.html';
 
-test('notebook prompt model picker drives the model used for chat requests', async ({ page }) => {
-  await page.goto('/tests/notebook/harness.html');
-  await page.getByRole('heading', { name: 'Learning how we learn' }).click();
-  const picker = page.getByRole('combobox', { name: 'Chat model' });
-  await expect(picker).toContainText('Default chat model');
-  await picker.click();
-  await page.getByRole('option', { name: /Research model/ }).click();
-  await expect(picker).toContainText('Research model');
-  await page.getByLabel('Question', { exact: true }).fill('What helps us remember?');
-  await page.getByRole('button', { name: 'Send', exact: true }).click();
-  await expect.poll(() => page.evaluate(() => (window as any).fixtureCalls.filter((c: any) => c.command === 'notebook_request' && c.args.path === '/api/chat/execute').length)).toBe(1);
-  const execute = await page.evaluate(() => (window as any).fixtureCalls.find((c: any) => c.command === 'notebook_request' && c.args.path === '/api/chat/execute').args);
-  expect(execute.body.model_override).toBe('model:chat');
-});
 
 test('prompt bar model picker works in the study notebook and stays compact', async ({ page }) => {
   await page.goto(studyUrl);await page.getByRole('button',{name:'Open notebook',exact:true}).click();

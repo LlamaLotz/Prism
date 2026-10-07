@@ -158,50 +158,6 @@ pub fn delete_session(conn: &Connection, vault_id: &str, id: &str) -> Result<boo
     Ok(changed > 0)
 }
 
-/// Create or refresh the linked entry for a Notebook backend session so it
-/// shows up in the shared library. Never touches copilot-owned rows.
-pub fn link_notebook_session(
-    conn: &Connection,
-    vault_id: &str,
-    notebook_session_id: &str,
-    title: &str,
-    notebook_id: Option<&str>,
-    source_id: Option<&str>,
-    model: Option<&str>,
-) -> Result<ChatSession, String> {
-    let title = title.trim();
-    let title: String = if title.is_empty() {
-        "Conversation".into()
-    } else {
-        title.chars().take(120).collect()
-    };
-    conn.execute(
-        "INSERT INTO chat_sessions(id, vault_id, title, origin, notebook_session_id, notebook_id, source_id, model)
-         VALUES (?1, ?2, ?3, 'notebook', ?4, ?5, ?6, ?7)
-         ON CONFLICT(vault_id, notebook_session_id) DO UPDATE SET
-           title=excluded.title, notebook_id=excluded.notebook_id,
-           source_id=excluded.source_id, model=excluded.model, updated_at=unixepoch()",
-        params![
-            uuid::Uuid::new_v4().to_string(),
-            vault_id,
-            title,
-            notebook_session_id,
-            notebook_id,
-            source_id,
-            model
-        ],
-    )
-    .map_err(|e| e.to_string())?;
-    conn.query_row(
-        &format!(
-            "SELECT {SESSION_COLS} FROM chat_sessions WHERE vault_id=?1 AND notebook_session_id=?2"
-        ),
-        params![vault_id, notebook_session_id],
-        row_session,
-    )
-    .map_err(|e| e.to_string())
-}
-
 /// Drop the linked entry when its Notebook session is renamed away or
 /// deleted there — keyed by backend id so copilot rows can never match.
 pub fn unlink_notebook_session(
@@ -437,7 +393,7 @@ mod tests {
     fn replace_transcript_mirrors_and_is_vault_scoped() {
         let conn = memory_db();
         let s = create_session(&conn, "v1", "A", "copilot").unwrap();
-        let n = link_notebook_session(&conn, "v1", "nb:1", "NB", None, None, None).unwrap();
+        let n = create_session(&conn, "v1", "NB", "notebook").unwrap();
         let msgs = vec![
             ("user".to_string(), "q".to_string(), None),
             ("assistant".to_string(), "a".to_string(), None),
@@ -462,21 +418,4 @@ mod tests {
         .is_err());
     }
 
-    #[test]
-    fn notebook_link_upsert_and_search() {
-        let conn = memory_db();
-        let a = link_notebook_session(&conn, "v1", "nb:1", "Research", Some("nb1"), None, None)
-            .unwrap();
-        let b = link_notebook_session(&conn, "v1", "nb:1", "Research v2", Some("nb1"), None, None)
-            .unwrap();
-        assert_eq!(a.id, b.id);
-        assert_eq!(b.title, "Research v2");
-        create_session(&conn, "v1", "Research notes", "copilot").unwrap();
-        let hits = list_sessions(&conn, "v1", Some("research"), None, 50).unwrap();
-        assert_eq!(hits.len(), 2);
-        let nb_only = list_sessions(&conn, "v1", None, Some("notebook"), 50).unwrap();
-        assert_eq!(nb_only.len(), 1);
-        assert!(unlink_notebook_session(&conn, "v1", "nb:1").unwrap());
-        assert_eq!(list_sessions(&conn, "v1", None, None, 50).unwrap().len(), 1);
-    }
 }

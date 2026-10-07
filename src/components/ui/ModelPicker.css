@@ -1,12 +1,27 @@
-/* ModelPicker — compact combobox for prompt bars. Surfaces and geometry adapt
-   to the active design archetype through the shared color tokens and the
-   archetype radius rules (industrial flattens everything globally). */
+/* ModelPicker — compact combobox for the shared prompt bars.
+   ---------------------------------------------------------------------------
+   The dropdown is portaled, so it floats over arbitrary application content.
+   It therefore takes the notebook contract's *opaque* floating-menu plane
+   (--nb-menu) instead of an in-page translucent surface, which is what made it
+   previously blend into the content behind it.
+
+   Colour, shape and depth are supplied by the token contract in
+   notebook-tokens.css (which owns the `html .model-picker__menu/__option/__error`
+   rules). This file contributes only structure — layout, spacing, the chevron
+   and the selected checkmark — so each archetype stays distinct without
+   duplicating declarations:
+     industrial  square corners, flat plane, crisp hairline, no glow
+     glass       rounded, frosted, soft specular top edge
+     gloss       largest radius, deepest glow
+   */
+
 .model-picker {
   position: relative;
   display: inline-flex;
   flex: 0 1 auto;
   min-width: 0;
 }
+
 .model-picker__trigger {
   display: inline-flex;
   align-items: center;
@@ -15,20 +30,25 @@
   height: 28px;
   padding: 0 8px;
   border: 1px solid transparent;
-  border-radius: 8px;
+  border-radius: var(--nb-radius-sm, 8px);
   background: transparent;
-  color: var(--color-text-body);
+  color: var(--nb-secondary, var(--color-text-body));
   font: inherit;
   font-size: 11px;
   font-weight: 500;
   cursor: pointer;
 }
 .model-picker__trigger:hover {
-  background: var(--color-surface-hover);
-  border-color: var(--color-border);
+  background: var(--nb-selection, var(--color-surface-hover));
+  border-color: var(--nb-border, var(--color-border));
+  color: var(--nb-text, var(--color-text-hi));
 }
+/* A saved model that is no longer in the registry stays fully legible; the
+   dotted underline carries the state so colour is not the only signal. */
 .model-picker__trigger[data-unavailable] {
-  color: var(--color-brand-400);
+  color: var(--nb-text, var(--color-text-hi));
+  text-decoration: underline dotted;
+  text-underline-offset: 3px;
 }
 .model-picker__current {
   overflow: hidden;
@@ -42,8 +62,9 @@
   border-right: 3.5px solid transparent;
   border-left: 3.5px solid transparent;
   border-top: 4px solid currentColor;
-  opacity: 0.7;
 }
+
+/* Positioning and scroll containment only — the plane itself is token-driven. */
 .model-picker__menu {
   position: fixed;
   z-index: 120;
@@ -53,10 +74,6 @@
   min-width: 200px;
   max-width: min(280px, calc(100vw - 24px));
   padding: 5px;
-  border: 1px solid var(--color-border);
-  border-radius: 10px;
-  background: var(--color-panel);
-  box-shadow: 0 14px 36px -12px rgba(0, 0, 0, 0.55);
   transform: translateY(-100%);
   transform-origin: bottom left;
   animation: model-picker-pop 150ms cubic-bezier(0.23, 1, 0.32, 1) both;
@@ -76,33 +93,34 @@
     opacity: 0;
   }
 }
+
 .model-picker__option {
   display: flex;
   align-items: center;
   gap: 8px;
   min-height: 34px;
   padding: 5px 8px;
-  border-radius: 7px;
-  color: var(--color-text-hi);
   font-size: 12px;
   cursor: pointer;
 }
-.model-picker__option[data-active] {
-  background: var(--color-surface-hover);
+.model-picker__option:hover {
+  background: var(--nb-selection, var(--color-surface-hover));
 }
 .model-picker__check {
   flex: none;
   width: 12px;
   height: 12px;
 }
+/* The check rides the focus ink, which is tuned per archetype and mode to stay
+   visible on the selected row's tint. */
 .model-picker__option[aria-selected='true'] .model-picker__check::after {
   content: '';
   display: block;
   width: 5px;
   height: 9px;
   margin: -1px 0 0 3px;
-  border-right: 2px solid var(--color-brand-400);
-  border-bottom: 2px solid var(--color-brand-400);
+  border-right: 2px solid var(--nb-focus, var(--color-brand-400));
+  border-bottom: 2px solid var(--nb-focus, var(--color-brand-400));
   transform: rotate(45deg);
 }
 .model-picker__names {
@@ -112,34 +130,23 @@
 }
 .model-picker__name {
   overflow: hidden;
+  color: var(--nb-text, var(--color-text-hi));
   font-weight: 550;
   white-space: nowrap;
   text-overflow: ellipsis;
 }
 .model-picker__desc {
   overflow: hidden;
-  color: var(--color-text-body);
+  color: var(--nb-secondary, var(--color-text-body));
   font-size: 10px;
   white-space: nowrap;
   text-overflow: ellipsis;
 }
 .model-picker__tag {
   flex: none;
-  color: var(--color-text-body);
+  color: var(--nb-secondary, var(--color-text-body));
   font-size: 10px;
   text-transform: capitalize;
-}
-
-/* Archetype polish: glass/gloss float a softer, rounder popover; industrial
-   keeps the flat hard-edged surface defined above. */
-.theme-glass .model-picker__menu,
-.theme-gloss .model-picker__menu {
-  border-radius: 14px;
-  box-shadow: 0 18px 48px -16px rgba(0, 0, 0, 0.6), inset 0 1px 0 var(--color-border);
-}
-.theme-glass .model-picker__option,
-.theme-gloss .model-picker__option {
-  border-radius: 10px;
 }
 
 @media (prefers-reduced-motion: reduce) {

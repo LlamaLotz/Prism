@@ -1,17 +1,21 @@
-/* StatusMark — lifecycle glyph. Colors follow the shared brand/error ramps so
-   every archetype and mode inherits its palette automatically; industrial
-   flattens the round join via the global radius rule on the label chips. */
+/* StatusMark — lifecycle glyph for generation and Agent tasks.
+
+   Colours come from the notebook tokens plus the shared status ramps, so the
+   glyph reads against every archetype and mode. Settled states step the label
+   down to secondary ink at full opacity rather than fading it: a terminal
+   status is information the user still has to read. */
+
 .status-mark {
   display: inline-flex;
   align-items: center;
   gap: calc(var(--sm-size, 16px) * 0.5);
-  --sm-muted: 0.55;
+  --sm-muted: 0.7;
   line-height: 1;
 }
 .status-mark__glyph {
   flex: none;
   overflow: visible;
-  color: var(--color-text-body);
+  color: var(--nb-secondary, var(--color-text-body));
   transition: color 200ms ease;
 }
 .status-mark[data-status='running'] .status-mark__glyph {
@@ -24,18 +28,18 @@
   color: var(--status-error, #ef4444);
 }
 .status-mark[data-status='cancelled'] .status-mark__glyph {
-  color: var(--color-text-body);
+  color: var(--nb-secondary, var(--color-text-body));
 }
 .status-mark__track {
   fill: none;
   stroke: currentColor;
   stroke-width: 2;
-  stroke-opacity: 0.18;
+  stroke-opacity: 0.22;
 }
 .status-mark[data-status='done'] .status-mark__track,
 .status-mark[data-status='failed'] .status-mark__track {
   fill: currentColor;
-  fill-opacity: 0.06;
+  fill-opacity: 0.08;
 }
 .status-mark__ring {
   fill: none;
@@ -86,20 +90,18 @@
     opacity 0ms linear 120ms;
 }
 .status-mark__label {
-  color: var(--color-text-hi);
+  color: var(--nb-text, var(--color-text-hi));
   font-size: 12px;
   line-height: 1.35;
-  transition: color 200ms ease, opacity 200ms ease;
+  transition: color 200ms ease;
 }
-.status-mark[data-status='done'] .status-mark__label {
-  color: var(--color-text-body);
-  opacity: 0.75;
-}
+.status-mark[data-status='done'] .status-mark__label,
 .status-mark[data-status='cancelled'] .status-mark__label {
-  color: var(--color-text-body);
+  color: var(--nb-secondary, var(--color-text-body));
+  opacity: 1;
 }
 .status-mark[data-status='failed'] .status-mark__label {
-  color: var(--color-text-hi);
+  color: var(--nb-text, var(--color-text-hi));
 }
 .status-mark__sr {
   position: absolute;
@@ -128,6 +130,6 @@
 }
 @keyframes status-mark-breathe {
   50% {
-    opacity: 0.4;
+    opacity: 0.55;
   }
 }
