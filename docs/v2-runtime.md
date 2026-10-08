@@ -35,11 +35,11 @@ The scheduler limits active queue entries to 256 and reserves separate foregroun
 
 The Knowledge Runtime owns the shared embedding instance. Idle unloading defaults to 300 seconds and only occurs without active leases. Built-in embeddings and deterministic formatting remain local. No new generation/reranking/classification model weights are bundled in this phase.
 
-Desktop model requests originate in Rust. Named provider configurations can be selected per current text task. Existing OpenAI-compatible endpoints, native Anthropic requests and keyless compatible endpoints remain supported. Successful credential migration stores secrets in the OS credential store and writes references to settings atomically. Notebook's Co-Pilot import resolves credentials in Rust.
+Desktop model requests originate in Rust. Named provider configurations can be selected per current text task. Existing OpenAI-compatible endpoints, native Anthropic requests and keyless compatible endpoints remain supported. Successful credential migration stores secrets in the OS credential store and writes references to settings atomically.
 
 Privacy defaults to **Ask Before Cloud**, including upgrades. **Strict Local** rejects external processing. **Hybrid** permits explicitly routed cloud text tasks; other external requests still need consent. **Cloud Allowed** permits configured external requests. A loopback endpoint is not proof of local inference, so configurable BYO endpoints still receive external-processing checks.
 
-Notebook retains its source database and existing model configuration. Its managed Python transports use an authenticated, vault-scoped loopback gateway for HTTP egress. Unknown direct sockets, DNS and shell execution are blocked; approved media processes are restricted to local protocols. The gateway is an integration boundary for the pinned runtime, not an operating-system sandbox for arbitrary third-party plugins. Full Notebook source/workspace/model-setting consolidation remains Phase 5.
+The vendored Open Notebook integration and its managed Python gateway have been removed. Prism’s native Notebook uses the Rust Knowledge Runtime. Existing Open Notebook data remains on disk but is no longer accessed; see [Product focus and compatibility](../PRODUCT_SCOPE.md) for the retained features and study-export limitations.
 
 ## Phase 2a — Retrieval Planner (read-only, no agent writes)
 
@@ -73,15 +73,13 @@ cargo test --manifest-path src-tauri/Cargo.toml --lib
 cargo test --manifest-path src-tauri/Cargo.toml --lib hundred_thousand_blocks -- --ignored
 npx tsc --noEmit
 npx playwright test
-python3 scripts/test-prism-gateway.py src-tauri/notebook-runtime/<target>
-python3 scripts/test-notebook-runtime.py src-tauri/notebook-runtime/<target>
 ```
 
 The existing native build requires an ONNX Runtime library. Set `ORT_LIB_LOCATION` to its installation directory when not already configured; on macOS the dynamic loader must also find the corresponding dylib. The local validation used the installed Intel macOS ONNX library without downloading new model weights.
 
-When updating an existing development payload, run `scripts/patch-notebook-runtime.py <runtime>` before the gateway/runtime tests. It invalidates the old smoke-test marker. Production payloads must declare `knowledgeGateway: 1`; older payloads fail closed with an update message. The runtime CI matrix runs the transport-policy and real media smoke tests on each supported packaged target. Only the local Intel macOS payload was executed during this implementation.
+The reusable frontend validation workflow runs the frontend build and Playwright suite. Both automatic release tagging and packaging require this validation to pass. Releases no longer build, download, validate, or bundle the removed Open Notebook runtime.
 
-Phase 2a is the read-only prerequisite; 2b activates the Tool Bus. The remaining phases follow the accepted order: graph projections (Phase 4); Notebook consolidation (Phase 5); research (Phase 6); study (Phase 7); source-linked audio (Phase 8); and hardware/resource hardening (Phase 9).
+Phase 2a is the read-only prerequisite; 2b activates the Tool Bus. The remaining phases follow the accepted order: graph projections (Phase 4); Prism-native Notebook work (Phase 5, subject to the current product scope); research (Phase 6); study (Phase 7); source-linked audio (Phase 8); and hardware/resource hardening (Phase 9).
 
 ## Phase 3 — Structured documents and reviewed imports
 

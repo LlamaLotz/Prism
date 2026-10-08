@@ -13,8 +13,8 @@ on:
 
 jobs:
   version:
-    needs: notebook-runtime
-    if: github.ref_type == 'branch' && github.ref_name == 'main' && needs.notebook-runtime.result == 'success'
+    needs: frontend
+    if: github.ref_type == 'branch' && github.ref_name == 'main' && needs.frontend.result == 'success'
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -50,11 +50,11 @@ jobs:
           with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
               output.write(f"tag={tag}\n")
 
-  notebook-runtime:
-    uses: ./.github/workflows/notebook-runtime.yml
+  frontend:
+    uses: ./.github/workflows/frontend.yml
   release:
-    needs: [version, notebook-runtime]
-    if: always() && needs.notebook-runtime.result == 'success' && (needs.version.result == 'success' || needs.version.result == 'skipped')
+    needs: [version, frontend]
+    if: always() && needs.frontend.result == 'success' && (needs.version.result == 'success' || needs.version.result == 'skipped')
     permissions:
       contents: write
     strategy:
@@ -83,21 +83,6 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - uses: actions/download-artifact@v4
-        with:
-          pattern: notebook-*
-          path: notebook-artifacts
-          merge-multiple: true
-      - name: Install validated Notebook resource payloads
-        shell: python
-        run: |
-          import pathlib, platform, tarfile
-          for archive in pathlib.Path('notebook-artifacts').glob('*.tar.gz'):
-              if ('windows' in archive.name) != (platform.system() == 'Windows'):
-                  continue
-              with tarfile.open(archive) as payload:
-                  payload.extractall('src-tauri/notebook-runtime', filter='data')
-
       - name: Sync version across package.json, tauri.conf.json, and Cargo.toml
         shell: bash
         env:

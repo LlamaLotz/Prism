@@ -2,7 +2,6 @@
   "bundle": {
     "resources": [
       "../Extractor Final",
-      "notebook-runtime/",
       "ingest-runtime/"
     ]
   }
