@@ -46,7 +46,7 @@ test.describe('full application composition', () => {
 
       await expect(page.getByRole('group', { name: 'Notebook covers' })).toBeVisible();
       await expect(page.getByRole('button', { name: /Open notebook/ }).first()).toBeVisible();
-      await expect(page.getByRole('button', { name: 'New notebook', exact: true })).toBeVisible();
+      await expect(page.getByRole('button', { name: /^Add notebook/ })).toBeVisible();
       // The retired Advanced Notebook entry point must not come back.
       await expect(page.getByRole('button', { name: 'Advanced Notebook', exact: true })).toHaveCount(0);
 
@@ -73,7 +73,8 @@ test.describe('full application composition', () => {
       expect(ratios.secondary).toBeGreaterThanOrEqual(4.5);
 
       // The advanced assistant keeps its own transcript and shares the tokens.
-      await shared.getByRole('button', { name: /Advanced assistant/ }).click();
+      await shared.getByLabel('Assistant options').click();
+      await shared.getByRole('button', { name: 'Web and advanced tools' }).click();
       const advanced = page.locator('.ai-sidebar');
       await expect(advanced).toBeVisible();
       await expect(advanced.getByRole('textbox', { name: 'Message', exact: true })).toBeVisible();
@@ -100,15 +101,57 @@ test.describe('full application composition', () => {
     expect(errors).toEqual([]);
   });
 
-  test('the sidebar model picker persists the chat route through settings', async ({ page }) => {
+  test('the sidebar model picker keeps its choice out of the shared chat route', async ({ page }) => {
     test.setTimeout(90000);
     const errors = await boot(page, '?view=editor', page.locator('.study-assistant'));
     await page.getByRole('combobox', { name: 'Chat model' }).click();
     await page.getByRole('option', { name: /Other model/ }).click();
-    await expect.poll(() => page.evaluate(() => {
-      const call = (window as any).fixtureCalls.find((c: any) => c.command === 'save_runtime_config');
-      return call?.args.config.models.routes.CHAT ?? null;
-    })).toBe('m2');
+    // The selection applies to this conversation's next request…
+    await expect(page.getByRole('combobox', { name: 'Chat model' })).toContainText('Other model');
+    // …while the feature-specific route shared by other conversations stays untouched.
+    expect(await page.evaluate(() => (window as any).fixtureCalls.some((c: any) =>
+      c.command === 'save_runtime_config' && c.args?.config?.models?.routes?.CHAT === 'm2'))).toBe(false);
+    expect(errors).toEqual([]);
+  });
+
+  test('folder and note context menus create notes in place and move them between folders', async ({ page }) => {
+    test.setTimeout(90000);
+    const errors = await boot(page, '?view=editor', page.locator('[data-folder-path="Research"]'));
+
+    // "Create note here" writes the note inside the clicked folder.
+    await page.locator('[data-folder-path="Research"]').click({ button: 'right' });
+    await page.getByRole('button', { name: 'Create note here', exact: true }).click();
+    await page.getByRole('dialog').getByRole('textbox').fill('Field notes 2');
+    await page.getByRole('dialog').getByRole('button', { name: 'OK', exact: true }).click();
+    await expect.poll(() => page.evaluate(() =>
+      (window as any).fixtureCalls.find((c: any) => c.command === 'create_file')?.args.relativePath)).toBe('Research/Field notes 2.md');
+
+    // Moving into a folder that already holds that note is rejected and the dialog stays open.
+    await page.locator('[data-note-path$="Drafts/Field notes.md"]').click({ button: 'right' });
+    await page.getByRole('button', { name: 'Move to folder…', exact: true }).click();
+    const move = page.getByRole('dialog', { name: 'Move note to folder' });
+    await move.getByLabel('Vault folder', { exact: true }).selectOption({ label: 'Research' });
+    await move.getByRole('button', { name: 'Move note', exact: true }).click();
+    await expect(move.getByRole('alert')).toContainText('already exists in that folder');
+    await expect(move).toBeVisible();
+
+    // Moving to the vault root succeeds.
+    await move.getByLabel('Vault folder', { exact: true }).selectOption({ label: 'Vault root' });
+    await move.getByRole('button', { name: 'Move note', exact: true }).click();
+    await expect.poll(() => page.evaluate(() =>
+      (window as any).fixtureCalls.find((c: any) => c.command === 'rename_file')?.args.newPath)).toBe('/vault/Field notes.md');
+    expect(errors).toEqual([]);
+  });
+
+  test('graph folder nodes exclude the vault root', async ({ page }) => {
+    test.setTimeout(90000);
+    const errors = await boot(page, '?view=editor', page.locator('[data-folder-path="Research"]'));
+    await page.getByRole('button', { name: /^More/ }).click();
+    await page.getByRole('menuitemradio', { name: 'Graph', exact: true }).click();
+    await expect(page.getByText('📁 Research', { exact: true })).toBeVisible();
+    await expect(page.getByText('📁 A', { exact: true })).toBeVisible();
+    // The vault root is the canvas, not a folder node.
+    await expect(page.getByText('📁 Vault', { exact: true })).toHaveCount(0);
     expect(errors).toEqual([]);
   });
 });

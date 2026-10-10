@@ -33,6 +33,7 @@ pub struct ToolDefinition {
 pub fn tool_definitions() -> Vec<ToolDefinition> {
     vec![
         // Reads — auto-approved, vault-scoped
+        ToolDefinition { name: "vault_overview".into(), description: "List vault folder and note metadata. Paginate with offset and limit; optionally filter by folder.".into(), requires_approval: false, category: "read".into() },
         ToolDefinition { name: "read_note".into(), description: "Read a note's full content and blocks by stable id or path".into(), requires_approval: false, category: "read".into() },
         ToolDefinition { name: "read_block".into(), description: "Read a single block by block id".into(), requires_approval: false, category: "read".into() },
         ToolDefinition { name: "search_vault".into(), description: "Lexical/hybrid vault search (vault-scoped, no model download)".into(), requires_approval: false, category: "read".into() },
@@ -1395,6 +1396,29 @@ pub async fn agent_call_tool(
     let tool = request.tool.clone();
     // Reads — direct, no approval
     match tool.as_str() {
+        "vault_overview" => {
+            let scope=super::current(&app)?;
+            let generation=scope.generation.clone();
+            let offset=request.input["offset"].as_u64().unwrap_or(0) as usize;
+            let limit=request.input["limit"].as_u64().unwrap_or(100).clamp(1,200) as usize;
+            let folder=request.input["folder"].as_str().unwrap_or("").trim_matches('/').to_owned();
+            let result=tauri::async_runtime::spawn_blocking(move || -> Result<serde_json::Value,String> {
+                let mut entries=Vec::new();
+                for entry in walkdir::WalkDir::new(&scope.root).follow_links(false).sort_by_file_name().into_iter().filter_entry(|e|e.depth()==0 || !e.file_name().to_string_lossy().starts_with('.')) {
+                    let entry=entry.map_err(|e|e.to_string())?;
+                    if entry.depth()==0 || entry.file_type().is_symlink(){continue;}
+                    let path=entry.path().strip_prefix(&scope.root).map_err(|e|e.to_string())?.to_string_lossy().replace('\\',"/");
+                    if !folder.is_empty() && path!=folder && !path.starts_with(&(folder.clone()+"/")){continue;}
+                    let is_folder=entry.file_type().is_dir();
+                    if !is_folder && entry.path().extension().and_then(|s|s.to_str()).is_none_or(|s|!s.eq_ignore_ascii_case("md")){continue;}
+                    entries.push(serde_json::json!({"path":path,"kind":if is_folder {"folder"}else{"note"},"name":entry.file_name().to_string_lossy()}));
+                }
+                let total=entries.len();let page=entries.into_iter().skip(offset).take(limit).collect::<Vec<_>>();
+                Ok(serde_json::json!({"entries":page,"total":total,"nextOffset":if offset+limit<total{Some(offset+limit)}else{None}}))
+            }).await.map_err(|e|e.to_string())??;
+            if super::current(&app)?.generation!=generation{return Err("Vault changed".into());}
+            Ok(AgentToolResponse{tool,requires_approval:false,approval_id:None,preview:None,result:Some(result),error:None})
+        }
         "read_note" => {
             let note_ref = request
                 .input

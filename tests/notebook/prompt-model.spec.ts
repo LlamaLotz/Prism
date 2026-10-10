@@ -10,7 +10,8 @@ test('prompt bar model picker works in the study notebook and stays compact', as
   await picker.click();
   await page.getByRole('option', { name: /Other model/ }).click();
   await expect(picker).toContainText('Other model');
-  expect(await page.evaluate(() => (window as any).fixtureCalls.some((c: any) => c.command === 'set_model' && c.args.value === 'm2'))).toBe(true);
+  await page.getByLabel('Message',{exact:true}).fill('Use this model');await page.getByRole('button',{name:'Send',exact:true}).click();
+  expect(await page.evaluate(() => (window as any).fixtureCalls.some((c: any) => c.command === 'study_request' && c.args.action === 'setChatProvider' && c.args.payload.providerId === 'm2'))).toBe(true);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 });
 

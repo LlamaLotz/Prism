@@ -347,3 +347,39 @@ html.theme-gloss .study-workspace .notebook-cover__caption {
     filter: none !important;
   }
 }
+
+/* Each card keeps its open action separate from the options menu. */
+html .study-workspace .notebook-cover { position: relative; }
+html .study-workspace .notebook-cover__open {
+  display: flex; flex-direction: column; width: 100%; height: 100%; gap: 0;
+  padding: 0; border: 0; border-radius: 0; background: transparent; color: inherit;
+  box-shadow: none; text-align: left;
+}
+html .study-workspace .notebook-cover__art { background: var(--color-brand-500); color: #101010; flex-shrink: 0; }
+html .study-workspace .notebook-cover__art[data-cover='black'] { background: #151515; color: #fff; }
+html .study-workspace .notebook-cover__art[data-cover='grey'] { background: #5c6068; color: #fff; }
+html .study-workspace .notebook-cover__art[data-cover='image'] { background: #151515; }
+.notebook-cover__art img { width: 100%; height: 100%; object-fit: cover; }
+html .study-workspace .notebook-cover__number { color: inherit; }
+html .study-workspace .notebook-cover__art[data-cover='image'] .notebook-cover__number { color: white; background: #000a; padding: 3px 6px; }
+html .study-workspace .notebook-cover__caption { padding-right: 52px; flex: 1; }
+html .study-workspace .notebook-cover__menu { position: absolute; right: 10px; bottom: 10px; z-index: 5; }
+html .study-workspace .notebook-cover__menu summary { display: flex; align-items: center; justify-content: center; width: 34px; height: 34px; padding: 0; list-style: none; border-radius: var(--nb-radius-sm); border: 1px solid var(--nb-border); background: var(--nb-panel); color: var(--nb-text); cursor: pointer; }
+.notebook-cover__menu summary::-webkit-details-marker { display: none; }
+html .study-workspace .notebook-cover__menu .study-menu-body { top: auto; bottom: 42px; right: 0; min-width: 185px; }
+html .study-workspace .notebook-cover__menu .study-menu-body button { width: 100%; justify-content: flex-start; }
+html .study-workspace .notebook-add-card {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px;
+  width: 240px; min-height: 270px; flex-shrink: 0; padding: 24px;
+  border: 2px dashed var(--nb-border); border-radius: var(--nb-radius); background: var(--nb-panel); color: var(--nb-text);
+  transition: transform .45s cubic-bezier(.22,.8,.25,1); box-shadow: none;
+}
+.notebook-add-card span { font-size: 12px; color: var(--nb-secondary); }
+.notebook-covers--cards:not([data-industrial='true']) .notebook-add-card { position: absolute; left: 50%; top: 24px; transform: translateX(calc(-50% + var(--cover-distance) * 165px)) translateZ(calc(var(--cover-depth) * -110px)) rotateY(clamp(-48deg, calc(var(--cover-distance) * -38deg), 48deg)); height: 270px; }
+.notebook-covers--cards[data-industrial='true'] .notebook-add-card { scroll-snap-align: center; height: 330px; }
+html .study-workspace .notebook-covers--grid .notebook-add-card { width: 100%; min-height: 280px; }
+html .study-workspace .notebook-add-card[data-selected='true'] { outline: 2px solid var(--nb-focus); outline-offset: 3px; }
+.notebook-cover-choices { display: flex; flex-wrap: wrap; gap: 8px; margin: 20px 0; }
+.notebook-cover-dialog .study-field { margin: 16px 0; }
+.notebook-cover-dialog .study-field > span { display: flex; align-items: center; gap: 8px; }
+@media (prefers-reduced-motion: reduce) { .notebook-add-card { transition: none !important; } }

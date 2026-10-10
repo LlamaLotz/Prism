@@ -3,7 +3,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Folder, FolderOpen, FolderPlus, FolderMinus, Plus, Search, FileText, Trash2, Edit3,
   RefreshCw, Terminal, Settings, ChevronRight, Play, PanelLeftClose,
-  ArrowUp, ArrowDown, TerminalSquare, Pencil
+  ArrowUp, ArrowDown, TerminalSquare, Pencil, MoreHorizontal
 } from 'lucide-react';
 import { NoteFile, tauriAPI } from '../types';
 import { useIngestion } from '../services/ingestionStore';
@@ -15,10 +15,13 @@ interface SidebarProps {
   /** Every folder under the vault (POSIX-style relative paths), including
    *  empty ones — used to render folders that hold no notes yet. */
   folders: string[];
+  reveal?:{path:string;ts:number}|null;
+  onSelectFolder?:(path:string)=>void;
   activeNote: NoteFile | null;
   onSelectNote: (note: NoteFile) => void;
   /** Double-click a note to open it in the full editor panel. */
   onOpenNote: (note: NoteFile) => void;
+  onNoteMenu: (note: NoteFile, trigger: HTMLButtonElement) => void;
   /** Free-form status line beside the logo; {date}/{time} tokens supported. */
   statusText?: string;
   /** Custom app icon id from the rainbow logo registry (empty = default). */
@@ -122,10 +125,10 @@ function buildFolderTree(
 
 export const Sidebar: React.FC<SidebarProps> = ({
   notes,
-  folders: foldersProp,
+  folders: foldersProp, reveal, onSelectFolder,
   activeNote,
   onSelectNote,
-  onOpenNote,
+  onOpenNote, onNoteMenu,
   statusText = '',
   appIcon = '',
   themeMode = 'dark',
@@ -172,6 +175,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       return new Set();
     }
   });
+  useEffect(()=>{if(!reveal)return;setCollapsed(previous=>new Set([...previous].filter(path=>path!==reveal.path&&!reveal.path.startsWith(path+'/'))));requestAnimationFrame(()=>{document.querySelectorAll<HTMLElement>('[data-folder-path]').forEach(el=>{if(el.dataset.folderPath===reveal.path){el.scrollIntoView({block:'nearest'});el.focus();}});});},[reveal?.ts]);
   const toggleFolder = (relativePath: string) => {
     setCollapsed((prev) => {
       const next = new Set(prev);
@@ -343,10 +347,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
           draggingPath === note.path ? 'cursor-grabbing' : 'cursor-default'
         } ${
           isActive 
-            ? 'sidebar-note-row-active bg-slate-900 border-l-2 border-brand-400 text-brand-100 font-medium' 
-            : 'text-slate-400 hover:text-slate-200 hover:bg-brand-500/10'
+            ? 'sidebar-note-row-active bg-[var(--nb-card)] border-l-2 border-brand-400 text-[var(--nb-focus)] font-medium'
+            : 'text-[var(--nb-secondary)] hover:text-[var(--nb-secondary)] hover:bg-brand-500/10'
         }`}
-        style={{ paddingLeft: depth * 16 + 12 }}
+        style={{ paddingLeft: `min(${Math.min(depth, 4) * 12 + 12}px, max(12px, calc(100cqi - 160px)))` }}
         onClick={() => {
           if (suppressClickRef.current) {
             suppressClickRef.current = false;
@@ -359,18 +363,18 @@ export const Sidebar: React.FC<SidebarProps> = ({
         title="Double-click to open in the full editor; drag to move"
       >
         <div className="sidebar-note-content flex items-center gap-2 truncate flex-1 pr-2">
-          <FileText className={`sidebar-note-icon w-4 h-4 shrink-0 ${isActive ? 'text-brand-400' : 'text-slate-500'}`} />
+          <FileText className={`sidebar-note-icon w-4 h-4 shrink-0 ${isActive ? 'text-[var(--nb-focus)]' : 'text-[var(--nb-secondary)]'}`} />
           <span className="truncate">{note.title}</span>
         </div>
 
         {/* Note Hover Actions */}
-        <div className="flex items-center gap-1.5 shrink-0 opacity-50 hover:opacity-100 transition-opacity">
+        <div className="flex items-center gap-1.5 shrink-0 opacity-100 transition-opacity">
           <button
             onClick={(e) => {
               e.stopPropagation();
               onOpenNote(note);
             }}
-            className="p-1 hover:bg-slate-800 text-slate-400 hover:text-brand-400 rounded transition-colors"
+            className="p-1 hover:bg-[var(--nb-card)] text-[var(--nb-secondary)] hover:text-[var(--nb-focus)] rounded transition-colors"
             title="Edit note (open in editor)"
             aria-label={`Edit ${note.title}`}
           >
@@ -381,7 +385,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
               e.stopPropagation();
               onRenameNote(note);
             }}
-            className="p-1 hover:bg-slate-800 text-slate-400 hover:text-brand-400 rounded transition-colors"
+            className="p-1 hover:bg-[var(--nb-card)] text-[var(--nb-secondary)] hover:text-[var(--nb-focus)] rounded transition-colors"
+            data-secondary-action
             title="Rename Note"
           >
             <Edit3 className="w-3.5 h-3.5" />
@@ -391,11 +396,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
               e.stopPropagation();
               onDeleteNote(note);
             }}
-            className="p-1 hover:bg-slate-800 text-slate-400 hover:text-rose-400 rounded transition-colors"
+            className="p-1 hover:bg-[var(--nb-card)] text-[var(--nb-secondary)] hover:text-rose-400 rounded transition-colors"
+            data-secondary-action
             title="Delete Note"
           >
             <Trash2 className="w-3.5 h-3.5" />
           </button>
+          <button className="sidebar-compact-actions p-1 rounded" aria-label={`Actions for ${note.title}`} title="Note actions" aria-haspopup="menu"
+            onClick={e => { e.stopPropagation(); onNoteMenu(note, e.currentTarget); }}><MoreHorizontal className="w-3.5 h-3.5" /></button>
         </div>
       </div>
     );
@@ -411,20 +419,23 @@ export const Sidebar: React.FC<SidebarProps> = ({
     return (
       <div key={folder.relativePath} data-folder-drop-target={folder.relativePath}>
         <div
+          tabIndex={0}
+          onKeyDown={e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();onSelectFolder?.(folder.relativePath);toggleFolder(folder.relativePath);}}}
           data-folder-path={folder.relativePath}
           className={`group flex items-center justify-between text-xs px-3 py-2 rounded-lg transition-all ${
             draggingPath === folder.relativePath ? 'cursor-grabbing' : 'cursor-default'
           } ${
             isCollapsed
-              ? 'text-slate-500 hover:text-slate-300'
-              : 'text-slate-300 hover:text-slate-100 hover:bg-slate-900/50'
+              ? 'text-[var(--nb-secondary)] hover:text-[var(--nb-secondary)]'
+              : 'text-[var(--nb-secondary)] hover:text-[var(--nb-secondary)] hover:bg-[var(--nb-card)]'
           } ${dragOverFolder === folder.relativePath ? 'ring-1 ring-brand-400 bg-brand-500/10' : ''}`}
-          style={{ paddingLeft: depth * 16 + 8 }}
+          style={{ paddingLeft: `min(${Math.min(depth, 4) * 12 + 8}px, max(8px, calc(100cqi - 160px)))` }}
           onClick={() => {
             if (suppressClickRef.current) {
               suppressClickRef.current = false;
               return;
             }
+            onSelectFolder?.(folder.relativePath);
             toggleFolder(folder.relativePath);
           }}
           onPointerDown={(e) => startPointerDrag(e, { type: 'folder', path: folder.relativePath })}
@@ -437,24 +448,24 @@ export const Sidebar: React.FC<SidebarProps> = ({
               }`}
             />
             {isCollapsed ? (
-              <Folder className="w-4 h-4 shrink-0 text-slate-500" />
+              <Folder className="w-4 h-4 shrink-0 text-[var(--nb-secondary)]" />
             ) : (
-              <FolderOpen className="w-4 h-4 shrink-0 text-brand-400/80" />
+              <FolderOpen className="w-4 h-4 shrink-0 text-[var(--nb-focus)]" />
             )}
             <span className="truncate font-medium">{folder.name}</span>
-            <span className="text-[10px] text-slate-600 shrink-0 tabular-nums">
+            <span className="sidebar-secondary-label text-[10px] text-[var(--nb-secondary)] shrink-0 tabular-nums">
               {total} {total === 1 ? 'note' : 'notes'}
             </span>
           </div>
 
           {/* Folder Hover Actions — delete lives in the folder pill */}
-          <div className="flex items-center gap-1.5 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+          <div className="flex items-center gap-1.5 shrink-0 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
             <button
               onClick={(e) => {
                 e.stopPropagation();
                 onDeleteFolder(folder.relativePath);
               }}
-              className="p-1 hover:bg-slate-800 text-slate-400 hover:text-rose-400 rounded transition-colors"
+              className="p-1 hover:bg-[var(--nb-card)] text-[var(--nb-secondary)] hover:text-rose-400 rounded transition-colors"
               title={`Delete Folder "${folder.name}" (all contents)`}
             >
               <FolderMinus className="w-3.5 h-3.5" />
@@ -477,13 +488,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
   return (
     <div
       data-region="sidebar"
-      className={`sidebar w-full border-r border-slate-900 bg-panel flex flex-col h-full select-none ${
+      className={`sidebar w-full border-r border-[var(--nb-border)] bg-panel flex flex-col h-full select-none ${
         dragOverFolder === '' ? 'ring-1 ring-inset ring-brand-400/60' : ''
       }`}
 
     >
       {/* App Header */}
-      <div className="p-4 border-b border-slate-900 flex items-center justify-between">
+      <div className="sidebar-header p-4 border-b border-[var(--nb-border)] flex items-center justify-between">
         <div className="flex items-center gap-2.5 min-w-0">
           <img
             src={getAppIcon(appIcon, themeMode)}
@@ -491,13 +502,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
             className="w-[38px] h-[38px] shrink-0 object-contain"
           />
           {statusLine && (
-            <p className="text-[10px] text-slate-500 leading-tight line-clamp-2">{statusLine}</p>
+            <p className="sidebar-status-copy text-[10px] text-[var(--nb-secondary)] leading-tight line-clamp-2">{statusLine}</p>
           )}
         </div>
         <div className="flex items-center gap-1 shrink-0">
           <button
             onClick={onCollapse}
-            className="sidebar-toolbar-button text-slate-400 hover:text-slate-200 hover:bg-slate-900 p-1.5 rounded-lg transition-colors border border-transparent hover:border-slate-800"
+            className="sidebar-toolbar-button text-[var(--nb-secondary)] hover:text-[var(--nb-secondary)] hover:bg-[var(--nb-card)] p-1.5 rounded-lg transition-colors border border-transparent hover:border-[var(--nb-border)]"
             title="Collapse sidebar"
           >
             <PanelLeftClose className="w-4 h-4" />
@@ -505,7 +516,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           <JobsButton />
           <button
             onClick={onOpenSettings}
-            className="sidebar-toolbar-button text-slate-400 hover:text-slate-200 hover:bg-slate-900 p-1.5 rounded-lg transition-colors border border-transparent hover:border-slate-800 relative"
+            className="sidebar-toolbar-button text-[var(--nb-secondary)] hover:text-[var(--nb-secondary)] hover:bg-[var(--nb-card)] p-1.5 rounded-lg transition-colors border border-transparent hover:border-[var(--nb-border)] relative"
             title="Open Settings"
           >
             <Settings className="w-4 h-4" />
@@ -514,30 +525,33 @@ export const Sidebar: React.FC<SidebarProps> = ({
       </div>
 
       {/* Note Folder Info & Actions */}
-      <div className="p-3 bg-slate-900/40 border-b border-slate-900 space-y-2">
+      <div className="p-3 bg-[var(--nb-card)] border-b border-[var(--nb-border)] space-y-2">
         <div className="flex items-center justify-between">
-          <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Prism Location</span>
+          <span className="text-[10px] font-semibold text-[var(--nb-secondary)] uppercase tracking-wider"><span className="sidebar-secondary-label">Prism </span>Location</span>
           <button 
             onClick={onSelectVault}
-            className="sidebar-pill-button gloss-text-button text-[10px] font-semibold text-brand-400 hover:text-brand-300 transition-colors flex items-center gap-1"
+            aria-label="Change vault folder"
+            className="sidebar-pill-button gloss-text-button text-[10px] font-semibold text-[var(--nb-focus)] hover:text-[var(--nb-focus)] transition-colors flex items-center gap-1"
           >
-            <FolderOpen className="w-3 h-3" /> Change
+            <FolderOpen className="w-3 h-3" /> <span className="sidebar-secondary-label">Change</span>
           </button>
         </div>
 
         {vaultPath ? (
           <div 
-            className="text-xs bg-slate-950/80 border border-slate-800/60 rounded px-2.5 py-1.5 text-slate-300 font-mono truncate cursor-pointer hover:border-slate-700 hover:text-slate-100 transition-colors flex items-center gap-1.5"
+            className="text-xs bg-[var(--nb-card)] border border-[var(--nb-border)] rounded px-2.5 py-1.5 text-[var(--nb-secondary)] font-mono truncate cursor-pointer hover:border-[var(--nb-border)] hover:text-[var(--nb-secondary)] transition-colors flex items-center gap-1.5"
             onClick={onSelectVault}
+            aria-label="Change vault folder"
             title={vaultPath}
           >
-            <ChevronRight className="w-3 h-3 text-slate-500 shrink-0" />
+            <ChevronRight className="w-3 h-3 text-[var(--nb-secondary)] shrink-0" />
             <span className="truncate">{vaultPath}</span>
           </div>
         ) : (
           <button 
             onClick={onSelectVault}
-            className="sidebar-pill-button gloss-text-button w-full text-left text-xs bg-brand-950/30 hover:bg-brand-950/50 border border-brand-900/50 text-brand-300 rounded px-3 py-2 flex items-center justify-center gap-1.5 transition-all font-medium"
+            aria-label="Change vault folder"
+            className="sidebar-pill-button gloss-text-button w-full text-left text-xs bg-brand-950/30 hover:bg-brand-950/50 border border-brand-900/50 text-[var(--nb-focus)] rounded px-3 py-2 flex items-center justify-center gap-1.5 transition-all font-medium"
           >
             <FolderOpen className="w-4 h-4" /> Connect Note Folder
           </button>
@@ -548,28 +562,28 @@ export const Sidebar: React.FC<SidebarProps> = ({
           <div className="flex gap-2 pt-1">
             <button
               onClick={onRefresh}
-              className="sidebar-toolbar-button flex-1 bg-slate-950 hover:bg-slate-900 text-slate-300 hover:text-slate-100 border border-slate-800/80 rounded p-1.5 flex items-center justify-center transition-colors"
+              className="sidebar-toolbar-button flex-1 bg-[var(--nb-card)] hover:bg-[var(--nb-card)] text-[var(--nb-secondary)] hover:text-[var(--nb-secondary)] border border-[var(--nb-border)] rounded p-1.5 flex items-center justify-center transition-colors"
               title="Sync / Refresh Notes"
             >
               <RefreshCw className="w-4 h-4" />
             </button>
             <button
               onClick={toggleLogs}
-              className="sidebar-toolbar-button flex-1 bg-slate-950 hover:bg-slate-900 text-slate-300 hover:text-brand-400 border border-slate-800/80 rounded p-1.5 flex items-center justify-center transition-colors relative"
+              className="sidebar-toolbar-button flex-1 bg-[var(--nb-card)] hover:bg-[var(--nb-card)] text-[var(--nb-secondary)] hover:text-[var(--nb-focus)] border border-[var(--nb-border)] rounded p-1.5 flex items-center justify-center transition-colors relative"
               title="Open / close ingestion logs"
             >
               <TerminalSquare className="w-4 h-4" />
               {/* Status dot mirrors the logs window's progress-bar color:
                   emerald = completed, rose = error, orange = ingesting, slate = idle */}
               <span
-                className={`absolute top-0.5 right-1.5 w-2 h-2 rounded-full border border-slate-950 ${
+                className={`absolute top-0.5 right-1.5 w-2 h-2 rounded-full border border-[var(--nb-border)] ${
                   progress.status === 'completed'
                     ? 'bg-emerald-400'
                     : progress.status === 'error'
                       ? 'bg-rose-400'
                       : progress.status === 'ingesting'
                         ? 'bg-brand-400 animate-pulse'
-                        : 'bg-slate-500'
+                        : 'bg-[var(--nb-card)]'
                 }`}
               />
             </button>
@@ -590,15 +604,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
       </div>
 
       {/* Note Search & Creation */}
-      <div className="p-3 flex gap-2 border-b border-slate-900">
-        <div className="relative flex-1">
-          <Search className="w-4 h-4 text-slate-500 absolute left-2.5 top-1/2 -translate-y-1/2" />
+      <div className="p-3 flex gap-2 border-b border-[var(--nb-border)]">
+        <div className="relative flex-1 min-w-0">
+          <Search className="w-4 h-4 text-[var(--nb-secondary)] absolute left-2.5 top-1/2 -translate-y-1/2" />
           <input
             type="text"
             placeholder="Search notes..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="w-full bg-slate-900/60 hover:bg-slate-900 border border-border focus:border-slate-700 text-xs rounded-lg pl-8 pr-2.5 py-1.5 text-slate-200 focus:outline-none transition-colors"
+            className="w-full bg-[var(--nb-card)] hover:bg-[var(--nb-card)] border border-border focus:border-[var(--nb-border)] text-xs rounded-lg pl-8 pr-2.5 py-1.5 text-[var(--nb-secondary)] focus:outline-none transition-colors"
           />
         </div>
         {/* Single + button: dropdown between New Note and New Folder */}
@@ -606,7 +620,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           <button
             onClick={() => setCreateMenuOpen((o) => !o)}
             disabled={!vaultPath}
-            className="bg-brand-500/10 hover:bg-brand-500/20 disabled:opacity-30 disabled:pointer-events-none text-brand-400 border border-brand-500/20 px-2 rounded-lg transition-all flex items-center justify-center h-full"
+            className="bg-brand-500/10 hover:bg-brand-500/20 disabled:opacity-30 disabled:pointer-events-none text-[var(--nb-focus)] border border-brand-500/20 px-2 rounded-lg transition-all flex items-center justify-center h-full"
             title="Create"
           >
             <Plus className="w-4.5 h-4.5" />
@@ -618,9 +632,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   setCreateMenuOpen(false);
                   onNewNote();
                 }}
-                className="w-full flex items-center gap-2.5 px-3 py-1.5 text-left text-xs font-medium text-slate-200 hover:bg-brand-500/10 hover:text-brand-300 transition-colors"
+                className="w-full flex items-center gap-2.5 px-3 py-1.5 text-left text-xs font-medium text-[var(--nb-secondary)] hover:bg-brand-500/10 hover:text-[var(--nb-focus)] transition-colors"
               >
-                <FileText className="w-3.5 h-3.5 text-slate-500" />
+                <FileText className="w-3.5 h-3.5 text-[var(--nb-secondary)]" />
                 New Note
               </button>
               <button
@@ -628,9 +642,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   setCreateMenuOpen(false);
                   onNewFolder();
                 }}
-                className="w-full flex items-center gap-2.5 px-3 py-1.5 text-left text-xs font-medium text-slate-200 hover:bg-brand-500/10 hover:text-brand-300 transition-colors"
+                className="w-full flex items-center gap-2.5 px-3 py-1.5 text-left text-xs font-medium text-[var(--nb-secondary)] hover:bg-brand-500/10 hover:text-[var(--nb-focus)] transition-colors"
               >
-                <FolderPlus className="w-3.5 h-3.5 text-slate-500" />
+                <FolderPlus className="w-3.5 h-3.5 text-[var(--nb-secondary)]" />
                 New Folder
               </button>
             </div>
@@ -639,9 +653,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
       </div>
 
       {/* Notes List */}
-      <div className="flex-1 overflow-y-auto p-2 space-y-1">
+      <div className="sidebar-tree flex-1 min-h-0 overflow-y-auto overflow-x-hidden p-2 space-y-1">
         {notes.length === 0 && folders.length === 0 ? (
-          <div className="text-center text-xs text-slate-500 py-8">
+          <div className="text-center text-xs text-[var(--nb-secondary)] py-8">
             {vaultPath 
               ? search 
                 ? 'No notes match your search.' 
@@ -654,7 +668,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             {folders.map((folder) => renderFolder(folder, 0))}
           </>
         ) : filteredNotes.length === 0 ? (
-          <div className="text-center text-xs text-slate-500 py-8">
+          <div className="text-center text-xs text-[var(--nb-secondary)] py-8">
             {searchError || searchResult?.degraded || (!searchResult ? 'Searching…' : 'No notes match your search.')}
           </div>
         ) : (

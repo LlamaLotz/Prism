@@ -378,7 +378,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
       .attr('fill', (d: any) => {
         const isCurrent = activeNote && d.title && activeNote.title.toLowerCase() === d.title.toLowerCase();
         if (isCurrent) return COLOR_ACTIVE;
-        return d.exists !== false ? COLOR_EXISTS : COLOR_MISSING;
+        return d.kind==='folder' ? '#a78bfa' : d.exists !== false ? COLOR_EXISTS : COLOR_MISSING;
       })
       .attr('stroke', (d: any) => {
         const isCurrent = activeNote && d.title && activeNote.title.toLowerCase() === d.title.toLowerCase();
@@ -455,7 +455,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
     // Node Interactivity
     nodeElements.on('click', (_event: any, d: any) => {
       if (d.title || d.id) {
-        selectNoteRef.current(d.title || d.id);
+        selectNoteRef.current(d.id);
       }
     });
 
@@ -486,7 +486,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
         .transition()
         .duration(150)
         .attr('r', Math.max(7, Math.min(20, (d.linksCount || 1) * 1.8 + 6)))
-        .attr('fill', isCurrent ? COLOR_ACTIVE : (d.exists !== false ? COLOR_EXISTS : COLOR_MISSING));
+        .attr('fill', d.kind==='folder' ? '#a78bfa' : isCurrent ? COLOR_ACTIVE : (d.exists !== false ? COLOR_EXISTS : COLOR_MISSING));
 
       d3.select(this).select('text')
         .transition()
@@ -624,7 +624,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
 
       // Update circle fill/stroke
       node.select('circle')
-        .attr('fill', isCurrent ? COLOR_ACTIVE : (d.exists !== false ? COLOR_EXISTS : COLOR_MISSING))
+        .attr('fill', d.kind==='folder' ? '#a78bfa' : isCurrent ? COLOR_ACTIVE : (d.exists !== false ? COLOR_EXISTS : COLOR_MISSING))
         .attr('stroke', isCurrent ? STROKE_COLOR : STROKE_EXISTS);
 
       // Update text color

@@ -1,3 +1,5 @@
+import { waitForAgentApproval,resolveAgentApproval } from '../services/agentApprovals';
+import { study } from '../services/study';
 import { AgentReview } from './study/AgentReview';
 import { runAgentTurn } from '../services/agentRunner';
 import { needsAgent } from '../utils/agentIntent';
@@ -25,6 +27,7 @@ import { AiStatusLine } from './ui/AiStatusLine';
 import type { ChatModelPicker } from './study/SharedChat';
 
 interface AISidebarProps {
+  vaultPath?:string;
   note: NoteFile | null;
   allNotes: NoteFile[];
   config: OmniRouteConfig;
@@ -71,7 +74,7 @@ const AssistantMessage: React.FC<{ content: string }> = ({ content }) => {
         type="button"
         onClick={() => setExpanded((v) => !v)}
         aria-expanded={expanded}
-        className="mt-1.5 inline-flex items-center gap-1 text-[10px] font-semibold text-brand-400 hover:text-brand-300 transition-colors cursor-pointer"
+        className="mt-1.5 inline-flex items-center gap-1 text-[10px] font-semibold text-[var(--nb-focus)] hover:text-[var(--nb-focus)] transition-colors cursor-pointer"
       >
         {expanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
         {expanded ? 'Show less' : `View response (${content.length} chars)`}
@@ -134,13 +137,13 @@ const ChatLibraryPanel: React.FC<{
           onChange={(e) => library.setSearch(e.target.value)}
           placeholder="Search chats…"
           aria-label="Search chats"
-          className="min-w-0 flex-1 bg-slate-900/60 border border-border focus:border-slate-700 text-xs rounded-xl px-3 py-1.5 text-slate-200 focus:outline-none transition-colors"
+          className="min-w-0 flex-1 bg-[var(--nb-card)] border border-border focus:border-[var(--nb-border)] text-xs rounded-xl px-3 py-1.5 text-[var(--nb-secondary)] focus:outline-none transition-colors"
         />
         <button
           type="button"
           onClick={onNew}
           title="Start a new chat"
-          className="shrink-0 inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-1.5 rounded-lg bg-slate-800 border border-slate-700 text-slate-200 hover:bg-slate-700 transition-colors cursor-pointer"
+          className="shrink-0 inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-1.5 rounded-lg bg-[var(--nb-card)] border border-[var(--nb-border)] text-[var(--nb-secondary)] hover:bg-[var(--nb-card)] transition-colors cursor-pointer"
         >
           <Plus className="w-3 h-3" /> New
         </button>
@@ -154,17 +157,17 @@ const ChatLibraryPanel: React.FC<{
               type="button"
               onClick={() => library.setOriginFilter(key === 'all' ? null : key)}
               aria-pressed={active}
-              className={`text-[10px] font-semibold px-2 py-1 rounded-full border transition-colors cursor-pointer ${active ? 'bg-brand-500/10 text-brand-300 border-brand-500/40' : 'text-slate-500 border-slate-800 hover:text-slate-300'}`}
+              className={`text-[10px] font-semibold px-2 py-1 rounded-full border transition-colors cursor-pointer ${active ? 'bg-brand-500/10 text-[var(--nb-focus)] border-brand-500/40' : 'text-[var(--nb-secondary)] border-[var(--nb-border)] hover:text-[var(--nb-secondary)]'}`}
             >
               {label}
             </button>
           );
         })}
-        {library.loading && <span className="text-[10px] text-slate-600 ml-auto">Loading…</span>}
+        {library.loading && <span className="text-[10px] text-[var(--nb-secondary)] ml-auto">Loading…</span>}
       </div>
       <div className="flex flex-col gap-1.5 overflow-y-auto min-h-0">
         {!library.sessions.length && !library.loading && (
-          <p className="text-[11px] text-slate-500 text-center py-6">
+          <p className="text-[11px] text-[var(--nb-secondary)] text-center py-6">
             {library.search ? 'No chats match your search.' : 'No chats yet. New conversations appear here automatically.'}
           </p>
         )}
@@ -173,12 +176,12 @@ const ChatLibraryPanel: React.FC<{
           return (
             <div
               key={s.id}
-              className={`group flex items-center gap-1 rounded-xl border px-2.5 py-2 transition-colors ${isActive ? 'bg-brand-500/10 border-brand-500/40' : 'bg-slate-900/40 border-slate-800/60 hover:border-slate-700'}`}
+              className={`group flex items-center gap-1 rounded-xl border px-2.5 py-2 transition-colors ${isActive ? 'bg-brand-500/10 border-brand-500/40' : 'bg-[var(--nb-card)] border-[var(--nb-border)] hover:border-[var(--nb-border)]'}`}
             >
               <button type="button" onClick={() => onOpen(s)} className="flex-1 min-w-0 text-left cursor-pointer" title={`Open "${s.title}"`}>
-                <div className="text-xs font-medium text-slate-200 truncate">{s.title}</div>
-                <div className="flex items-center gap-1.5 mt-0.5 text-[9px] text-slate-500">
-                  <span className={`font-bold uppercase tracking-wide ${s.origin === 'notebook' ? 'text-violet-300/90' : 'text-brand-300/90'}`}>
+                <div className="text-xs font-medium text-[var(--nb-secondary)] truncate">{s.title}</div>
+                <div className="flex items-center gap-1.5 mt-0.5 text-[9px] text-[var(--nb-secondary)]">
+                  <span className={`font-bold uppercase tracking-wide ${s.origin === 'notebook' ? 'text-violet-300/90' : 'text-[var(--nb-focus)]'}`}>
                     {s.origin === 'notebook' ? 'Notebook' : 'AI assistant'}
                   </span>
                   <span>·</span><span>{s.messageCount} msgs</span>
@@ -191,7 +194,7 @@ const ChatLibraryPanel: React.FC<{
                   onClick={() => onOpenInNotebook(s)}
                   title="Continue in Notebook"
                   aria-label={`Continue "${s.title}" in Notebook`}
-                  className="shrink-0 p-1.5 text-slate-500 hover:text-brand-300 hover:bg-slate-800 rounded-lg transition-colors cursor-pointer"
+                  className="shrink-0 p-1.5 text-[var(--nb-secondary)] hover:text-[var(--nb-focus)] hover:bg-[var(--nb-card)] rounded-lg transition-colors cursor-pointer"
                 >
                   <ExternalLink className="w-3.5 h-3.5" />
                 </button>
@@ -201,7 +204,7 @@ const ChatLibraryPanel: React.FC<{
                 onClick={() => void renameEntry(s)}
                 title="Rename chat"
                 aria-label={`Rename "${s.title}"`}
-                className="shrink-0 p-1.5 text-slate-500 hover:text-slate-200 hover:bg-slate-800 rounded-lg transition-colors cursor-pointer"
+                className="shrink-0 p-1.5 text-[var(--nb-secondary)] hover:text-[var(--nb-secondary)] hover:bg-[var(--nb-card)] rounded-lg transition-colors cursor-pointer"
               >
                 <Pencil className="w-3.5 h-3.5" />
               </button>
@@ -210,7 +213,7 @@ const ChatLibraryPanel: React.FC<{
                 onClick={() => void deleteEntry(s)}
                 title={s.origin === 'notebook' ? 'Remove from library (Notebook session is kept)' : 'Delete chat'}
                 aria-label={`Delete "${s.title}"`}
-                className="shrink-0 p-1.5 text-slate-500 hover:text-rose-400 hover:bg-slate-800 rounded-lg transition-colors cursor-pointer"
+                className="shrink-0 p-1.5 text-[var(--nb-secondary)] hover:text-rose-400 hover:bg-[var(--nb-card)] rounded-lg transition-colors cursor-pointer"
               >
                 <Trash2 className="w-3.5 h-3.5" />
               </button>
@@ -233,7 +236,7 @@ export const AISidebar: React.FC<AISidebarProps> = ({
   openRequest,
   onOpenRequestConsumed,
   onOpenInNotebook,
-  modelPicker,
+  modelPicker:defaultModelPicker, vaultPath,
 }) => {
   const documentImports = useDocumentImports();
   const dialogs = useDialog();
@@ -260,6 +263,12 @@ export const AISidebar: React.FC<AISidebarProps> = ({
   // Active library session backing this chat. Null = ephemeral draft that
   // becomes a persisted session on its first message.
   const [librarySessionId, setLibrarySessionId] = useState<string | null>(null);
+  const [selectedProvider,setSelectedProvider]=useState<string|null>(null);
+  const providerRef=useRef<string|null>(null);providerRef.current=selectedProvider;
+  const modelPicker=defaultModelPicker?{...defaultModelPicker,value:selectedProvider??defaultModelPicker.value,onChange:async(value:string)=>{if(vaultPath&&librarySessionId)await study.request(vaultPath,'setChatProvider',{id:librarySessionId,providerId:value});setSelectedProvider(value);}}:undefined;
+  const [autoApprove,setAutoApprove]=useState(false);const autoApproveRef=useRef(false);autoApproveRef.current=autoApprove;
+  const approvalController=useRef(new AbortController());
+  useEffect(()=>()=>approvalController.current.abort(),[]);
   const librarySessionIdRef = useRef<string | null>(null);
   const persistedCount = useRef(0);
   const persistenceQueue = useRef(Promise.resolve());
@@ -301,6 +310,7 @@ export const AISidebar: React.FC<AISidebarProps> = ({
           if (mounted.current && persistenceTarget.current === target) {
             librarySessionIdRef.current = sid;
             setLibrarySessionId(sid);
+            if(vaultPath){const providerId=providerRef.current??defaultModelPicker?.value??'';await study.request(vaultPath,'setChatProvider',{id:sid,providerId});setSelectedProvider(providerId);}
           }
         }
         for (const m of delta) {
@@ -315,6 +325,8 @@ export const AISidebar: React.FC<AISidebarProps> = ({
   }, [messages]);
 
   const openLibrarySession = useCallback(async (entry: ChatLibrarySession) => {
+    approvalController.current.abort();setAutoApprove(false);
+    if(vaultPath){const detail=await study.request<{providerId?:string}>(vaultPath,'chat',{id:entry.id});setSelectedProvider(detail.providerId??null);}
     const rows = await library.loadMessages(entry.id);
     if (!rows.length && entry.origin === 'notebook') {
       setError(createUserErrorDetails('No synced transcript yet for this Notebook chat. Open it in Notebook (or press “Continue in AI assistant” there) to sync it here.'));
@@ -339,6 +351,7 @@ export const AISidebar: React.FC<AISidebarProps> = ({
   }, [library]);
 
   const startNewChat = useCallback(() => {
+    approvalController.current.abort();setAutoApprove(false);setSelectedProvider(null);
     persistenceTarget.current = {id: null};
     librarySessionIdRef.current = null;
     setLibrarySessionId(null);
@@ -400,7 +413,7 @@ export const AISidebar: React.FC<AISidebarProps> = ({
       return;
     }
 
-    cancelledRequest.current=false;
+    cancelledRequest.current=false;approvalController.current=new AbortController();
     setError(null);
     setMessages((prev) => [...prev, { role: 'user', content: trimmed }]);
     if (text === inputValue) setInputValue('');
@@ -445,7 +458,7 @@ export const AISidebar: React.FC<AISidebarProps> = ({
 
   const handleAgentTurn = async (trimmed: string) => {
     if (isLoading) return true;
-    cancelledRequest.current=false;
+    cancelledRequest.current=false;approvalController.current=new AbortController();
     // Manual fast-path: a raw {"tool":..., "input":...} message dispatches
     // directly to the Tool Bus without involving the model.
     const asTool = (() => { try { return JSON.parse(trimmed); } catch { return null; } }) as any;
@@ -500,7 +513,7 @@ export const AISidebar: React.FC<AISidebarProps> = ({
         check: () => { if (!mounted.current||cancelledRequest.current) throw new Error('Agent cancelled'); },
         onTool:tool=>setPhase(`Running ${tool}`),
         post: (content, progress) => { setPhase(progress ? 'Using tool…' : 'Finalizing…'); setMessages(previous => [...previous, { role: 'assistant', content, ...(progress ? {} : context) }]); },
-        approval: response => { setPhase('Waiting for approval'); return postApprovalMessage(response.tool, response.preview, context); },
+        approval: async response => {if(autoApproveRef.current){const result=await resolveAgentApproval(response.approvalId!,true);onVaultChanged?.();return result;}setPhase('Waiting for approval');const waiting=waitForAgentApproval(response.approvalId!,approvalController.current.signal);void postApprovalMessage(response.tool,response.preview,context);return waiting;},
       });
     } catch (err: any) {
       if(!cancelledRequest.current){settle('failed');showError(err, 'Agent turn failed.');}
@@ -602,8 +615,8 @@ export const AISidebar: React.FC<AISidebarProps> = ({
       {/* Header */}
       <div className="p-4 border-b border-[var(--color-border)] flex flex-wrap gap-3 items-center justify-between bg-panel">
         <div className="flex items-center gap-2">
-          <Sparkles className="w-4.5 h-4.5 text-brand-400 animate-pulse" />
-          <h2 className="text-sm font-bold text-slate-100">AI assistant</h2>
+          <Sparkles className="w-4.5 h-4.5 text-[var(--nb-focus)] animate-pulse" />
+          <h2 className="text-sm font-bold text-[var(--nb-secondary)]">AI assistant</h2>
         </div>
         <div className="flex items-center gap-2">
           <button
@@ -625,7 +638,7 @@ export const AISidebar: React.FC<AISidebarProps> = ({
 
           <button
             onClick={startNewChat}
-            className="gloss-text-button ai-reset-button text-[10px] font-semibold text-slate-500 hover:text-slate-300 transition-colors"
+            className="gloss-text-button ai-reset-button text-[10px] font-semibold text-[var(--nb-secondary)] hover:text-[var(--nb-secondary)] transition-colors"
             title="Start a new chat (history is kept in the Library)"
           >
             <Plus className="w-3 h-3" /> New
@@ -646,15 +659,15 @@ export const AISidebar: React.FC<AISidebarProps> = ({
       {/* Connection warning */}
       {!isConfigured && (
         <div className="ai-integration-warning m-3 p-3 bg-brand-950/20 border border-brand-900/50 rounded-xl flex items-start gap-2.5">
-          <AlertTriangle className="w-4 h-4 text-brand-400 shrink-0 mt-0.5" />
+          <AlertTriangle className="w-4 h-4 text-[var(--nb-focus)] shrink-0 mt-0.5" />
           <div className="space-y-1.5">
-            <h4 className="ai-integration-title text-[11px] font-semibold text-brand-200 leading-none">AI Integration Offline</h4>
-            <p className="ai-integration-copy text-[10px] text-slate-400 leading-relaxed">
+            <h4 className="ai-integration-title text-[11px] font-semibold text-[var(--nb-focus)] leading-none">AI Integration Offline</h4>
+            <p className="ai-integration-copy text-[10px] text-[var(--nb-secondary)] leading-relaxed">
               API keys or endpoints are missing. Paste your credentials to enable chat & note analysis.
             </p>
             <button
               onClick={onOpenSettings}
-              className="ai-integration-action text-[10px] font-bold text-brand-400 hover:text-brand-300 flex items-center gap-0.5"
+              className="ai-integration-action text-[10px] font-bold text-[var(--nb-focus)] hover:text-[var(--nb-focus)] flex items-center gap-0.5"
             >
               Configure Now →
             </button>
@@ -674,12 +687,12 @@ export const AISidebar: React.FC<AISidebarProps> = ({
           />
         ) : messages.length === 0 ? (
           <div className="h-full flex flex-col justify-center text-center space-y-4 py-8 select-none">
-            <div className="w-12 h-12 rounded-full bg-[var(--color-surface)] border border-[var(--color-border)] flex items-center justify-center mx-auto text-brand-400/80">
+            <div className="w-12 h-12 rounded-full bg-[var(--color-surface)] border border-[var(--color-border)] flex items-center justify-center mx-auto text-[var(--nb-focus)]">
               <Sparkles className="w-5 h-5" />
             </div>
             <div className="space-y-1 max-w-xs mx-auto">
-              <h3 className="text-xs font-semibold text-slate-300">Ask Prism AI assistant</h3>
-              <p className="text-[10px] text-slate-500 leading-relaxed">
+              <h3 className="text-xs font-semibold text-[var(--nb-secondary)]">Ask Prism AI assistant</h3>
+              <p className="text-[10px] text-[var(--nb-secondary)] leading-relaxed">
                 Connect ideas, find links, generate summaries, or chat recursively with your note's context using AI routing.
               </p>
             </div>
@@ -687,38 +700,38 @@ export const AISidebar: React.FC<AISidebarProps> = ({
             {/* Quick Actions drawer if a note is selected */}
             {note && isConfigured && (
               <div className="pt-4 max-w-xs mx-auto space-y-2">
-                <span className="text-[9px] font-bold text-slate-500 tracking-wider uppercase block text-left">QUICK NOTE ACTIONS</span>
+                <span className="text-[9px] font-bold text-[var(--nb-secondary)] tracking-wider uppercase block text-left">QUICK NOTE ACTIONS</span>
                 
                 <button
                   onClick={() => runQuickAction('summarize')}
-                  className="w-full bg-slate-900/60 hover:bg-slate-900 border border-border text-[11px] text-slate-300 rounded-lg p-2 flex items-center gap-2 transition-all text-left"
+                  className="w-full bg-[var(--nb-card)] hover:bg-[var(--nb-card)] border border-border text-[11px] text-[var(--nb-secondary)] rounded-lg p-2 flex items-center gap-2 transition-all text-left"
                 >
                   <BookOpen className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
                   <div>
-                    <div className="font-semibold text-slate-200">Summarize Note</div>
-                    <div className="text-[9px] text-slate-500">Create beautiful summary blocks</div>
+                    <div className="font-semibold text-[var(--nb-secondary)]">Summarize Note</div>
+                    <div className="text-[9px] text-[var(--nb-secondary)]">Create beautiful summary blocks</div>
                   </div>
                 </button>
 
                 <button
                   onClick={() => runQuickAction('connect')}
-                  className="w-full bg-slate-900/60 hover:bg-slate-900 border border-border text-[11px] text-slate-300 rounded-lg p-2 flex items-center gap-2 transition-all text-left"
+                  className="w-full bg-[var(--nb-card)] hover:bg-[var(--nb-card)] border border-border text-[11px] text-[var(--nb-secondary)] rounded-lg p-2 flex items-center gap-2 transition-all text-left"
                 >
-                  <Link2 className="w-3.5 h-3.5 text-brand-400 shrink-0" />
+                  <Link2 className="w-3.5 h-3.5 text-[var(--nb-focus)] shrink-0" />
                   <div>
-                    <div className="font-semibold text-slate-200">Suggest Connections</div>
-                    <div className="text-[9px] text-slate-500">Find files to link via [[WikiLinks]]</div>
+                    <div className="font-semibold text-[var(--nb-secondary)]">Suggest Connections</div>
+                    <div className="text-[9px] text-[var(--nb-secondary)]">Find files to link via [[WikiLinks]]</div>
                   </div>
                 </button>
 
                 <button
                   onClick={() => runQuickAction('metadata')}
-                  className="w-full bg-slate-900/60 hover:bg-slate-900 border border-border text-[11px] text-slate-300 rounded-lg p-2 flex items-center gap-2 transition-all text-left"
+                  className="w-full bg-[var(--nb-card)] hover:bg-[var(--nb-card)] border border-border text-[11px] text-[var(--nb-secondary)] rounded-lg p-2 flex items-center gap-2 transition-all text-left"
                 >
-                  <Hash className="w-3.5 h-3.5 text-brand-400 shrink-0" />
+                  <Hash className="w-3.5 h-3.5 text-[var(--nb-focus)] shrink-0" />
                   <div>
-                    <div className="font-semibold text-slate-200">Generate Frontmatter</div>
-                    <div className="text-[9px] text-slate-500">Paste tags & YAML headers at top</div>
+                    <div className="font-semibold text-[var(--nb-secondary)]">Generate Frontmatter</div>
+                    <div className="text-[9px] text-[var(--nb-secondary)]">Paste tags & YAML headers at top</div>
                   </div>
                 </button>
               </div>
@@ -732,14 +745,14 @@ export const AISidebar: React.FC<AISidebarProps> = ({
                 key={index} 
                 className={`flex flex-col max-w-[85%] ${isUser ? 'ml-auto items-end' : 'mr-auto items-start'}`}
               >
-                <span className="text-[9px] font-bold text-slate-500 mb-0.5">
+                <span className="text-[9px] font-bold text-[var(--nb-secondary)] mb-0.5">
                   {isUser ? 'YOU' : 'PRISM AI'}
                 </span>
 <div 
                    className={`text-xs p-3 rounded-2xl leading-relaxed ${
                      isUser 
                        ? 'bg-brand-500 text-[#0F172A] font-semibold rounded-tr-none' 
-                       : 'bg-surface border border-border text-slate-200 rounded-tl-none font-sans prose prose-invert prose-sm max-w-none'
+                       : 'bg-surface border border-border text-[var(--nb-secondary)] rounded-tl-none font-sans prose prose-invert prose-sm max-w-none'
                    }`}
                  >
                     {!isUser && <AssistantMessage content={msg.content} />}
@@ -755,7 +768,7 @@ export const AISidebar: React.FC<AISidebarProps> = ({
                        const label = c.blockId ? `${c.title}#${c.blockId.slice(0, 6)}` : c.title || c.path.split('/').pop() || c.path;
                        const hover = c.anchor ? `${c.path}#^${c.anchor}` : c.blockId ? `${c.path}#${c.blockId}` : c.path;
                        return (
-                         <span key={ci} className="inline-flex max-w-full gap-1"><button type="button" title={hover} onClick={() => void onOpenSource?.(c).catch(e => showError(e, 'Source is no longer available.'))} className="inline-flex items-center gap-1 text-[10px] font-medium px-2 py-0.5 rounded-full bg-slate-800 border border-slate-700 text-slate-300 hover:bg-slate-700 cursor-pointer transition-colors">
+                         <span key={ci} className="inline-flex max-w-full gap-1"><button type="button" title={hover} onClick={() => void onOpenSource?.(c).catch(e => showError(e, 'Source is no longer available.'))} className="inline-flex items-center gap-1 text-[10px] font-medium px-2 py-0.5 rounded-full bg-[var(--nb-card)] border border-[var(--nb-border)] text-[var(--nb-secondary)] hover:bg-[var(--nb-card)] cursor-pointer transition-colors">
                            <FileText className="w-3 h-3 shrink-0" />
                            <span className="truncate max-w-[18ch]">{label}</span>
                          </button>{c.blockId && <button className="runtime-button" aria-label={`Source details: ${c.title}`} onClick={() => documentImports.source(c.blockId!)}>Source</button>}</span>
@@ -771,8 +784,8 @@ export const AISidebar: React.FC<AISidebarProps> = ({
         {/* Thinking / processing status — high-level phases only */}
         {activity && (
           <div className="flex flex-col items-start max-w-[85%] mr-auto">
-            <span className="text-[9px] font-bold text-slate-500 mb-0.5">PRISM AI</span>
-            <div className="bg-slate-900 border border-border p-3.5 rounded-2xl rounded-tl-none flex items-center gap-2.5">
+            <span className="text-[9px] font-bold text-[var(--nb-secondary)] mb-0.5">PRISM AI</span>
+            <div className="bg-[var(--nb-card)] border border-border p-3.5 rounded-2xl rounded-tl-none flex items-center gap-2.5">
               <AiStatusLine phase={phase} activity={activity} />
             </div>
           </div>
@@ -799,7 +812,7 @@ export const AISidebar: React.FC<AISidebarProps> = ({
             <button
               type="button"
               onClick={() => setStickToBottom(true)}
-              className="inline-flex items-center gap-1 text-[10px] font-semibold px-2.5 py-1 rounded-full bg-slate-800 border border-slate-700 text-slate-200 hover:bg-slate-700 transition-colors cursor-pointer"
+              className="inline-flex items-center gap-1 text-[10px] font-semibold px-2.5 py-1 rounded-full bg-[var(--nb-card)] border border-[var(--nb-border)] text-[var(--nb-secondary)] hover:bg-[var(--nb-card)] transition-colors cursor-pointer"
             >
               <ChevronDown className="w-3 h-3" /> Latest
             </button>
@@ -809,7 +822,7 @@ export const AISidebar: React.FC<AISidebarProps> = ({
 
       {/* Input section */}
       {agentMode && <AgentReview onVaultChanged={onVaultChanged} onMessage={async content => { setMessages(previous=>[...previous,{role:'assistant',content}]); }} />}
-      {view === 'chat' && <PromptBar value={inputValue} onChange={setInputValue} onSend={handleSubmit} running={isLoading||isSearching} onStop={()=>{cancelledRequest.current=true;settle('cancelled');}} model={modelPicker} agent={agentMode} onAgent={setAgentMode} context={note?'Active note context':'Vault context'} placeholder={searchMode?'Search the web...':note?'Chat with active note context...':'Ask Prism AI anything...'} extra={<button type="button" aria-pressed={searchMode} onClick={()=>setSearchMode(m=>!m)}><Globe size={14}/> Web</button>}/> }
+      {view === 'chat' && <PromptBar value={inputValue} onChange={setInputValue} onSend={handleSubmit} running={isLoading||isSearching} onStop={()=>{cancelledRequest.current=true;approvalController.current.abort();settle('cancelled');}} model={modelPicker} agent={agentMode} onAgent={setAgentMode} context={note?'Active note context':'Vault context'} placeholder={searchMode?'Search the web...':note?'Chat with active note context...':'Ask Prism AI anything...'} extra={<>{agentMode&&<button type="button" aria-pressed={autoApprove} onClick={()=>setAutoApprove(v=>!v)}>Approve for me {autoApprove?'ON':'OFF'}</button>}<button type="button" aria-pressed={searchMode} onClick={()=>setSearchMode(m=>!m)}><Globe size={14}/> Web</button></>}/> }
     </div>
   );
 };

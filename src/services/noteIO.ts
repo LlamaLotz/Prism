@@ -4,6 +4,7 @@ export const LARGE_NOTE_BYTES = 200_000;
 const STREAM_SAVE_BYTES = 1024 * 1024;
 const revisions = new Map<string, string>();
 const sizes = new Map<string, number>();
+const moving=new Map<string,Promise<string>>();
 const saves = new Map<string, Promise<void>>();
 interface NoteChunk { text: string; revision: string; nextOffset: number | null; bytes: number }
 export async function readNote(path: string): Promise<string> {
@@ -23,6 +24,7 @@ export async function readNote(path: string): Promise<string> {
   return chunks.join('');
 }
 export async function writeNote(path: string, content: string): Promise<void> {
+  const relocation=moving.get(path);if(relocation)path=await relocation;
   // Serialize saves of one file so each submission uses the prior acknowledged revision.
   const previous = saves.get(path) ?? Promise.resolve();
   const saving = previous.catch(() => {}).then(async () => {
@@ -53,4 +55,12 @@ export async function writeNote(path: string, content: string): Promise<void> {
   });
   saves.set(path, saving);
   try { await saving; } finally { if (saves.get(path) === saving) saves.delete(path); }
+}
+
+/** Serialize file relocation after queued saves; new saves wait for the destination. */
+export async function moveWithPendingSaves(oldPath:string,newPath:string,move:()=>Promise<void>){
+ const previous=saves.get(oldPath)??Promise.resolve();
+ const relocation=previous.then(async()=>{await move();if(revisions.has(oldPath))revisions.set(newPath,revisions.get(oldPath)!);if(sizes.has(oldPath))sizes.set(newPath,sizes.get(oldPath)!);return newPath;});
+ moving.set(oldPath,relocation.catch(()=>oldPath));
+ try{await relocation;}finally{moving.delete(oldPath);}
 }

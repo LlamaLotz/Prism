@@ -75,6 +75,8 @@ impl Drop for ExtractionLogs {
 #[derive(Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PrepareRequest {
+    #[serde(default)]
+    pub folder: String,
     pub kind: String,
     pub value: String,
     pub method: String,
@@ -83,6 +85,8 @@ pub struct PrepareRequest {
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ImportOptions {
+    #[serde(default)]
+    pub require_existing_folder: bool,
     pub name: String,
     pub folder: String,
     pub split_level: Option<u8>,
@@ -262,6 +266,7 @@ fn destination(s: &Scope, folder: &str, name: &str) -> Result<String, String> {
     Ok(p.to_string_lossy().into())
 }
 fn regenerate(c: &Connection, s: &Scope, p: &mut Plan, doc: &PrismDocument) -> Result<(), String> {
+    if p.options.require_existing_folder && !s.root.join(&p.options.folder).is_dir(){return Err(conflict("Destination folder is unavailable; choose another folder"));}
     let outputs = model::outputs_selected(
         doc,
         p.options.split_level,
@@ -399,6 +404,8 @@ pub async fn prepare_document_import(
 ) -> Result<ImportSummary, String> {
     let s = super::current(&app)?;
     let c = crate::db::init_db(&app)?;
+    destination(&s,&request.folder,"import.md")?;
+    if !s.root.join(&request.folder).is_dir(){return Err(conflict("Destination folder is unavailable; choose another folder"));}
     let locator = if request.kind == "file" {
         request
             .value
@@ -656,8 +663,9 @@ pub async fn prepare_document_import(
         generation: s.generation.clone(),
         token: String::new(),
         options: ImportOptions {
+            require_existing_folder: true,
             name: doc.title.clone(),
-            folder: String::new(),
+            folder: request.folder.clone(),
             split_level: None,
             keep_source: false,
             separate_copy: false,
@@ -967,6 +975,7 @@ fn commit_document_import_inner(
     let s = super::current(&app)?;
     let c = crate::db::init_db(&app)?;
     let (state, mut p) = load_plan(&c, &s, &id)?;
+    if p.options.require_existing_folder && !s.root.join(&p.options.folder).is_dir(){return Err(conflict("Destination folder is unavailable; choose another folder"));}
     if state != "review" || p.token != token || p.generation != s.generation {
         return Err(conflict("Import approval is stale"));
     }
@@ -1446,6 +1455,7 @@ mod tests {
             generation: s.generation.clone(),
             token: String::new(),
             options: ImportOptions {
+            require_existing_folder: false,
                 name: "Imported".into(),
                 folder: "Imported folder".into(),
                 split_level: Some(2),
@@ -1466,6 +1476,48 @@ mod tests {
         let (id, b) = begin_batch(c, s, p).unwrap();
         apply_batch(c, s, &id, &b, || Ok(())).unwrap();
         id
+    }
+    #[test]
+    fn imports_validate_an_existing_destination_folder_on_every_refresh() {
+        let (_d, db, s) = fixture();
+        let c = &db.conn;
+        let doc = document(&s, "Intro\n\n## Alpha\n\nFirst");
+        store_document(c, &s, &doc, "runtime").unwrap();
+        let mut p = Plan {
+            id: uuid::Uuid::new_v4().to_string(),
+            revision: doc.revision.clone(),
+            document_id: doc.id.clone(),
+            generation: s.generation.clone(),
+            token: String::new(),
+            options: ImportOptions {
+                require_existing_folder: true,
+                name: "Imported".into(),
+                folder: "Chosen".into(),
+                split_level: Some(2),
+                keep_source: false,
+                separate_copy: false,
+                excluded_outputs: vec![],
+            },
+            outputs: vec![],
+            retained: vec![],
+            source_copy: None,
+        };
+        // A selected folder that is not (or no longer) available fails the
+        // preview instead of silently importing into the vault root.
+        let error = regenerate(c, &s, &mut p, &doc).unwrap_err();
+        assert!(error.contains("Destination folder is unavailable"));
+        std::fs::create_dir_all(s.root.join("Chosen")).unwrap();
+        regenerate(c, &s, &mut p, &doc).unwrap();
+        assert!(p
+            .outputs
+            .iter()
+            .all(|o| Path::new(&o.path).starts_with(s.root.join("Chosen"))));
+        std::fs::remove_dir_all(s.root.join("Chosen")).unwrap();
+        assert!(regenerate(c, &s, &mut p, &doc).is_err());
+        // Plans that never selected a folder keep creating their historical destination.
+        p.options.require_existing_folder = false;
+        p.options.folder = "Imported folder".into();
+        regenerate(c, &s, &mut p, &doc).unwrap();
     }
     #[test]
     fn reviewed_split_identity_provenance_restart_and_batch_undo() {

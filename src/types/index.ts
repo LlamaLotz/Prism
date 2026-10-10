@@ -23,6 +23,8 @@ export interface WikiLink {
 }
 
 export interface GraphNode {
+  kind?: 'note'|'folder';
+  folderPath?:string;
   id: string; // The note title
   title: string;
   exists: boolean;
@@ -47,6 +49,7 @@ export interface GraphPayload {
 }
 
 export interface GraphLink {
+  kind?: 'link'|'contains';
   source: string;
   target: string;
 }

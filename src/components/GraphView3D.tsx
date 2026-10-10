@@ -308,7 +308,7 @@ export const GraphView3D: React.FC<GraphView3DProps> = ({
 
   const colorForNode = (node: any) => {
     if (activeTitleRef.current && node.title?.toLowerCase() === activeTitleRef.current) return configuredNodeColor;
-    return node.exists ? configuredExistsColor : COLOR_MISSING;
+    return node.kind==='folder' ? '#a78bfa' : node.exists ? configuredExistsColor : COLOR_MISSING;
   };
 
   // ── Canvas-texture label sprite ──────────────────────────────────────
@@ -395,7 +395,7 @@ export const GraphView3D: React.FC<GraphView3DProps> = ({
     const r = nodeRadius(node.linksCount ?? 0);
     mesh.scale.set(r, r, r); mesh.userData.baseScale = r;
     mesh.userData.title = node.title ?? node.id;
-    mesh.userData.exists = !!node.exists;
+    mesh.userData.exists = !!node.exists;mesh.userData.kind=node.kind;
     nodeMeshesRef.current.set(node.id, mesh);
     const label = makeLabelSprite(node.title ?? node.id);
     label.position.set(0, r + LABEL_HEIGHT / 2 + 1.5, 0);
@@ -408,7 +408,7 @@ export const GraphView3D: React.FC<GraphView3DProps> = ({
   const applyNodeColor = (mesh: THREE.Mesh) => {
     const title = mesh.userData.title as string | undefined;
     const isActive = activeTitleRef.current && title && title.toLowerCase() === activeTitleRef.current;
-    const col = isActive ? configuredNodeColor : mesh.userData.exists ? configuredExistsColor : COLOR_MISSING;
+    const col = mesh.userData.kind==='folder' ? '#a78bfa' : isActive ? configuredNodeColor : mesh.userData.exists ? configuredExistsColor : COLOR_MISSING;
     mesh.material = materialFor(col, !!isActive);
   };
 
@@ -457,7 +457,7 @@ export const GraphView3D: React.FC<GraphView3DProps> = ({
   );
   const particleColor = useCallback(() => hexToRgba(configuredNodeColor, 0.8), [configuredNodeColor]);
 
-  const handleNodeClick = useCallback((node: any) => onSelectNoteByTitleRef.current(node.title ?? node.id), []);
+  const handleNodeClick = useCallback((node: any) => onSelectNoteByTitleRef.current(node.id), []);
   const handleEngineStop = useCallback(() => {
     if (!pendingFrameRef.current) return;
     pendingFrameRef.current = false;

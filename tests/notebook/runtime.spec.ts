@@ -114,6 +114,6 @@ test('feature routes preserve saved providers and explain execution boundaries',
  expect(saved.models.providers[0].id).toBe('saved');
  expect(saved.models.providers[0].config.credentialRef).toBe('keychain-fixture');
  await expect(page.getByText('built-in local',{exact:false})).toBeVisible();
- await expect(page.getByText('configured in Notebook settings',{exact:false})).toBeVisible();
+ await expect(page.getByText('uses the configured generation provider',{exact:false})).toBeVisible();
  await expect(page.getByText('A localhost provider may forward to cloud',{exact:false})).toBeVisible();
 });

@@ -1,3 +1,4 @@
+import { API_PROVIDERS } from '../services/apiProviders';
 import type { Dispatch, SetStateAction } from 'react';
 import type { AppSettings } from '../types';
 import './runtime.css';
@@ -33,12 +34,22 @@ export function AIRoutingSettings({ draft, setDraft }: {
         <option value="cloud_allowed">Cloud Allowed</option>
       </select>
     </label>
+    <h3>Saved providers and models</h3>
+    <p>Save several connections, then choose a model separately in each conversation.</p>
+    <button type="button" className="runtime-button" onClick={saveProvider}>Add current provider and model</button>
+    {(draft.models?.providers??[]).map(profile=><fieldset key={profile.id} className="runtime-local"><legend>{profile.name}</legend>
+      <label>Profile name<input value={profile.name} onChange={e=>update(current=>({providers:current.providers?.map(p=>p.id===profile.id?{...p,name:e.target.value}:p)}))}/></label>
+      <label>Provider<select value={profile.config.provider} onChange={e=>{const selected=API_PROVIDERS.find(p=>p.id===e.target.value);update(current=>({providers:current.providers?.map(p=>p.id===profile.id?{...p,config:{...p.config,provider:e.target.value,baseUrl:selected?.baseUrl??'',apiKey:'',credentialRef:undefined}}:p)}));}}>{API_PROVIDERS.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select></label>
+      {(['model','baseUrl','apiKey'] as const).map(field=><label key={field}>{field==='model'?'Model':field==='baseUrl'?'API address':'API key'}<input type={field==='apiKey'?'password':'text'} autoComplete="off" value={profile.config[field]} placeholder={field==='apiKey'&&profile.config.credentialRef?'Saved securely — enter to replace':undefined} onChange={e=>update(current=>({providers:current.providers?.map(p=>p.id===profile.id?{...p,config:{...p.config,[field]:e.target.value}}:p)}))}/></label>)}
+      <button type="button" className="runtime-button" onClick={()=>update(current=>({routes:{...current.routes,CHAT:profile.id}}))} disabled={draft.models?.routes.CHAT===profile.id}>{draft.models?.routes.CHAT===profile.id?'Default for new chats':'Use for new chats'}</button>
+      <button type="button" className="runtime-button" onClick={()=>update(current=>({providers:current.providers?.filter(p=>p.id!==profile.id),routes:Object.fromEntries(Object.entries(current.routes).filter(([,id])=>id!==profile.id))}))}>Remove profile</button>
+    </fieldset>)}
     <details>
       <summary className="cursor-pointer">Advanced AI settings{Object.values(draft.models?.routes ?? {}).some(Boolean) && <span className="ml-2 text-xs">Custom routing active</span>}</summary>
       <label>Unload idle embedding model after (seconds)
         <input type="number" min={30} value={draft.models?.idleSeconds ?? 300} onChange={e => update(() => ({ idleSeconds: Math.max(30, Number(e.target.value) || 300) }))} />
       </label>
-      <button type="button" className="runtime-button" disabled={!draft.omniRoute.model || !draft.omniRoute.baseUrl} onClick={saveProvider}>Save current provider for feature routing</button>
+
       <div className="runtime-routes">
         <h3>Provider by feature</h3>
         <p>Each feature uses its selected saved provider, or inherits the current AI assistant provider.</p>
@@ -60,8 +71,8 @@ export function AIRoutingSettings({ draft, setDraft }: {
     <div className="runtime-local">
       <p><strong>Embeddings:</strong> built-in local</p>
       <p><strong>Standard formatting:</strong> deterministic local; optional AI formatting uses its selected provider</p>
-      <p><strong>Notebook generation and speech:</strong> configured in Notebook settings</p>
+      <p><strong>Notebook generation:</strong> uses the configured generation provider</p>
     </div>
-    <p className="mt-3">Privacy applies to Prism AI and the managed Notebook gateway. A localhost provider may forward to cloud; selecting it does not verify local execution or bypass approval.</p>
+    <p className="mt-3">Privacy applies to Prism AI. A localhost provider may forward to cloud; selecting it does not verify local execution or bypass approval.</p>
   </section>;
 }

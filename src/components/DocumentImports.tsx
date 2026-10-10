@@ -1,3 +1,4 @@
+import { FolderPicker } from './FolderPicker';
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 import { listen } from '@tauri-apps/api/event';
 import { documents, type ImportOptions, type ImportSummary, type ImportPreview, type PreviewOutput, type DocumentSource } from '../services/documents';
@@ -7,7 +8,7 @@ import './runtime.css';
 const Context = createContext({ imports: [] as ImportSummary[], review: (_id: string) => {}, source: (_blockId: string) => {}, note: (_path: string) => {} });
 export const useDocumentImports = () => useContext(Context);
 /** Persists independently of the ingestion panel and collapsed navigation. */
-export function DocumentImports({ children, onPublished, request, vaultPath }: { children: ReactNode; vaultPath?: string; onPublished: () => void; request?: {id:string;ts:number}|null }) {
+export function DocumentImports({ children, onPublished, request, vaultPath, folders=[] }: { children: ReactNode; folders?:string[]; vaultPath?: string; onPublished: () => void; request?: {id:string;ts:number}|null }) {
   const [imports, setImports] = useState<ImportSummary[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
@@ -22,7 +23,7 @@ export function DocumentImports({ children, onPublished, request, vaultPath }: {
   }, []);
   return <Context.Provider value={{ imports, review: setSelected, source: setBlock, note: setNote }}>
     {children}
-    {selected && <ImportReview vaultPath={vaultPath} key={selected} id={selected} state={imports.find(i => i.id === selected)?.state ?? 'review'} close={() => setSelected(null)} published={() => { setImports(rows => rows.filter(i => i.id !== selected)); onPublished(); }} />}
+    {selected && <ImportReview folders={folders} vaultPath={vaultPath} key={selected} id={selected} state={imports.find(i => i.id === selected)?.state ?? 'review'} close={() => setSelected(null)} published={() => { setImports(rows => rows.filter(i => i.id !== selected)); onPublished(); }} />}
     {note && <NoteSources key={note} path={note} close={() => setNote(null)} choose={id => { setNote(null); setBlock(id); }} />}
     {block && <SourceDetails key={block} blockId={block} close={() => setBlock(null)} review={id => { setBlock(null); setSelected(id); }} />}
   </Context.Provider>;
@@ -55,7 +56,7 @@ function OutputPreview({ output, id, index }: { output: PreviewOutput; id: strin
     {error && <p role="alert" className="runtime-error">{error}</p>}
   </details>;
 }
-export function ImportReview({ id, state, close, published, vaultPath }: { id: string; vaultPath?: string; state: string; close: () => void; published: () => void }) {
+export function ImportReview({folders=[], id, state, close, published, vaultPath }: { folders?:string[]; id: string; vaultPath?: string; state: string; close: () => void; published: () => void }) {
   const [preview, setPreview] = useState<ImportPreview | null>(null);
   const [options, setOptions] = useState<ImportOptions | null>(null);
   const [error, setError] = useState(''), [busy, setBusy] = useState(false), [dirty, setDirty] = useState(false), [stale, setStale] = useState(false);
@@ -75,7 +76,7 @@ export function ImportReview({ id, state, close, published, vaultPath }: { id: s
     {preview && options && !operation && <>
       <fieldset className="runtime-settings document-options" disabled={busy || state !== 'review'}><legend>Output settings</legend>
         <label>Note name<input value={options.name} onChange={e => change({ name: e.target.value })} /></label>
-        <label>Vault folder<input placeholder="Vault root" value={options.folder} onChange={e => change({ folder: e.target.value })} /></label>
+        <FolderPicker folders={folders} value={options.folder} onChange={folder=>change({folder,requireExistingFolder:true})}/>
         <label>Split document<select value={options.splitLevel ?? ''} onChange={e => change({ splitLevel: e.target.value ? Number(e.target.value) : null })}><option value="">One note per source</option>{[2, 1, 3, 4, 5, 6].map(level => <option value={level} key={level}>Heading {level} (H{level})</option>)}</select></label>
         <label className="document-checkbox"><input type="checkbox" checked={options.keepSource} onChange={e => change({ keepSource: e.target.checked })} />Keep source in vault (immutable local copy)</label>
         <label className="document-checkbox"><input type="checkbox" checked={options.separateCopy} onChange={e => change({ separateCopy: e.target.checked })} />Import a separate copy with new filenames</label>

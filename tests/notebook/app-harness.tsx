@@ -25,6 +25,15 @@ let collections = [
   { id: 'c2', title: 'அறத்துப்பால் · A deliberately long notebook title for multilingual study', sourceIds: ['s1'], revision: 1 },
 ];
 if (query.has('empty')) collections = [];
+// Vault filesystem fixtures for the sidebar's note/folder actions. Two notes
+// share a title across folders so move-collision handling is exercisable.
+let vaultFiles = [
+  { path: '/vault/Research/Field notes.md', relativePath: 'Research/Field notes.md', name: 'Field notes.md', title: 'Field notes', updatedAt: 1 },
+  { path: '/vault/Drafts/Field notes.md', relativePath: 'Drafts/Field notes.md', name: 'Field notes.md', title: 'Field notes', updatedAt: 1 },
+  { path: '/vault/Loose.md', relativePath: 'Loose.md', name: 'Loose.md', title: 'Loose', updatedAt: 1 },
+];
+let vaultFolders = ['Research', 'Drafts'];
+if (query.has('empty')) { vaultFiles = []; vaultFolders = []; }
 const artifacts = query.has('empty') ? [] : [{
   id: 'a1', collectionId: 'c1', kind: 'flashcards' as const, title: 'Thirukkural structure', version: 1,
   parentId: null, snapshotId: 'snap', created: 1700000000,
@@ -73,8 +82,22 @@ Object.defineProperty(window, '__TAURI_INTERNALS__', {
         case 'get_runtime_config': return structuredClone(settings);
         case 'save_runtime_config': return { settings: structuredClone(args.config), runtimeWarning: null };
         case 'purge_expired_history': return null;
-        case 'index_vault': return { files: [], folders: [] };
-        case 'get_graph': return { nodes: [], links: [] };
+        case 'index_vault': return { files: structuredClone(vaultFiles), folders: [...vaultFolders] };
+        case 'create_file': return `/vault/${args.relativePath}`;
+        case 'read_note_chunk': {
+          const note = vaultFiles.find(file => file.path === args.path);
+          const text = `# ${note?.title ?? 'Note'}\n\nA fixture note for workspace layout and resizing.\n`;
+          return { text, revision: 'fixture-1', nextOffset: null, bytes: new TextEncoder().encode(text).length };
+        }
+        case 'get_vault_dictionary':
+        case 'get_denied_links':
+        case 'get_backlinks_for_note':
+        case 'get_incoming_backlinks':
+        case 'scan_unlinked_mentions':
+        case 'find_semantic_related_notes':
+        case 'find_block_related_notes': return [];
+        case 'rename_file': return null;
+        case 'get_graph': return { nodes: [{ id: '/vault/A/Note.md', title: 'Note', exists: true }, { id: '/vault/Loose.md', title: 'Loose', exists: true }], links: [{ source: '/vault/A/Note.md', target: '/vault/Loose.md' }] };
         case 'get_ingestion_engine_status': return { engine: 'rust', rustAvailable: true };
         case 'model_service_status': return { state: 'ready', command: '', message: 'Ready' };
         case 'agent_list_tools': return [{ name: 'read_note', description: 'Read a note', requiresApproval: false }];
@@ -86,6 +109,8 @@ Object.defineProperty(window, '__TAURI_INTERNALS__', {
             case 'sources': return sources.filter(s => collections.find(c => c.id === payload.collectionId)?.sourceIds.includes(s.id));
             case 'notes': return { items: sources, nextOffset: null };
             case 'chat': return { session: null, collectionId: payload.collectionId ?? null, managed: true, messages: [] };
+            case 'newChat': return { id: crypto.randomUUID(), title: 'New conversation', origin: 'copilot', collectionId: payload.collectionId ?? null, messageCount: 0 };
+            case 'setChatProvider': return true;
             default: return null;
           }
         }

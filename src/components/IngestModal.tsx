@@ -1,16 +1,19 @@
-import React, { useState } from 'react';
+import { FolderPicker } from './FolderPicker';
+import React, { useState, useEffect } from 'react';
 import { X, File, Play, HelpCircle, AlertCircle } from 'lucide-react';
 import { tauriAPI } from '../types';
 import { useDialog } from './DialogProvider';
 
 interface IngestModalProps {
+  folders?: string[];
+  initialFolder?: string;
   isOpen: boolean;
   onClose: () => void;
-  onIngest: (type: 'url' | 'file', value: string, method?: 'yt-dlp' | 'whisper' | 'A' | 'O' | 'N') => void;
+  onIngest: (type: 'url' | 'file', value: string, method?: 'yt-dlp' | 'whisper' | 'A' | 'O' | 'N', folder?: string) => void;
 }
 
 export const IngestModal: React.FC<IngestModalProps> = ({
-  isOpen,
+  folders = [], initialFolder = '', isOpen,
   onClose,
   onIngest,
 }) => {
@@ -21,6 +24,8 @@ export const IngestModal: React.FC<IngestModalProps> = ({
   const [ocrMode, setOcrMode] = useState<'A' | 'O' | 'N'>('A');
   const { alert } = useDialog();
 
+  const [folder,setFolder]=useState(initialFolder);
+  useEffect(()=>{if(isOpen)setFolder(initialFolder);},[isOpen,initialFolder]);
   if (!isOpen) return null;
 
   const handleBrowseFile = async () => {
@@ -37,14 +42,14 @@ export const IngestModal: React.FC<IngestModalProps> = ({
         await alert('Please enter a valid URL.', { title: 'Missing URL' });
         return;
       }
-      onIngest('url', trimmed, ytMethod);
+      onIngest('url', trimmed, ytMethod, folder);
     } else {
       const trimmed = filePathValue.trim();
       if (!trimmed) {
         await alert('Please select a file to ingest.', { title: 'No file selected' });
         return;
       }
-      onIngest('file', trimmed + '|' + ocrMode);
+      onIngest('file', trimmed + '|' + ocrMode, undefined, folder);
     }
     // Clean fields on successful launch
     setUrlValue('');
@@ -181,6 +186,7 @@ export const IngestModal: React.FC<IngestModalProps> = ({
             </div>
           )}
 
+          <FolderPicker folders={folders} value={folder} onChange={setFolder}/>
           {/* Info Badge */}
            <div className="p-3 bg-neutral-950/50 border border-neutral-800 rounded-xl flex gap-2.5">
              <AlertCircle className="w-4 h-4 text-brand-400 shrink-0 mt-0.5" />

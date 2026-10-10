@@ -1385,6 +1385,7 @@ async fn run_builtin_extractor_async(
         app,
         window,
         knowledge::documents::PrepareRequest {
+            folder: String::new(),
             kind: ingest_type,
             value,
             method: yt_method,

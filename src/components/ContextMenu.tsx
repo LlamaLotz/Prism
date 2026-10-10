@@ -1,10 +1,11 @@
-import React, { useLayoutEffect, useRef, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Copy, Scissors, ClipboardPaste, Maximize2, FolderPlus, FolderMinus, FilePlus, Edit3, Trash2, Pencil } from 'lucide-react';
 
 interface ContextMenuProps {
   x: number;
   y: number;
   onClose: () => void;
+  trigger?: HTMLButtonElement;
   /**
    * What actions the menu shows:
    *  - 'sidebar': vault actions (new note / new folder) — no delete folder,
@@ -20,6 +21,7 @@ interface ContextMenuProps {
    *  path); the 'folder' variant receives the hovered folder's path. */
   onDeleteFolder?: (folderPath?: string) => void;
   onRenameFolder?: () => void;
+  onMoveNote?: () => void;
   onRenameNote?: () => void;
   onDeleteNote?: () => void;
 }
@@ -39,12 +41,13 @@ const isEditable = (el: Element | null): el is HTMLInputElement | HTMLTextAreaEl
 export const ContextMenu: React.FC<ContextMenuProps> = ({
   x,
   y,
-  onClose,
+  onClose, trigger,
   variant,
   onNewFolder,
   onNewNote,
   onDeleteFolder,
   onRenameFolder,
+  onMoveNote,
   onRenameNote,
   onDeleteNote,
 }) => {
@@ -60,6 +63,12 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
     const top = Math.max(EDGE_MARGIN, Math.min(y, window.innerHeight - el.offsetHeight - EDGE_MARGIN));
     setPos({ left, top });
   }, [x, y]);
+
+  useEffect(() => {
+    if (!trigger) return;
+    menuRef.current?.querySelector('button')?.focus();
+    return () => { if (trigger.isConnected) trigger.focus(); };
+  }, [trigger]);
 
   const runAction = async (action: 'copy' | 'cut' | 'paste' | 'selectall') => {
     onClose();
@@ -138,6 +147,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
   }) => (
     <button
       type="button"
+      role={trigger ? "menuitem" : undefined}
       onClick={onClick}
       className={`w-full flex items-center gap-2.5 px-3 py-1.5 text-left text-xs font-medium transition-colors ${
         danger
@@ -153,8 +163,16 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
   return (
     <div
       ref={menuRef}
+      role={trigger ? "menu" : undefined}
+      aria-label={variant === 'editor' ? 'Editor actions' : 'Vault actions'}
+      onKeyDown={e => {
+        const items = Array.from(menuRef.current?.querySelectorAll<HTMLButtonElement>('button') ?? []);
+        const index = items.indexOf(document.activeElement as HTMLButtonElement);
+        const next = e.key === 'ArrowDown' ? (index + 1) % items.length : e.key === 'ArrowUp' ? (index - 1 + items.length) % items.length : e.key === 'Home' ? 0 : e.key === 'End' ? items.length - 1 : -1;
+        if (next >= 0) { e.preventDefault(); items[next]?.focus(); }
+      }}
       style={{ left: pos.left, top: pos.top }}
-      className="gloss-dropdown-surface fixed z-[100] w-44 py-1"
+      className={`gloss-dropdown-surface fixed z-[100] w-44 py-1 ${variant === 'editor' ? '' : 'sidebar-context-menu'}`}
       onContextMenu={(e) => {
         e.preventDefault();
         e.stopPropagation();
@@ -184,6 +202,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
 
       {variant === 'folder' && (
         <>
+          <Item icon={FilePlus} label="Create note here" onClick={()=>{onClose();onNewNote?.();}}/>
           <Item
             icon={FolderPlus}
             label="New Folder"
@@ -216,6 +235,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
 
       {variant === 'note' && (
         <>
+          <Item icon={FolderPlus} label="Move to folder…" onClick={()=>{onClose();onMoveNote?.();}}/>
           <Item
             icon={FolderPlus}
             label="New Folder"

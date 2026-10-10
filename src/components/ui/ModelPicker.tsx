@@ -23,7 +23,8 @@ export interface ModelPickerOption {
  * is portalled and flips above the trigger when the prompt bar sits at the
  * bottom of a clipped panel.
  */
-export function ModelPicker({ options, value, onChange, label = 'Chat model', placeholder = 'Select a model', unavailableLabel = 'Model unavailable', align = 'start', className = '' }: {
+export function ModelPicker({ options, value, onChange, label = 'Chat model', placeholder = 'Select a model', unavailableLabel = 'Model unavailable', align = 'start', className = '', disabled=false }: {
+  disabled?:boolean;
   options: ModelPickerOption[];
   /** Selected option value. Unknown values render as unavailable, never crash. */
   value: string;
@@ -94,7 +95,7 @@ export function ModelPicker({ options, value, onChange, label = 'Chat model', pl
 
   const pick = async (index: number) => {
     const option = options[index];
-    if (!option || saving.current) return;
+    if (disabled || !option || saving.current) return;
     saving.current=true;setPending(true);setError('');
     try { if (option.value !== value) await onChange(option.value);close(true); } catch(e) {setError(String(e));} finally {saving.current=false;setPending(false);}
   };
@@ -174,6 +175,7 @@ export function ModelPicker({ options, value, onChange, label = 'Chat model', pl
   return (
     <div ref={rootRef} className={`model-picker${className ? ` ${className}` : ''}`}>
       <button
+        disabled={disabled||pending}
         ref={triggerRef}
         type="button"
         role="combobox"

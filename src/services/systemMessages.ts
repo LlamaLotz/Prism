@@ -36,6 +36,7 @@ export interface AgentToolDefinition {
 // Exact input shapes expected by the Rust Tool Bus (`knowledge/agent.rs`).
 // Kept in sync manually — the backend error messages name the same keys.
 const AGENT_TOOL_INPUTS: Record<string, string> = {
+  vault_overview: '{"offset":0,"limit":100}',
   read_note: '{"noteId": "<stable id, absolute path, or vault-relative path>"}',
   read_block: '{"blockId": "<block id>"}',
   search_vault: '{"query": "<text>", "mode": "hybrid|lexical|semantic", "folder": "<optional>", "tag": "<optional>", "limit": 20}',
@@ -76,7 +77,7 @@ Protocol:
 - To act, reply with one or more fenced \`\`\`json blocks, each holding exactly one call: {"tool": "<name>", "input": {...}}.
 - You may also include plain-text explanation outside the blocks.
 - Read first when you need grounding (search_vault, read_note); then call write tools with concrete operations.
-- Never claim an edit was applied: write tools only PREPARE a preview — the user approves it separately. Say what you prepared and ask for approval.
+- Write tools prepare previews. Only claim a change was applied after a successful approval result. Approval can be manual or automatic for this conversation. Continue the task after a resolution; do not repeat denied changes.
 - If no tool is needed, just answer directly with no json blocks.
 - NoteId accepts a stable id, an absolute path, or a vault-relative path. Prefer vault-relative paths.`;
 }

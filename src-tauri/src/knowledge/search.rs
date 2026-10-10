@@ -390,7 +390,7 @@ pub fn graph(c: &Connection, vault: &str) -> Result<crate::db::GraphPayload, Str
         .map_err(|e| e.to_string())?;
     let titles: HashMap<_, _> = entries
         .iter()
-        .map(|(id, title, _)| (id.clone(), title.clone()))
+        .map(|(id, _, path)| (id.clone(), path.clone()))
         .collect();
     let nodes = entries
         .into_iter()

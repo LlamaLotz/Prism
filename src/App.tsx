@@ -1,3 +1,6 @@
+import { noteGraph } from './services/folderGraph';
+import { MoveNoteDialog } from './components/FolderPicker';
+import { relocateNote } from './services/editorRelocation';
 import { StudyWorkspace } from './components/study/StudyWorkspace';
 import { AssistantWorkspace } from './components/study/AssistantWorkspace';
 import { sharedStudy, study } from './services/study';
@@ -27,6 +30,8 @@ import { formatNote, noteTitleMatches } from './utils/formatter';
 import { applyAccentColor } from './utils/accentColor';
 import { applyWindowIcon } from './services/appIcon';
 import { ResizeHandle } from './components/ResizeHandle';
+import { sidebarLayout, savedPanelWidth } from './utils/sidebarLayout';
+import './components/sidebar-panels.css';
 import { ContextMenu } from './components/ContextMenu';
 import { useDialog } from './components/DialogProvider';
 import { TitleBar } from './components/TitleBar';
@@ -44,59 +49,7 @@ const LOCAL_STORAGE_KEY = 'prism_app_settings';
 
 // Reconstructs the D3 graph from the SQLite-served snapshot, adding uncreated
 // nodes for any linked-but-missing titles (same semantics as buildGraphData).
-function buildGraphFromPayload(payload: GraphPayload): {
-  nodes: GraphNode[];
-  links: GraphLink[];
-} {
-  const nodeMap = new Map<string, GraphNode>();
-  for (const n of payload.nodes) {
-    nodeMap.set(n.title.toLowerCase(), {
-      id: n.title,
-      title: n.title,
-      exists: true,
-      linksCount: 0,
-    });
-  }
-  const links: GraphLink[] = [];
-  const linkSet = new Set<string>();
-  for (const l of payload.links) {
-    if (l.source.toLowerCase() === l.target.toLowerCase()) continue;
-    // Dedup case-insensitively (both directions) so a graph refresh never
-    // double-counts an edge that differs only in title casing.
-    const key = `${l.source.toLowerCase()} -> ${l.target.toLowerCase()}`;
-    const reverseKey = `${l.target.toLowerCase()} -> ${l.source.toLowerCase()}`;
-    if (linkSet.has(key) || linkSet.has(reverseKey)) continue;
-    linkSet.add(key);
-    // Both endpoints MUST exist as nodes: d3-force's forceLink throws
-    // "node not found: <id>" when a link references an id that isn't in the
-    // simulation's node set, which crashes the whole graph pane. The Rust
-    // snapshot can race a full re-index (split/rename), so a link's source
-    // may reference a note whose node hasn't landed yet — drop the link
-    // rather than feed d3 a dangling reference. Missing targets become
-    // uncreated (dashed) nodes, same as before.
-    const sourceNode = nodeMap.get(l.source.toLowerCase());
-    if (!sourceNode) continue;
-    let targetNode = nodeMap.get(l.target.toLowerCase());
-    if (!targetNode) {
-      targetNode = {
-        id: l.target,
-        title: l.target,
-        exists: false,
-        linksCount: 0,
-      };
-      nodeMap.set(l.target.toLowerCase(), targetNode);
-    }
-    // Use each node's canonical id (NOT the raw link text) for the edge:
-    // the SQL snapshot resolves targets from the raw [[wiki-link]] text
-    // (which keeps its own casing), while node ids come from the note
-    // title/file stem. d3 matches ids exactly, so a "Introduction" vs
-    // "introduction" mismatch would throw "node not found" too.
-    links.push({ source: sourceNode.id, target: targetNode.id });
-    sourceNode.linksCount += 1;
-    targetNode.linksCount += 1;
-  }
-  return { nodes: Array.from(nodeMap.values()), links };
-}
+const buildGraphFromPayload = noteGraph;
 
 // Structural fingerprint of a graph snapshot: node identity/existence/degree
 // plus link endpoints (endpoints may be node object references after a force
@@ -148,6 +101,10 @@ export default function App() {
   const [notes, setNotes] = useState<NoteFile[]>([]);
   // Every folder under the vault (incl. empty ones), POSIX-style relative
   // paths, from the indexer — drives the sidebar's folder tree.
+  const [selectedFolder,setSelectedFolder]=useState('');
+  const [moveTarget,setMoveTarget]=useState<NoteFile|null>(null);
+  const [folderReveal,setFolderReveal]=useState<{path:string;ts:number}|null>(null);
+  const revealFolder=(path:string)=>{setSelectedFolder(path);setSidebarCollapsed(false);setFolderReveal({path,ts:Date.now()});};
   const [folders, setFolders] = useState<string[]>([]);
   const [activeNote, setActiveNote] = useState<NoteFile | null>(null);
   const [isIngesting, setIsIngesting] = useState(false);
@@ -184,11 +141,9 @@ export default function App() {
     root.style.setProperty('--liquid-glass-opacity', String(settings.appearance.liquidGlassOpacity));
   }, [settings.appearance.themeStyle, settings.appearance.themeMode, settings.appearance.liquidGlassOpacity]);
 
-  useEffect(() => () => sharedStudy.cancelAgents(settings.vaultPath), [settings.vaultPath]);
+  useEffect(() => {setSelectedFolder('');setMoveTarget(null);setFolderReveal(null);return()=>sharedStudy.cancelAgents(settings.vaultPath);}, [settings.vaultPath]);
   const isRounded = settings.appearance.themeStyle === 'glass' || settings.appearance.themeStyle === 'gloss';
 
-  // Panel rounding class (Rounded theme only)
-  const panelRounded = isRounded ? 'rounded-2xl overflow-hidden' : '';
 
   // Apply the chosen logo as the OS window (taskbar) icon. The theme mode is
   // passed so light mode swaps white logos to their grey counterparts.
@@ -248,22 +203,74 @@ export default function App() {
   useEffect(()=>{const changed=(event:Event)=>{const {path,dirty}=(event as CustomEvent<{path:string;dirty:boolean}>).detail;setStudyUnsavedPaths(paths=>dirty?[...new Set([...paths,path])]:paths.filter(p=>p!==path));};window.addEventListener('study-note-dirty',changed);return()=>window.removeEventListener('study-note-dirty',changed);},[]);
 
   useEffect(() => { if (layout === 'notebook') setNotebookVisited(true); }, [layout]);
+  const [aiExpanded,setAiExpanded]=useState(false);
+  const [windowWidth,setWindowWidth]=useState(window.innerWidth);
+  useEffect(()=>{const resize=()=>setWindowWidth(window.innerWidth);window.addEventListener('resize',resize);return()=>window.removeEventListener('resize',resize);},[]);
+
   const [showAICoPilot, setShowAICoPilot] = useState(DEFAULT_SETTINGS.appearance.aiPanelOpenOnStart);
   // Requested block scroll (blockId or 1-based line + timestamp), passed to the Editor.
   const [scrollRequest, setScrollRequest] = useState<{ blockId?: string; line?: number; ts: number } | null>(null);
 
   // Persisted panel sizes
   const [sidebarWidth, setSidebarWidth] = useState(() => {
-    const saved = Number(localStorage.getItem('prism_sidebar_width'));
-    return Number.isFinite(saved) && saved > 0 ? saved : 264;
+    return savedPanelWidth(localStorage.getItem('prism_sidebar_width'), 'vault');
   });
   const [aiWidth, setAiWidth] = useState(() => {
-    const saved = Number(localStorage.getItem('prism_ai_width'));
-    return Number.isFinite(saved) && saved > 0 ? saved : 320;
+    return savedPanelWidth(localStorage.getItem('prism_ai_width'), 'ai');
   });
   const [sidebarCollapsed, setSidebarCollapsed] = useState(
     () => localStorage.getItem('prism_sidebar_collapsed') === 'true'
   );
+
+  const [layoutElement, setLayoutElement] = useState<HTMLDivElement | null>(null);
+  const [layoutSize, setLayoutSize] = useState({ width: window.innerWidth, gap: 0 });
+  const [panelOverrides, setPanelOverrides] = useState<{ vault: number; ai: number; context: string } | null>(null);
+  const [panelDragging, setPanelDragging] = useState(false);
+  const [panelAnimating, setPanelAnimating] = useState(false);
+  const animationTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const animatePanels = () => {
+    setPanelAnimating(true);
+    if (animationTimer.current) clearTimeout(animationTimer.current);
+    animationTimer.current = setTimeout(() => setPanelAnimating(false), 180);
+  };
+  useEffect(() => () => { if (animationTimer.current) clearTimeout(animationTimer.current); }, []);
+  useEffect(() => {
+    if (!layoutElement) return;
+    const measure = () => {
+      const css = getComputedStyle(layoutElement);
+      const width = layoutElement.clientWidth - parseFloat(css.paddingLeft) - parseFloat(css.paddingRight);
+      const gap = isRounded ? 8 : 0;
+      setLayoutSize(old => old.width === width && old.gap === gap ? old : { width, gap });
+      setPanelOverrides(null);
+      setPanelAnimating(false);
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(layoutElement);
+    return () => observer.disconnect();
+  }, [layoutElement, isRounded]);
+  const panelContext = `${layout}:${showAICoPilot}:${sidebarCollapsed}:${aiExpanded}:${windowWidth < 1000}`;
+  const effectiveOverrides = panelOverrides?.context === panelContext ? panelOverrides : null;
+  const panels = sidebarLayout({
+    width: layoutSize.width, viewport: windowWidth, gap: layoutSize.gap,
+    vault: effectiveOverrides?.vault ?? sidebarWidth, ai: effectiveOverrides?.ai ?? aiWidth,
+    collapsed: sidebarCollapsed, aiVisible: showAICoPilot && layout !== 'notebook', manualExpanded: aiExpanded,
+  });
+  const expandedAI = panels.expanded;
+  const changePanelWidth = (side: 'vault' | 'ai', width: number) => {
+    setPanelOverrides({ vault: side === 'vault' ? width : panels.vaultWidth, ai: side === 'ai' ? width : panels.aiWidth, context: panelContext });
+  };
+  const finishPanelResize = (side: 'vault' | 'ai', width: number, changed: boolean) => {
+    setPanelDragging(false);
+    if (!changed) return;
+    if (side === 'vault') setSidebarWidth(width); else setAiWidth(width);
+    localStorage.setItem(side === 'vault' ? 'prism_sidebar_width' : 'prism_ai_width', String(width));
+  };
+  const toggleAIExpansion = () => { animatePanels(); setPanelOverrides(null); setAiExpanded(v => !v); };
+  const closeAI = () => {
+    animatePanels(); setPanelOverrides(null); setShowAICoPilot(false);
+    requestAnimationFrame(() => document.querySelector<HTMLButtonElement>('.titlebar-action[aria-label="AI assistant"]')?.focus());
+  };
 
   // Custom dark context menu position (null = hidden). The default
   // WebView2/Edge right-click menu is disabled app-wide; see the effect below.
@@ -276,9 +283,14 @@ export default function App() {
     x: number;
     y: number;
     region: 'sidebar' | 'editor' | 'none';
+    trigger?: HTMLButtonElement;
     target?: { type: 'note' | 'folder'; path: string };
   } | null>(null);
   const toggleSidebar = () => {
+    const restoreFocus = !!document.activeElement?.closest('.vault-shell');
+    const opening = panels.rail;
+    animatePanels(); setPanelOverrides(null);
+    if (restoreFocus) requestAnimationFrame(() => layoutElement?.querySelector<HTMLButtonElement>(opening ? '.sidebar [title="Collapse sidebar"]' : '.sidebar-collapsed-rail button')?.focus());
     setSidebarCollapsed((prev) => {
       const next = !prev;
       localStorage.setItem('prism_sidebar_collapsed', String(next));
@@ -326,15 +338,6 @@ export default function App() {
   };
 
 
-  const saveSidebarWidth = (w: number) => {
-    setSidebarWidth(w);
-    localStorage.setItem('prism_sidebar_width', String(w));
-  };
-  const saveAiWidth = (w: number) => {
-    setAiWidth(w);
-    localStorage.setItem('prism_ai_width', String(w));
-  };
-
   const { addLog, updateProgress, isHidden: isIngestionHidden, setHidden: setIngestionHidden } = useIngestion();
 
   // Debounced snapshot of the graph inputs: updates immediately on note switch,
@@ -361,7 +364,7 @@ export default function App() {
     tauriAPI
       .getGraph()
       .then((payload) => {
-        const next = buildGraphFromPayload(payload);
+        const next = buildGraphFromPayload(payload,settings.vaultPath);
         setGraphData((prev) => {
           // Skip identical snapshots. The graph is vault-wide, so note
           // switches reload the exact same structure, and handing either
@@ -573,7 +576,7 @@ export default function App() {
 
     unlisteners.push(
       listen('menu://toggle-ai-sidebar', () => {
-        setShowAICoPilot((prev) => !prev);
+        animatePanels(); setPanelOverrides(null); setShowAICoPilot((prev) => !prev);
       })
     );
 
@@ -961,7 +964,7 @@ export default function App() {
   };
 
   // 5. Native Ingest Engine Action
-  const handleRunIngest = async (type: 'url' | 'file', value: string, method: string = 'yt-dlp') => {
+  const handleRunIngest = async (type: 'url' | 'file', value: string, method: string = 'yt-dlp', folder = '') => {
     if (!settings.vaultPath) {
       await alert('Please connect a notes vault folder in settings first.', {
         title: 'No vault connected',
@@ -977,7 +980,7 @@ export default function App() {
     try {
       // Background output is collected by the IngestionProvider listeners
       // (ingestion-progress / ingestion-error) while the panel is minimized.
-      const prepared = await documents.prepare(type, value, method);
+      const prepared = await documents.prepare(type, value, method, null, folder);
       setDocumentReviewRequest({id:prepared.id,ts:Date.now(),vault:settings.vaultPath});
       const result = {success:true,output:'Extraction ready for review. No notes have been published.',error:''};
 
@@ -1037,7 +1040,7 @@ export default function App() {
   };
 
   // 7. Create New Note
-  const handleNewNote = async () => {
+  const handleNewNote = async (folder: string = '') => {
     if (!settings.vaultPath) return;
 
     const titleInput = await prompt('Enter new note title:', {
@@ -1047,7 +1050,7 @@ export default function App() {
     if (titleInput === null) return; // cancelled
 
     const formattedTitle = titleInput.trim() || 'Untitled Note';
-    const relativePath = `${formattedTitle}.md`;
+    const relativePath = `${folder ? folder+'/' : ''}${formattedTitle}.md`;
 
     // Prevent duplicate files
     const alreadyExists = notes.some((n) => n.title.toLowerCase() === formattedTitle.toLowerCase());
@@ -1073,6 +1076,7 @@ export default function App() {
       
       const newNote = sorted.find((n) => n.path === result.fullPath);
       if (newNote) {
+        revealFolder(folder);
         handleSelectNote(newNote);
         // Switch to editor mode to start editing immediately
         if (layout === 'graph' || layout === 'topics' || layout === 'notebook') setLayout('split');
@@ -1297,10 +1301,13 @@ export default function App() {
   };
 
   // Move a note by dragging it onto a folder or the vault root.
-  const handleMoveNoteToFolder = async (note: NoteFile, targetFolder: string) => {
+  // `quiet` callers (the move dialog) show the thrown message inline; the
+  // drag-and-drop path has no error surface, so it gets the blocking alert.
+  const handleMoveNoteToFolder = async (note: NoteFile, targetFolder: string, quiet = false) => {
     if (!settings.vaultPath) return;
     const normalizedTarget = targetFolder.replace(/\\/g, '/').replace(/^\/+|\/+$/g, '');
     if (normalizedTarget.split('/').filter(Boolean).length > 5) {
+      if (quiet) throw new Error('Folders can be nested up to 5 levels deep.');
       await alert('Folders can be nested up to 5 levels deep.', {
         title: 'Folder nesting limit',
       });
@@ -1317,22 +1324,24 @@ export default function App() {
       (n) => n.path !== note.path && n.path.replace(/\\/g, '/').toLowerCase() === newPath.replace(/\\/g, '/').toLowerCase()
     );
     if (collision) {
-      await alert(`A note named "${fileName}" already exists in that folder.`, {
-        title: 'Could not move note',
-      });
-      return;
+      const message = `A note named "${fileName}" already exists in that folder.`;
+      if (!quiet) await alert(message, { title: 'Could not move note' });
+      throw new Error(message);
     }
 
+    const content = await relocateNote(note.path,newPath,async()=>{
     const result = await tauriAPI.renameFile({ oldPath: note.path, newPath });
     if (!result.success) {
-      await alert(errorDialogMessage(createRawErrorDetails(result.error ?? 'unknown error', 'Could not move the note.')), {
+      if (!quiet) await alert(errorDialogMessage(createRawErrorDetails(result.error ?? 'unknown error', 'Could not move the note.')), {
         title: 'Could not move note',
       });
-      return;
+      throw new Error(result.error || 'Could not move note');
     }
+    });
+    revealFolder(normalizedTarget);
 
     if (activeNote?.path === note.path) {
-      setActiveNote((prev) => (prev ? { ...prev, path: newPath, relativePath: newRelativePath } : prev));
+      setActiveNote((prev) => (prev ? { ...prev, path: newPath, relativePath: newRelativePath, content: content ?? prev.content } : prev));
     }
     const orderKey = `prism_order_${settings.vaultPath}`;
     const orderRaw = localStorage.getItem(orderKey);
@@ -1429,7 +1438,7 @@ export default function App() {
     // against the note that is currently open.
     let matched: NoteFile | null = null;
     if (resolvedTitle) {
-      matched = notes.find((n) => n.title.toLowerCase() === resolvedTitle.toLowerCase()) ?? null;
+      matched = notes.find(n=>n.relativePath.toLowerCase()===targetTitle.toLowerCase()||n.path.toLowerCase()===targetTitle.toLowerCase()) ?? notes.find((n) => n.title.toLowerCase() === resolvedTitle.toLowerCase()) ?? null;
     } else if (activeNote) {
       matched = activeNote;
     }
@@ -1509,8 +1518,10 @@ export default function App() {
     await loadGraph();
   };
 
+  useEffect(()=>{sharedStudy.setContext(settings.vaultPath,activeNote?.relativePath??null,selectedFolder);},[settings.vaultPath,activeNote?.relativePath,selectedFolder]);
+  useEffect(()=>{const refresh=()=>{void handleAgentVaultChanged();};window.addEventListener('agent-vault-changed',refresh);return()=>window.removeEventListener('agent-vault-changed',refresh);},[settings.vaultPath]);
   return (
-    <DocumentImports vaultPath={settings.vaultPath} key={settings.vaultPath} request={documentReviewRequest?.vault === settings.vaultPath ? documentReviewRequest : null} onPublished={() => { void fetchNotes(); void handleAgentVaultChanged(); }}>
+    <DocumentImports folders={folders} vaultPath={settings.vaultPath} key={settings.vaultPath} request={documentReviewRequest?.vault === settings.vaultPath ? documentReviewRequest : null} onPublished={() => { void fetchNotes(); void handleAgentVaultChanged(); }}>
     <RuntimeActivity>
     <ModelServiceRecovery key={settings.vaultPath} />
       {/* Background environment layer (behind the app, viewport-level) */}
@@ -1535,7 +1546,7 @@ export default function App() {
             layout={layout}
             onLayoutChange={setLayout}
             showAI={showAICoPilot && layout !== 'notebook'}
-            onToggleAI={() => setShowAICoPilot(!showAICoPilot)}
+            onToggleAI={() => { animatePanels(); setPanelOverrides(null); setShowAICoPilot(!showAICoPilot); }}
             onNewNote={handleNewNote}
             onNewFolder={handleNewFolder}
             onOpenPrism={handleSelectVault}
@@ -1546,12 +1557,13 @@ export default function App() {
               setIngestionHidden(!isIngestionHidden);
             }}
             onToggleSidebar={toggleSidebar}
-            sidebarVisible={!sidebarCollapsed}
+            sidebarVisible={!panels.rail}
           />
 
-      <div className={`liquid-gloss-layout flex flex-1 overflow-hidden ${isRounded ? 'p-2 gap-2' : ''}`}>
+      <div ref={setLayoutElement} data-dragging={panelDragging || undefined} data-animate={panelAnimating || undefined} className={`liquid-gloss-layout sidebar-layout flex flex-1 min-h-0 overflow-hidden ${isRounded ? 'p-2' : ''}`}>
       {/* Sidebar navigation (collapsible) */}
-      {sidebarCollapsed ? (
+      <div className="sidebar-shell vault-shell" style={{ width: panels.vaultWidth }}>
+      <div hidden={!panels.rail}>
         <div
           data-region="sidebar"
           className="sidebar-collapsed-rail shrink-0 h-full w-11 border-r border-slate-900 bg-panel flex flex-col items-center py-3 gap-2 select-none"
@@ -1559,18 +1571,20 @@ export default function App() {
           <button
             onClick={toggleSidebar}
             className="p-2 rounded-md text-slate-400 hover:text-brand-400 hover:bg-slate-900 transition-colors"
-            title="Expand sidebar"
+            title={!sidebarCollapsed && panels.rail ? "Vault expands when the window has more space" : "Expand sidebar"}
+            disabled={!sidebarCollapsed && panels.rail}
           >
             <PanelLeftOpen className="w-5 h-5" />
           </button>
           <JobsButton />
         </div>
-      ) : (
-        <div className="relative shrink-0 h-full" style={{ width: sidebarWidth }}>
-          <LiquidGlass className="liquid-gloss-sidebar h-full">
+      </div>
+        <div className="vault-expanded" inert={panels.rail} aria-hidden={panels.rail} style={{ visibility: panels.rail ? 'hidden' : undefined }}>
+          <LiquidGlass className="liquid-gloss-sidebar sidebar-content h-full">
           <Sidebar
             notes={notes}
             folders={folders}
+            reveal={folderReveal} onSelectFolder={setSelectedFolder}
             activeNote={activeNote}
             onSelectNote={handleSelectNote}
             onNewNote={handleNewNote}
@@ -1589,24 +1603,25 @@ export default function App() {
             onOpenSettings={() => openSettings()}
             onCollapse={toggleSidebar}
             onOpenNote={handleOpenNote}
+            onNoteMenu={(note, trigger) => { const rect = trigger.getBoundingClientRect(); setCtxMenu({ x: rect.right - 176, y: rect.bottom, region: 'sidebar', target: { type: 'note', path: note.path }, trigger }); }}
             statusText={settings.appearance.sidebarStatusText}
             appIcon={settings.appearance.appIcon}
             themeMode={settings.appearance.themeMode}
           />
           </LiquidGlass>
-          <ResizeHandle
-            direction="horizontal"
-            onResize={(d) => saveSidebarWidth(Math.min(480, Math.max(180, sidebarWidth + d)))}
-            className="absolute right-0 top-0 bottom-0"
-          />
         </div>
-      )}
+        {!panels.rail && <ResizeHandle direction="horizontal" label="Resize Vault sidebar" value={panels.vaultWidth} min={180} max={panels.vaultMax}
+          onResize={() => {}} onValueChange={w => changePanelWidth('vault', w)}
+          onResizeStart={() => { setPanelDragging(true); setPanelAnimating(false); }} onResizeEnd={(w, changed) => finishPanelResize('vault', w, changed)} className="sidebar-resizer-right" />}
+      </div>
 
       {/* Primary Workspace Panel */}
-      <LiquidGlass className="flex-1 min-w-0 flex flex-col h-full overflow-hidden" as="div">
+      <div className="workspace-shell" inert={expandedAI} aria-hidden={expandedAI} style={{ width: panels.workspaceWidth, marginLeft: expandedAI ? 0 : layoutSize.gap }}>
+      <LiquidGlass className="min-w-0 flex flex-col h-full overflow-hidden" as="div">
       <div data-region="workspace" className="flex-1 min-w-0 flex flex-col h-full overflow-hidden">
 
 
+        {activeNote&&(layout==='editor'||layout==='split')&&<div className="flex justify-end px-3 py-1"><button className="runtime-button" onClick={()=>setMoveTarget(activeNote)}>Move to folder…</button></div>}
         {/* Workspace Main Panels */}
         <div className="workspace-panels flex-1 flex min-w-0 min-h-0 overflow-hidden">
           
@@ -1634,7 +1649,7 @@ export default function App() {
           {(layout === 'graph' || layout === 'split') && (
             <GraphViewContainer
               key={`${settings.appearance.themeStyle}|${settings.appearance.themeMode}`}
-              graphData={graphData}
+              graphData={graphData} folders={folders} onSelectFolder={revealFolder}
               activeNote={graphActiveNote}
               onSelectNoteByTitle={handleWikiLinkClick}
               backgroundPattern={settings.appearance.backgroundPattern}
@@ -1666,22 +1681,23 @@ export default function App() {
       </div>
       </LiquidGlass>
 
+      </div>
       {/* AI Co-Pilot chat bar right sidebar (separate floating card) */}
-      {showAICoPilot && layout !== 'notebook' && (
-        <LiquidGlass className="relative shrink-0 h-full ai-panel overflow-hidden" style={{ width: aiWidth }}>
-
-          <ResizeHandle
-            direction="horizontal"
-            onResize={(d) => saveAiWidth(Math.min(560, Math.max(240, aiWidth - d)))}
-            className="absolute left-0 top-0 bottom-0"
-          />
-          <AssistantWorkspace config={settings.omniRoute} modelPicker={chatModelPicker} onVaultChanged={handleAgentVaultChanged} key={settings.vaultPath} vaultPath={settings.vaultPath} openRequest={copilotOpenRequest}
+      {layout !== 'notebook' && (
+        <div className="sidebar-shell ai-shell" inert={!showAICoPilot} aria-hidden={!showAICoPilot} style={{ width: panels.aiWidth, marginLeft: showAICoPilot ? layoutSize.gap : 0, visibility: showAICoPilot || panelAnimating ? undefined : 'hidden' }}>
+          {showAICoPilot && !expandedAI && <ResizeHandle direction="horizontal" label="Resize AI sidebar" value={panels.aiWidth} min={280} max={panels.aiMax} sign={-1}
+            onResize={() => {}} onValueChange={w => changePanelWidth('ai', w)}
+            onResizeStart={() => { setPanelDragging(true); setPanelAnimating(false); }} onResizeEnd={(w, changed) => finishPanelResize('ai', w, changed)} className="sidebar-resizer-left" />}
+          <div className="ai-panel-clip">
+          <LiquidGlass className="h-full ai-panel sidebar-content">
+          <AssistantWorkspace expanded={expandedAI} autoExpanded={windowWidth < 1000} onExpand={toggleAIExpansion} onCollapse={closeAI} config={settings.omniRoute} modelPicker={chatModelPicker} onVaultChanged={handleAgentVaultChanged} key={settings.vaultPath} vaultPath={settings.vaultPath} openRequest={copilotOpenRequest}
             onConsumed={() => setCopilotOpenRequest(null)} onNotebook={() => setLayout('notebook')}
             onOpenSettings={() => openSettings('ai')} advanced={            <AISidebar
             key={settings.vaultPath}
             note={activeNote}
             allNotes={notes}
             config={settings.omniRoute}
+            vaultPath={settings.vaultPath}
             modelPicker={chatModelPicker}
             onOpenSettings={() => openSettings('ai')}
             onInsertText={handleInsertText}
@@ -1699,6 +1715,8 @@ export default function App() {
             onOpenInNotebook={handleOpenInNotebook}
           />} />
         </LiquidGlass>
+        </div>
+        </div>
       )}
 
       </div>
@@ -1714,6 +1732,8 @@ export default function App() {
 
       {/* Ingest Modal overlay */}
       <IngestModal
+        key={settings.vaultPath}
+        folders={folders} initialFolder={selectedFolder}
         isOpen={isIngestModalOpen}
         onClose={() => setIsIngestModalOpen(false)}
         onIngest={handleRunIngest}
@@ -1724,10 +1744,12 @@ export default function App() {
 
       {/* Custom dark context menu (replaces the WebView2 default) — only the
           sidebar and editor regions get one; graph/topics get nothing. */}
+      {moveTarget&&<MoveNoteDialog key={settings.vaultPath} folders={folders} initial={moveTarget.relativePath.split('/').slice(0,-1).join('/')} onClose={()=>setMoveTarget(null)} onMove={folder=>handleMoveNoteToFolder(moveTarget,folder,true)}/>}
       {ctxMenu && (
         <ContextMenu
           x={ctxMenu.x}
           y={ctxMenu.y}
+          trigger={ctxMenu.trigger}
           onClose={() => setCtxMenu(null)}
           variant={
             ctxMenu.target
@@ -1739,7 +1761,8 @@ export default function App() {
                 : 'editor'
           }
           onNewFolder={handleNewFolder}
-          onNewNote={handleNewNote}
+          onNewNote={()=>handleNewNote(ctxMenu.target?.type==='folder'?ctxMenu.target.path:'')}
+          onMoveNote={()=>{const note=notes.find(n=>n.path===ctxMenu.target?.path);if(note)setMoveTarget(note);}}
           // Generic sidebar background (no target): prompt for the folder. The
           // 'folder' variant passes '__current__' so the hovered path is used.
           onDeleteFolder={(folderPath) =>

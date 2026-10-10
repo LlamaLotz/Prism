@@ -33,16 +33,16 @@ export function StatusMark({ status, label, progress, size = 16, className = '' 
   const spoken = SPOKEN[status] + (determinate ? `, ${Math.round(Math.min(1, Math.max(0, progress!)) * 100)}%` : '');
   return (
     <span className={`status-mark${className ? ` ${className}` : ''}`} data-status={status} data-indeterminate={status === 'running' && !determinate ? '' : undefined}>
-      <svg className="status-mark__glyph" viewBox="0 0 24 24" width={size} height={size} role={label ? undefined : 'img'} aria-label={label ? undefined : spoken} aria-hidden={label ? true : undefined}>
-        <circle className="status-mark__track" cx="12" cy="12" r="9" transform="rotate(-90 12 12)" />
+      <svg style={{width:size,height:size}} className="status-mark__glyph" viewBox="0 0 24 24" width={size} height={size} role={label ? undefined : 'img'} aria-label={label ? undefined : spoken} aria-hidden={label ? true : undefined}>
+        <circle className="status-mark__track" cx="12" cy="12" r="9" />
         <circle
           className="status-mark__ring"
           cx="12"
           cy="12"
           r="9"
-          transform="rotate(-90 12 12)"
           style={determinate ? { strokeDasharray: `${Math.min(1, Math.max(0, progress!)) * 56.5} 56.5` } : undefined}
         />
+        {(status === 'pending' || status === 'running') && <circle className="status-mark__dot" cx="12" cy="12" r="2" fill="currentColor"/>}
         <path className="status-mark__check" d="M7.5 12.25 10.5 15.25 16.75 8.75" pathLength={1} />
         <path className="status-mark__cross" d="M8.5 8.5 15.5 15.5M15.5 8.5 8.5 15.5" pathLength={1} />
       </svg>

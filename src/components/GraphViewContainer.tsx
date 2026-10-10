@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import { withFolders } from '../services/folderGraph';
+import React, { useMemo, useState } from 'react';
 import { GraphView, setGraphPalette as setPalette2D } from './GraphView';
 import { GraphView3D, setGraphPalette as setPalette3D } from './GraphView3D';
 import { GraphNode, GraphLink, NoteFile } from '../types';
@@ -10,6 +11,8 @@ type ThemeMode = 'dark' | 'light';
 
 interface GraphViewContainerProps {
   graphData: { nodes: GraphNode[]; links: GraphLink[] };
+  folders?:string[];
+  onSelectFolder?:(path:string)=>void;
   activeNote: NoteFile | null;
   onSelectNoteByTitle: (title: string) => void;
   backgroundPattern: 'grid' | 'mesh' | 'solid';
@@ -31,7 +34,7 @@ interface GraphViewContainerProps {
  * self-contained.
  */
 export const GraphViewContainer: React.FC<GraphViewContainerProps> = ({
-  graphData,
+  graphData, folders=[], onSelectFolder,
   activeNote,
   onSelectNoteByTitle,
   backgroundPattern = 'grid',
@@ -65,6 +68,9 @@ export const GraphViewContainer: React.FC<GraphViewContainerProps> = ({
         : defaultGraphMode) as '2d' | '3d'
   );
 
+  const [showFolders,setShowFolders]=useState(()=>localStorage.getItem('prism_graph_folders')!=='false');
+  const data=useMemo(()=>showFolders?withFolders(graphData,folders):graphData,[graphData,folders,showFolders]);
+  const select=(id:string)=>{const node=data.nodes.find(n=>n.id===id);if(node?.kind==='folder')onSelectFolder?.(node.folderPath??'');else onSelectNoteByTitle(id);};
   const switchMode = (mode: '2d' | '3d') => {
     setGraphMode(mode);
     localStorage.setItem(GRAPH_MODE_KEY, mode);
@@ -72,6 +78,7 @@ export const GraphViewContainer: React.FC<GraphViewContainerProps> = ({
 
   const toggle = (
     <div className="graph-switcher flex items-center bg-[var(--color-surface)] p-1 rounded-lg border border-[var(--color-border)]">
+      <label className="px-2 text-xs"><input type="checkbox" checked={showFolders} onChange={e=>{setShowFolders(e.target.checked);localStorage.setItem('prism_graph_folders',String(e.target.checked));}}/> Show folders</label>
       <button
         onClick={() => switchMode('2d')}
         className={`px-3 py-1 text-xs rounded-md transition-colors ${
@@ -97,9 +104,9 @@ export const GraphViewContainer: React.FC<GraphViewContainerProps> = ({
 
   return graphMode === '2d' ? (
     <GraphView
-      graphData={graphData}
+      graphData={data}
       activeNote={activeNote}
-      onSelectNoteByTitle={onSelectNoteByTitle}
+      onSelectNoteByTitle={select}
       toolbarExtra={toggle}
       backgroundPattern={backgroundPattern}
       persistNodePositions={persistNodePositions}
@@ -108,9 +115,9 @@ export const GraphViewContainer: React.FC<GraphViewContainerProps> = ({
     />
   ) : (
     <GraphView3D
-      graphData={graphData}
+      graphData={data}
       activeNote={activeNote}
-      onSelectNoteByTitle={onSelectNoteByTitle}
+      onSelectNoteByTitle={select}
       toolbarExtra={toggle}
       backgroundPattern={backgroundPattern}
       autoRotateOnLoad={autoRotateOnLoad}

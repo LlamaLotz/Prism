@@ -1,3 +1,4 @@
+import { registerEditorRelocation } from '../services/editorRelocation';
 import { LARGE_NOTE_BYTES } from '../services/noteIO';
 import { buildSparseLineIndex, getLineRange, type SparseLineIndex } from '../utils/largeText';
 import { AIEnhancements } from './AIEnhancements';
@@ -1795,6 +1796,20 @@ export const Editor: React.FC<EditorProps> = ({
   // runs on note switch and on lazy content arrival, but not on unrelated
   // metadata updates (updatedAt, refresh recreations with same content).
   const lastNotePathRef = useRef<string | null>(null);
+  useEffect(()=>registerEditorRelocation(async(oldPath,newPath,move)=>{
+    if(noteRef.current?.path!==oldPath){await move();return;}
+    if(timerRef.current)clearTimeout(timerRef.current);
+    if(idleHistoryTimerRef.current)clearTimeout(idleHistoryTimerRef.current);
+    timerRef.current=null;idleHistoryTimerRef.current=null;
+    const doc=contentRef.current;
+    await saveRef.current(oldPath,doc);
+    await move();
+    lastNotePathRef.current=newPath;
+    noteRef.current={...noteRef.current!,path:newPath,content:contentRef.current};
+    publishStudyDirty(oldPath,false);
+    return contentRef.current;
+  }),[publishStudyDirty]);
+
   useEffect(() => {
     if (note) {
       // Reset the preview viewport + jump highlight when the note itself
