@@ -7,11 +7,13 @@ fn main() {
 
   // `tauri dev` never performs the release bundle step that places
   // libonnxruntime.dylib next to the executable, so a debug binary would
-  // dlopen-fail (and ort panics on load failure). Stage the checked-in
+  // dlopen-fail (and ort panics on load failure). Stage the locally prepared
   // release dylib next to the debug binary when it exists. A stale/broken
   // entry (e.g. a symlink into a wiped /tmp from an older setup) is replaced.
   println!("cargo:rerun-if-changed=onnxruntime/libonnxruntime.dylib");
-  if std::env::var("PROFILE").as_deref() == Ok("debug") {
+  if std::env::var("PROFILE").as_deref() == Ok("debug")
+    && std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("macos")
+  {
     let manifest = std::path::PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").expect("Cargo manifest dir"));
     let source = manifest.join("onnxruntime/libonnxruntime.dylib");
     if source.is_file() {

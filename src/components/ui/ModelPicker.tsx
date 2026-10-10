@@ -80,16 +80,23 @@ export function ModelPicker({ options, value, onChange, label = 'Chat model', pl
       close(false);
     };
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.stopPropagation(); close(true); } };
-    const onViewport = (e: Event) => { if (!menuRef.current?.contains(e.target as Node)) close(false); };
+    const onResize = () => close(false);
+    const onScroll = (e: Event) => {
+      const target = e.target;
+      const trigger = triggerRef.current;
+      // Only scrolling an ancestor can move the trigger away from its portal.
+      // Other panels and the menu itself have independent scroll positions.
+      if (trigger && target instanceof Node && target.contains(trigger)) close(false);
+    };
     document.addEventListener('pointerdown', onDown, true);
     document.addEventListener('keydown', onKey, true);
-    window.addEventListener('resize', onViewport);
-    document.addEventListener('scroll', onViewport, true);
+    window.addEventListener('resize', onResize);
+    document.addEventListener('scroll', onScroll, true);
     return () => {
       document.removeEventListener('pointerdown', onDown, true);
       document.removeEventListener('keydown', onKey, true);
-      window.removeEventListener('resize', onViewport);
-      document.removeEventListener('scroll', onViewport, true);
+      window.removeEventListener('resize', onResize);
+      document.removeEventListener('scroll', onScroll, true);
     };
   }, [open, close]);
 

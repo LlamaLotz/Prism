@@ -6,7 +6,7 @@ for(const theme of ['industrial','glass','gloss'])for(const mode of ['light','da
  await page.screenshot({path:`output/playwright/library-${theme}-${mode}.png`});
  const covers=page.getByRole('group',{name:'Notebook covers'});await covers.focus();await covers.press('ArrowRight');
  await expect(page.locator('.notebook-library__caption h2')).toHaveText('Research notebook 1');
- if(theme!=='industrial')expect(await page.locator('.notebook-cover').first().evaluate(e=>getComputedStyle(e).transform)).toContain('matrix3d');
+ if(theme!=='industrial')await expect.poll(()=>page.locator('.notebook-cover').first().evaluate(e=>getComputedStyle(e).transform)).toContain('matrix3d');
  const ratios=await page.locator('.notebook-library').evaluate(el=>{const style=getComputedStyle(el);const linear=(s:string)=>{const parts=s.match(/[\d.]+/g)!.slice(0,3).map(Number).map(c=>{const v=c/255;return v<=.04045?v/12.92:((v+.055)/1.055)**2.4});return parts[0]*.2126+parts[1]*.7152+parts[2]*.0722};const probe=document.createElement('span');el.append(probe);const value=(name:string)=>{probe.style.color=`var(${name})`;return linear(getComputedStyle(probe).color);};const bg=value('--nb-panel');const ratios=['--nb-text','--nb-secondary'].map(n=>{const fg=value(n);return (Math.max(fg,bg)+.05)/(Math.min(fg,bg)+.05)});probe.remove();return ratios;});
  expect(Math.min(...ratios)).toBeGreaterThanOrEqual(4.5);
  await covers.press('Enter');await expect(page.getByRole('button',{name:'Back to notebooks'})).toBeVisible();await page.getByRole('button',{name:'Back to notebooks'}).click();await expect(page.locator('.notebook-library__caption h2')).toHaveText('Research notebook 1');

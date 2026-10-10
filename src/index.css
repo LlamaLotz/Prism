@@ -122,8 +122,16 @@ body {
   background-color: var(--color-base);
   color: var(--color-text-body);
   font-family: var(--font-sans);
-  color-scheme: dark;
   -webkit-font-smoothing: antialiased;
+}
+
+/* `color-scheme` belongs on the root, where the theme blocks below can switch
+   it: declared on <body> it outranked every `.theme-*.mode-light` rule (a class
+   on <body> is nearer than the same class on <html>), so light themes still
+   told the engine to paint native control chrome — the <select> popup list and
+   its options — in dark mode. */
+:root {
+  color-scheme: dark;
 }
 
 /* Startup surface: keep the first native/WebView frame and the React splash
@@ -210,7 +218,7 @@ pre {
     border: 1px solid var(--color-border);
     transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   }
-  button:not(:disabled):not(.titlebar-menu):not(.titlebar-menu-dropdown):hover {
+  button:not(:disabled):not(.titlebar-menu):not(.titlebar-menu-dropdown):not(.titlebar-window-control):hover {
     border-color: var(--color-brand-500) !important;
     box-shadow: 0 0 10px color-mix(in srgb, var(--color-brand-500) 35%, transparent),
                 0 0 20px color-mix(in srgb, var(--color-brand-500) 15%, transparent),
@@ -267,7 +275,7 @@ pre {
     box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25);
   }
 
-  button:not(:disabled):hover {
+  button:not(:disabled):not(.titlebar-window-control):hover {
     border-color: var(--color-brand-500);
     box-shadow: 0 0 10px var(--color-hover-glow);
   }
@@ -279,7 +287,7 @@ pre {
     border-color: var(--color-brand-500);
     box-shadow: 0 0 10px var(--color-hover-glow);
   }
-  button:not(:disabled):active {
+  button:not(:disabled):not(.titlebar-window-control):active {
     border-color: var(--color-brand-600);
     box-shadow: 0 0 6px var(--color-hover-glow-active);
   }
@@ -790,6 +798,18 @@ input[type='range'].hue-slider::-moz-range-thumb {
   --glass-border: 1px solid rgba(255, 255, 255, 0.12);
 
   color-scheme: light;
+}
+
+/* Light modes: interactive form controls draw their own boundary.
+   The archetype hairline rules (`border-slate-800` resolves to a white 6–10 %
+   alpha in glass/gloss, `#f1f5f9` in industrial) are written for passive
+   dividers. On an input, select or textarea they leave a white box on a
+   near-white panel with nothing to see — measured 1.0–1.5:1, far under the 3:1
+   non-text minimum — which is why the settings dropdowns and the notebook
+   conversation picker vanished into their surfaces in light mode. */
+:is(.theme-industrial, .theme-glass, .theme-gloss).mode-light
+  :is(select, textarea, input:not([type='range']):not([type='checkbox']):not([type='radio']):not([type='color']):not([type='file'])) {
+  border-color: color-mix(in srgb, var(--color-text-muted) 80%, var(--color-border));
 }
 
 /* Ingestion modal: keep the complete outer curve visible in rounded themes.
@@ -1804,15 +1824,26 @@ html.theme-gloss {
    NOTE: dark ink is only correct when the pressed fill is the accent pill.
    The Notebook, AI sidebar and legacy notebook style their own pressed state
    on neutral or translucent surfaces, where dark ink would be unreadable, so
-   they opt out here and own both fill and ink. */
+   they opt out here and own both fill and ink. The titlebar toggles (Notes
+   view / AI assistant) do the same. */
 tab-active,
 .tab-active,
-button[aria-pressed="true"]:not(:where(.study-workspace *, .study-assistant *, .ai-sidebar *, .prompt-bar *, .notebook-page *, .prism-navigation-menu *)),
-button[aria-selected="true"]:not(:where(.study-workspace *, .study-assistant *, .ai-sidebar *, .prompt-bar *, .notebook-page *, .prism-navigation-menu *)),
-button[role="tab"][data-state="active"]:not(:where(.study-workspace *, .study-assistant *, .ai-sidebar *, .prompt-bar *, .notebook-page *, .prism-navigation-menu *)),
-button[role="tab"][aria-selected="true"]:not(:where(.study-workspace *, .study-assistant *, .ai-sidebar *, .prompt-bar *, .notebook-page *, .prism-navigation-menu *)) {
+button[aria-pressed="true"]:not(:where(.study-workspace *, .study-assistant *, .ai-sidebar *, .prompt-bar *, .notebook-page *, .prism-navigation-menu *, .liquid-gloss-header *)),
+button[aria-selected="true"]:not(:where(.study-workspace *, .study-assistant *, .ai-sidebar *, .prompt-bar *, .notebook-page *, .prism-navigation-menu *, .liquid-gloss-header *)),
+button[role="tab"][data-state="active"]:not(:where(.study-workspace *, .study-assistant *, .ai-sidebar *, .prompt-bar *, .notebook-page *, .prism-navigation-menu *, .liquid-gloss-header *)),
+button[role="tab"][aria-selected="true"]:not(:where(.study-workspace *, .study-assistant *, .ai-sidebar *, .prompt-bar *, .notebook-page *, .prism-navigation-menu *, .liquid-gloss-header *)) {
   color: #0F172A !important;
   font-weight: 600 !important;
+}
+
+/* Titlebar toggles sit on neutral / translucent fills, so they own their ink
+   instead of the accent-pill assumption above. Dark modes keep the accent;
+   light modes darken it so the active label still clears 4.5:1 on light fills. */
+.liquid-gloss-header :is(.titlebar-toggle, .titlebar-action)[aria-pressed='true'] {
+  font-weight: 600;
+}
+.mode-light .liquid-gloss-header :is(.titlebar-toggle, .titlebar-action)[aria-pressed='true'] {
+  color: color-mix(in srgb, var(--color-brand-500) 35%, black) !important;
 }
 
 /* Inactive tab / segment text in dark panels */
@@ -2047,7 +2078,29 @@ button[role="tab"][aria-selected="true"]:not(:where(.study-workspace *, .study-a
 .mode-light { --control-edge: #72727a; }
 .theme-glass, .theme-gloss { --control-radius: 12px; --app-radius: 16px; }
 .theme-industrial :is(button,input,select,textarea,[role="button"],dialog) { border-radius: 0 !important; }
-.theme-industrial :is(.titlebar-window-control,.status-indicator-dot) { border-radius: 50% !important; }
+.theme-industrial .status-indicator-dot { border-radius: 50% !important; }
+
+/* Window controls (minimize / maximize / close): flat, square hit targets.
+   Their state is expressed purely as a background colour fill on hover/focus —
+   never a border box, a rounded corner, or the brand glow. */
+.titlebar-window-control,
+.theme-glass .titlebar-window-control,
+.theme-gloss .titlebar-window-control,
+.theme-industrial .titlebar-window-control {
+  border: 0 !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+}
+.titlebar-window-control:not(:disabled):hover,
+.titlebar-window-control:not(:disabled):active,
+.titlebar-window-control:not(:disabled):focus-visible,
+.theme-glass .titlebar-window-control:hover,
+.theme-gloss .titlebar-window-control:hover,
+.theme-industrial .titlebar-window-control:hover {
+  border: 0 !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+}
 :is(.theme-glass,.theme-gloss) .liquid-gloss-app { border-radius: var(--app-radius) !important; overflow: hidden; isolation: isolate; clip-path: inset(0 round var(--app-radius)); }
 .window-edge-to-edge { --app-radius: 0px; }
 :is(.theme-glass,.theme-gloss) body, :is(.theme-glass,.theme-gloss) #root { background: transparent; }

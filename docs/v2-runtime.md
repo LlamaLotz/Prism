@@ -75,7 +75,7 @@ npx tsc --noEmit
 npx playwright test
 ```
 
-The existing native build requires an ONNX Runtime library. Set `ORT_LIB_LOCATION` to its installation directory when not already configured; on macOS the dynamic loader must also find the corresponding dylib. The local validation used the installed Intel macOS ONNX library without downloading new model weights.
+Linux CPU builds link the ONNX Runtime static archive downloaded by `ort-sys` into the executable; no separate `libonnxruntime.so` is needed. After updating an older Linux checkout, rebuild with `cargo build --manifest-path src-tauri/Cargo.toml` and restart Prism. Windows and macOS retain dynamic loading (`onnxruntime.dll` and `libonnxruntime.dylib` respectively). On macOS, prepare `src-tauri/onnxruntime/libonnxruntime.dylib` before building; debug builds stage it beside the executable and release packaging bundles it. Custom native installations can use `ORT_LIB_LOCATION` at build time; dynamic-loading builds can use `ORT_DYLIB_PATH` at runtime.
 
 The reusable frontend validation workflow runs the frontend build and Playwright suite. Both automatic release tagging and packaging require this validation to pass. Releases no longer build, download, validate, or bundle the removed Open Notebook runtime.
 

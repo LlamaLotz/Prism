@@ -1327,8 +1327,14 @@ pub(crate) fn initialize_safely<T>(
         // NOTE: the default panic hook still prints the panic line above this
         // message. That print is cosmetic — the panic was caught and the app
         // continues without the semantic engine.
-        let repair = if cfg!(debug_assertions) {
-            "Rebuild the app (cargo build stages the dev dylib next to the binary) or restore libonnxruntime.dylib beside the executable."
+        let repair = if cfg!(debug_assertions) && cfg!(target_os = "macos") {
+            "Rebuild the app with the prepared ONNX Runtime dylib (cargo build stages it next to the binary) or restore libonnxruntime.dylib beside the executable."
+        } else if cfg!(debug_assertions) && cfg!(target_os = "windows") {
+            "Rebuild the app or restore onnxruntime.dll beside the executable."
+        } else if cfg!(debug_assertions) && cfg!(target_os = "linux") {
+            "Rebuild Prism with cargo build --manifest-path src-tauri/Cargo.toml. Linux CPU builds link ONNX Runtime into the executable."
+        } else if cfg!(debug_assertions) {
+            "Rebuild Prism and verify its ONNX Runtime installation."
         } else {
             "Reinstall Prism to repair its bundled ONNX Runtime."
         };
@@ -1342,6 +1348,29 @@ pub(crate) fn initialize_safely<T>(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn linux_onnx_runtime_initializes_without_a_shared_library() {
+        // Reach the native model parser without downloading model weights.
+        // A dynamic-loading regression panics before it can return this error.
+        let model = fastembed::UserDefinedEmbeddingModel {
+            onnx_file: vec![0xff], // Deliberately invalid protobuf.
+            tokenizer_files: fastembed::TokenizerFiles {
+                tokenizer_file: Vec::new(),
+                config_file: Vec::new(),
+                special_tokens_map_file: Vec::new(),
+                tokenizer_config_file: Vec::new(),
+            },
+        };
+        let error = TextEmbedding::try_new_from_user_defined(model, Default::default())
+            .err()
+            .expect("the native parser must reject the invalid ONNX model");
+        assert!(
+            error.to_string().contains("protobuf parsing failed"),
+            "{error}"
+        );
+    }
 
     #[test]
     fn loader_panic_is_cached_without_poisoning_the_engine_slot() {

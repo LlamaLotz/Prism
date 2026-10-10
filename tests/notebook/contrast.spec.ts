@@ -207,9 +207,18 @@ test.describe('rendered contrast', () => {
       await expect(page.getByTitle('Expand sidebar', { exact: true })).toBeVisible();
       failures.push(...(await audit(page)));
       await page.getByTitle('Expand sidebar', { exact: true }).click();
+      await expect(collapse).toBeFocused();
+      await expect(page.locator('.sidebar-layout')).not.toHaveAttribute('data-animate', 'true');
+      await page.locator('.sidebar-layout').evaluate(async element => {
+        await Promise.all(element.getAnimations({ subtree: true })
+          .filter(animation => animation.effect?.getComputedTiming().iterations !== Infinity)
+          .map(animation => animation.finished.catch(() => {})));
+      });
       // The portaled model menu floats over page content.
-      await shared.getByRole('combobox', { name: 'Chat model' }).click();
-      await expect(page.locator('.model-picker__menu')).toBeVisible();
+      const modelPicker = shared.getByRole('combobox', { name: 'Chat model' });
+      await modelPicker.click();
+      await expect(modelPicker).toHaveAttribute('aria-expanded', 'true');
+      await expect(page.getByRole('listbox', { name: 'Chat model' })).toBeVisible();
       failures.push(...(await audit(page)));
       await page.keyboard.press('Escape');
       await shared.getByLabel('Assistant options').click();

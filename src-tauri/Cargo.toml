@@ -54,12 +54,18 @@ tokio = { version = "1", features = ["time", "sync", "macros"] }
 # `Location` redirect headers (HF/CloudFront) are resolved against the
 # endpoint instead of failing with `RelativeUrlWithoutBase`. See
 # vendor/hf-hub/src/api/sync.rs.
-fastembed = { path = "vendor/fastembed", features = ["ort-download-binaries", "ort-copy-dylibs", "ort-load-dynamic", "online"] }
+fastembed = { path = "vendor/fastembed", features = ["ort-download-binaries", "ort-copy-dylibs", "online"] }
 hnsw_rs = "0.3"
 rayon = "1.10"
 [patch.crates-io]
 fastembed = { path = "vendor/fastembed" }
 hf-hub = { path = "vendor/hf-hub" }
+
+# The CPU runtime downloaded by ort-sys on Linux is libonnxruntime.a.
+# Link it into the executable; load-dynamic would instead look for an absent
+# libonnxruntime.so. Keep the existing bundled-library path on other targets.
+[target.'cfg(not(target_os = "linux"))'.dependencies]
+fastembed = { path = "vendor/fastembed", features = ["ort-load-dynamic"] }
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_System_JobObjects", "Win32_System_Threading", "Win32_Security"] }

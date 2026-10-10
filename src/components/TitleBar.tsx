@@ -264,7 +264,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
 
       <div className="flex items-center gap-0.5 shrink-0">
         <button type="button" onClick={() => onLayoutChange('editor')} aria-pressed={layout === 'editor'}
-          className={`flex items-center gap-1 rounded px-2 py-1 text-xs ${layout === 'editor' ? 'bg-surface text-brand-400' : 'text-text-muted hover:text-offwhite hover:bg-surface-hover'}`}>
+          className={`titlebar-toggle flex items-center gap-1 rounded px-2 py-1 text-xs ${layout === 'editor' ? 'bg-surface text-brand-400' : 'text-text-body hover:text-offwhite hover:bg-surface-hover'}`}>
           <FileText aria-hidden="true" className="w-3.5 h-3.5"/>Notes
         </button>
         <NavigationMenu label="More" value={layout} items={secondaryViews}
@@ -281,7 +281,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
         aria-label="AI assistant"
         aria-pressed={showAI}
         className={`titlebar-action mr-1 p-1.5 rounded transition-colors ${
-          showAI ? 'text-brand-400 bg-brand-600/10' : 'text-text-muted hover:text-offwhite hover:bg-surface-hover'
+          showAI ? 'text-brand-400 bg-brand-600/10' : 'text-text-body hover:text-offwhite hover:bg-surface-hover'
         }`}
       >
         <Sparkles className="w-3.5 h-3.5" />

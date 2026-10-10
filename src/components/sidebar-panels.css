@@ -27,6 +27,9 @@
 .resize-handle-row .resize-handle-grip { width: 32px; height: 2px; }
 .resize-handle:hover .resize-handle-grip, .resize-handle[data-dragging] .resize-handle-grip { background: var(--nb-focus); box-shadow: 0 0 0 1px var(--nb-focus); }
 html .resize-handle:focus-visible { outline: 2px solid var(--nb-focus); outline-offset: -2px; border-radius: 4px; box-shadow: none; }
+/* Industrial resize feedback stays on the grip, not the full hit area. */
+html.theme-industrial .resize-handle:focus-visible { outline: none; }
+html.theme-industrial .resize-handle:is(:hover, :focus-visible, [data-dragging]) .resize-handle-grip { background: var(--nb-text); box-shadow: 0 0 0 1px var(--nb-text); }
 html .sidebar-content { border-radius: var(--nb-radius); }
 html .sidebar, html .sidebar-collapsed-rail { color: var(--nb-text); background-color: var(--nb-canvas); }
 .sidebar, .ai-sidebar { min-width: 0; min-height: 0; overflow: hidden; }
