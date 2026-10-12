@@ -337,6 +337,27 @@ pre {
 }
 
 
+/* Selection follows the saved accent, including browser and editor text. */
+::selection {
+  background-color: var(--color-brand-500);
+  color: var(--color-brand-contrast, #000000);
+}
+html .cm-editor .cm-content ::selection,
+html .cm-editor .cm-content::selection {
+  background-color: var(--color-brand-500) !important;
+  color: var(--color-brand-contrast, #000000) !important;
+}
+html .cm-editor .cm-selectionBackground {
+  background-color: color-mix(in srgb, var(--color-brand-500) 30%, transparent) !important;
+}
+input, select, textarea {
+  accent-color: var(--color-brand-500);
+}
+select option:checked {
+  background-color: var(--color-brand-500);
+  color: var(--color-brand-contrast, #000000);
+}
+
 /* Hue slider in custom accent picker */
 input[type='range'].hue-slider::-webkit-slider-thumb {
   -webkit-appearance: none;
@@ -461,13 +482,13 @@ input[type='range'].hue-slider::-moz-range-thumb {
 .flash-b { animation-name: blockFlashAlt; }
 
 .search-match {
-  background: rgba(254, 176, 93, 0.3);
+  background: color-mix(in srgb, var(--color-brand-500) 30%, transparent);
   border-radius: 0;
   color: var(--color-text-hi);
 }
 .search-match-active {
-  background: #38BDF8;
-  color: var(--color-base);
+  background: var(--color-brand-500);
+  color: var(--color-brand-contrast, #000000);
   border-radius: 0;
 }
 
@@ -927,9 +948,9 @@ html.theme-glass {
   background: var(--color-base);
 }
 
-/* Split view: editor and graph share space side-by-side evenly */
-[data-region="workspace"] [data-region="editor"],
-[data-region="workspace"] [data-region="graph"] {
+/* Editor and graph fill their independently sized workspace panes. */
+.workspace-pane-content > [data-region="editor"],
+.workspace-pane-content > [data-region="graph"] {
   flex: 1 1 0%;
   min-width: 0;
 }
@@ -1135,8 +1156,7 @@ button.titlebar-menu-dropdown:hover {
   padding: 8px;
   min-height: 0;
 }
-.theme-gloss .workspace-panels > [data-region="editor"],
-.theme-gloss .workspace-panels > [data-region="graph"],
+.theme-gloss .workspace-panels > .note-graph-workspace,
 .theme-gloss .workspace-panels > [data-region="topics"] {
   min-width: 0;
   min-height: 0;

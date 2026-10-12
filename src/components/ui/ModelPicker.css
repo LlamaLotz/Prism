@@ -103,7 +103,8 @@
   font-size: 12px;
   cursor: pointer;
 }
-.model-picker__option:hover {
+.model-picker__option:hover,
+.model-picker__option[aria-selected="true"] {
   background: var(--nb-selection, var(--color-surface-hover));
 }
 .model-picker__check {

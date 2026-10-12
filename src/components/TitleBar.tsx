@@ -153,7 +153,6 @@ export const TitleBar: React.FC<TitleBarProps> = ({
         { label: 'Graph', shortcut: 'Ctrl+2', action: () => { onLayoutChange('graph'); closeMenu(); }, disabled: layout === 'graph' },
         { label: 'Topics', shortcut: 'Ctrl+3', action: () => { onLayoutChange('topics'); closeMenu(); }, disabled: layout === 'topics' },
         { label: 'Notebook', shortcut: 'Ctrl+5', action: () => { onLayoutChange('notebook'); closeMenu(); }, disabled: layout === 'notebook' },
-        { label: 'Split View', shortcut: 'Ctrl+4', action: () => { onLayoutChange('split'); closeMenu(); }, disabled: layout === 'split' },
         { divider: true, label: '' },
         { label: 'Ingestion Logs', action: () => { onToggleIngestionLogs(); closeMenu(); } },
         { divider: true, label: '' },
@@ -166,7 +165,6 @@ export const TitleBar: React.FC<TitleBarProps> = ({
   const secondaryViews = [
     { value: 'graph', label: 'Graph' },
     { value: 'topics', label: 'Topics' },
-    { value: 'split', label: 'Split View' },
     { value: 'notebook', label: 'Notebook' },
   ] as const;
 
@@ -263,12 +261,12 @@ export const TitleBar: React.FC<TitleBarProps> = ({
       )}
 
       <div className="flex items-center gap-0.5 shrink-0">
-        <button type="button" onClick={() => onLayoutChange('editor')} aria-pressed={layout === 'editor'}
+        <button type="button" onClick={() => onLayoutChange('editor')} aria-pressed={layout === 'editor' || layout === 'split'}
           className={`titlebar-toggle flex items-center gap-1 rounded px-2 py-1 text-xs ${layout === 'editor' ? 'bg-surface text-brand-400' : 'text-text-body hover:text-offwhite hover:bg-surface-hover'}`}>
           <FileText aria-hidden="true" className="w-3.5 h-3.5"/>Notes
         </button>
         <NavigationMenu label="More" value={layout} items={secondaryViews}
-          activeLabel={secondaryViews.find(view => view.value === layout)?.label} onSelect={onLayoutChange}/>
+          activeLabel={layout === 'split' ? 'Graph' : secondaryViews.find(view => view.value === layout)?.label} onSelect={onLayoutChange}/>
       </div>
 
       {/* ── Spacer (drag region) ── */}

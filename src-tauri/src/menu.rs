@@ -53,12 +53,6 @@ pub fn build_app_menu(app: &AppHandle) -> Result<Menu<tauri::Wry>, Box<dyn std::
                 .build(app)?,
         )
         .item(
-            &MenuItemBuilder::new("Split View")
-                .id("view_split")
-                .accelerator("CmdOrCtrl+4")
-                .build(app)?,
-        )
-        .item(
             &MenuItemBuilder::new("Notes")
                 .id("view_editor")
                 .accelerator("CmdOrCtrl+1")

@@ -1,0 +1,25 @@
+.note-graph-workspace { display: flex; flex: 1 1 0; min-width: 0; min-height: 0; overflow: hidden; }
+.note-graph-workspace[hidden], .workspace-pane[hidden] { display: none; }
+.note-graph-workspace[data-arrangement="stacked"] { flex-direction: column; }
+.workspace-pane { display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; background: var(--color-panel); border-radius: var(--nb-radius); }
+.workspace-pane-content { display: flex; flex: 1 1 0; min-width: 0; min-height: 0; overflow: hidden; }
+.workspace-pane-content > * { min-width: 0; min-height: 0; width: 100%; }
+.workspace-pane-controls { display: flex; justify-content: flex-end; flex: none; gap: 4px; padding: 3px 6px; border-bottom: 1px solid var(--color-border); }
+.workspace-pane-controls button { display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; color: var(--color-text-body); border-radius: var(--nb-radius-sm); }
+.workspace-pane-controls button:hover { background: var(--nb-selection); color: var(--color-text-hi); }
+.workspace-pane-controls button:focus-visible, .workspace-pane:focus-visible { outline: 2px solid var(--nb-focus); outline-offset: -2px; }
+.note-graph-workspace[data-resizing] .workspace-pane-content { pointer-events: none; user-select: none; }
+html .note-graph-workspace .resize-handle:is(:hover, :focus-visible, [data-dragging]) .resize-handle-grip { background: var(--nb-focus); box-shadow: 0 0 0 1px var(--nb-focus); }
+/* Theme geometry belongs to each pane, with the divider in the shared gap. */
+.theme-glass .workspace-pane { border-radius: var(--radius-2xl); box-shadow: var(--glass-specular-edge); }
+.theme-gloss .workspace-pane { border-radius: var(--radius-module); box-shadow: var(--glass-specular-edge); }
+html .workspace-pane-controls + .workspace-pane-content > [data-region] { border-top-left-radius: 0 !important; border-top-right-radius: 0 !important; }
+/* Inset the note surface so all four inner corners remain visible beneath
+   the pane controls in Rounded and Liquid Gloss. */
+html:is(.theme-glass, .theme-gloss) [data-workspace-pane="editor"] > .workspace-pane-content {
+  margin: 6px;
+  border-radius: 18px !important;
+}
+html:is(.theme-glass, .theme-gloss) [data-workspace-pane="editor"] > .workspace-pane-content > [data-region="editor"] {
+  border-radius: inherit !important;
+}

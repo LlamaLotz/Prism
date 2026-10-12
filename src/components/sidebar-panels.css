@@ -4,6 +4,19 @@
 .workspace-shell { overflow: hidden; }
 .sidebar-shell { container-type: inline-size; }
 .vault-shell { container-name: vault; }
+/* Keep vault surfaces neutral instead of inheriting the notebook's cool tint. */
+.vault-shell {
+  --nb-canvas: #101010;
+  --nb-panel: #1b1b1b;
+  --nb-card: #242424;
+  --nb-menu: #2a2a2a;
+}
+.mode-light .vault-shell {
+  --nb-canvas: #ebebeb;
+  --nb-panel: #ffffff;
+  --nb-card: #f6f6f6;
+  --nb-menu: #ffffff;
+}
 .ai-shell { container-name: assistant; }
 .vault-shell > [hidden] { display: none; }
 .vault-shell > div:not(.resize-handle) { height: 100%; }
@@ -64,7 +77,6 @@ html .ai-sidebar .bg-brand-500 { background: var(--nb-selection) !important; col
   .sidebar-header { padding: 12px 8px; }
 }
 @container assistant (max-width: 359px) {
-  .assistant-action-label { display: none; }
   .sidebar-shell .study-assistant > .study-toolbar > button { padding: 7px; }
   .ai-sidebar > div:first-child { flex-wrap: wrap; gap: 8px; }
 }

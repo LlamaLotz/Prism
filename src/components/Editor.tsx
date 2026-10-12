@@ -2620,7 +2620,7 @@ const sidecarPath = (notePath: string): string => {
         {mode === 'preview' && (
           <div
             ref={previewRef}
-            className="markdown-body flex-1 overflow-y-auto px-8 py-6 max-w-4xl mx-auto w-full select-text selection:bg-brand-500/30 selection:text-white"
+            className="markdown-body flex-1 overflow-y-auto px-8 py-6 max-w-4xl mx-auto w-full select-text"
           >
             {content.length === 0 ? (
               <div className="text-slate-600 italic text-xs">This note is empty. Click "Edit" to add content.</div>

@@ -13,7 +13,6 @@ import { Editor } from './components/Editor';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { GraphViewContainer } from './components/GraphViewContainer';
 import { TopicsView } from './components/TopicsView';
-import { AISidebar } from './components/AISidebar';
 import type { ChatModelPicker } from './components/study/SharedChat';
 import type { ModelPickerOption } from './components/ui/ModelPicker';
 import { SettingsPage, type SectionId } from './components/SettingsPage';
@@ -23,12 +22,13 @@ import { useIngestion } from './services/ingestionStore';
 import { AppSettings, SettingsApplyError, NoteFile, GraphNode, GraphLink, GraphPayload, tauriAPI } from './types';
 import { listen } from '@tauri-apps/api/event';
 import { linkerService } from './services/linkerService';
-import { knowledge, type ChatLibrarySession } from './services/knowledge';
+import { knowledge } from './services/knowledge';
 import { backfillEmbeddings, generateAndStoreEmbedding, generateAndStoreBlockEmbeddings } from './services/semantic';
 import { appLogger } from './services/appLogger';
 import { formatNote, noteTitleMatches } from './utils/formatter';
 import { applyAccentColor } from './utils/accentColor';
 import { applyWindowIcon } from './services/appIcon';
+import { NoteGraphWorkspace } from './components/NoteGraphWorkspace';
 import { ResizeHandle } from './components/ResizeHandle';
 import { sidebarLayout, savedPanelWidth } from './utils/sidebarLayout';
 import './components/sidebar-panels.css';
@@ -198,6 +198,18 @@ export default function App() {
   const [layout, setLayout] = useState<AppPage>(
     DEFAULT_SETTINGS.appearance.startupView
   );
+  const focusPane = (pane: 'editor' | 'graph') => requestAnimationFrame(() => {
+    const target = document.querySelector<HTMLElement>(`[data-workspace-pane="${pane}"]`);
+    (pane === 'editor' ? target?.querySelector<HTMLElement>('.cm-content, textarea') ?? target : target)?.focus({ preventScroll: true });
+  });
+  const navigateWorkspace = (view: AppPage, openingNote = false) => {
+    setLayout(current => {
+      if (view === 'editor' && (current === 'split' || (current === 'graph' && (openingNote || activeNote)))) return 'split';
+      if (view === 'graph' && (current === 'split' || (current === 'editor' && activeNote))) return 'split';
+      return view;
+    });
+    if (view === 'editor' || view === 'graph') focusPane(view);
+  };
   const [notebookVisited, setNotebookVisited] = useState(false);
   const [studyUnsavedPaths,setStudyUnsavedPaths]=useState<string[]>([]);
   useEffect(()=>{const changed=(event:Event)=>{const {path,dirty}=(event as CustomEvent<{path:string;dirty:boolean}>).detail;setStudyUnsavedPaths(paths=>dirty?[...new Set([...paths,path])]:paths.filter(p=>p!==path));};window.addEventListener('study-note-dirty',changed);return()=>window.removeEventListener('study-note-dirty',changed);},[]);
@@ -523,6 +535,7 @@ export default function App() {
     handleNewFolder: null as (() => void) | null,
     handleSelectVault: null as (() => void) | null,
     toggleSidebar: null as (() => void) | null,
+    navigate: null as ((view: AppPage) => void) | null,
   });
 
   // Native menu-bar events from Rust (File / Edit / View / Help menus).
@@ -563,7 +576,7 @@ export default function App() {
     unlisteners.push(
       listen<string>('menu://set-layout', (event) => {
         const view = event.payload as AppPage;
-        if (APP_PAGES.includes(view)) setLayout(view);
+        if (APP_PAGES.includes(view)) menuHandlersRef.current.navigate?.(view);
       })
     );
 
@@ -1078,8 +1091,6 @@ export default function App() {
       if (newNote) {
         revealFolder(folder);
         handleSelectNote(newNote);
-        // Switch to editor mode to start editing immediately
-        if (layout === 'graph' || layout === 'topics' || layout === 'notebook') setLayout('split');
       }
     } else {
       await alert(errorDialogMessage(createRawErrorDetails(result.error, 'Could not create the note.')), { title: 'Could not create note' });
@@ -1131,6 +1142,7 @@ export default function App() {
   menuHandlersRef.current.handleNewFolder = handleNewFolder;
   menuHandlersRef.current.handleSelectVault = handleSelectVault;
   menuHandlersRef.current.toggleSidebar = toggleSidebar;
+  menuHandlersRef.current.navigate = navigateWorkspace;
 
   // Delete a folder and EVERYTHING inside it. Double-gated: a name prompt
   // (so typos can't nuke a folder by accident) followed by a warning that
@@ -1419,13 +1431,13 @@ export default function App() {
   const handleSelectNote = (note: NoteFile) => {
     setScrollRequest(null);
     setActiveNote(note);
+    navigateWorkspace('editor', true);
     appLogger.info(`Note opened: ${note.title}`);
   };
 
-  // Double-clicking a note in the sidebar opens it in the full editor panel.
+  // Both single and double clicks preserve an open graph.
   const handleOpenNote = (note: NoteFile) => {
     handleSelectNote(note);
-    setLayout('editor');
   };
 
   // 10. Wiki link traversal & automatic connection note creation
@@ -1445,7 +1457,7 @@ export default function App() {
 
     if (matched) {
       setActiveNote(matched);
-      if (layout === 'graph' || layout === 'topics' || layout === 'notebook') setLayout('split');
+      navigateWorkspace('editor', true);
       if (blockId || line) {
         setScrollRequest({ blockId, line, ts: Date.now() });
         console.log('[nav] scrollRequest set', { blockId, line, note: matched.title });
@@ -1479,7 +1491,7 @@ export default function App() {
           const newNote = sorted.find((n) => n.path === result.fullPath);
           if (newNote) {
             setActiveNote(newNote);
-            if (layout === 'graph' || layout === 'topics' || layout === 'notebook') setLayout('split');
+            navigateWorkspace('editor', true);
           }
         } else {
           await alert(errorDialogMessage(createRawErrorDetails(result.error ?? 'unknown error', 'Could not create the connected note.')), {
@@ -1491,24 +1503,9 @@ export default function App() {
     }
   };
 
-  const handleInsertText = (text: string) => {
-    if (!activeNote) return;
-    const newContent = (activeNote.content ?? '') + '\n' + text;
-    handleSaveContent(activeNote.path, newContent);
-  };
-
   // Cross-surface chat navigation for the shared library. Either side drops a
   // request here; the target consumes it once (then clears it via callback).
   const [copilotOpenRequest, setCopilotOpenRequest] = useState<{ sessionId: string; ts: number } | null>(null);
-  // Continue a Co-Pilot library chat in Notebook: open the same library session
-  // as a notebook conversation so it keeps its transcript and its sources.
-  const handleOpenInNotebook = async (entry: ChatLibrarySession) => {
-    try {
-      await sharedStudy.open(settings.vaultPath, entry.id);
-      setLayout('notebook');
-    } catch (e) { await alert(String(e), { title: 'Could not open conversation' }); }
-  };
-
   // An approved (or undone) agent edit mutated the vault outside the normal
   // save flow: re-index the sidebar list and reload the graph, mirroring the
   // vault-export refresh. fetchNotes reconciles the open note to a
@@ -1544,7 +1541,7 @@ export default function App() {
             appIcon={settings.appearance.appIcon}
             themeMode={settings.appearance.themeMode}
             layout={layout}
-            onLayoutChange={setLayout}
+            onLayoutChange={navigateWorkspace}
             showAI={showAICoPilot && layout !== 'notebook'}
             onToggleAI={() => { animatePanels(); setPanelOverrides(null); setShowAICoPilot(!showAICoPilot); }}
             onNewNote={handleNewNote}
@@ -1625,8 +1622,9 @@ export default function App() {
         {/* Workspace Main Panels */}
         <div className="workspace-panels flex-1 flex min-w-0 min-h-0 overflow-hidden">
           
-          {/* Note Editor Pane */}
-          {(layout === 'editor' || layout === 'split') && (
+          <NoteGraphWorkspace showEditor={layout === 'editor' || layout === 'split'} showGraph={layout === 'graph' || layout === 'split'}
+            onClose={pane => { const remaining = pane === 'editor' ? 'graph' : 'editor'; setLayout(remaining); focusPane(remaining); }}
+            editor={(layout === 'editor' || layout === 'split') && (
             <ErrorBoundary fallbackTitle="Editor Component Crashed">
               <Editor
                 note={activeNote}
@@ -1643,10 +1641,8 @@ export default function App() {
                 }}
               />
             </ErrorBoundary>
-          )}
-
-          {/* Connected Force Graph Network Pane (2D/3D toggle inside) */}
-          {(layout === 'graph' || layout === 'split') && (
+            )}
+            graph={(layout === 'graph' || layout === 'split') && (
             <GraphViewContainer
               key={`${settings.appearance.themeStyle}|${settings.appearance.themeMode}`}
               graphData={graphData} folders={folders} onSelectFolder={revealFolder}
@@ -1662,7 +1658,8 @@ export default function App() {
               themeStyle={settings.appearance.themeStyle}
               themeMode={settings.appearance.themeMode}
             />
-          )}
+            )}
+          />
 
           {(notebookVisited || layout === 'notebook') && (
             <div className="flex-1 min-w-0 h-full" style={{ display: layout === 'notebook' ? undefined : 'none' }}>
@@ -1670,7 +1667,7 @@ export default function App() {
                 <StudyWorkspace config={settings.omniRoute} modelPicker={chatModelPicker} onVaultChanged={handleAgentVaultChanged} unsavedPaths={studyUnsavedPaths} key={settings.vaultPath} vaultPath={settings.vaultPath}
                   onImport={() => setIsIngestModalOpen(true)} onOpenSettings={() => openSettings('ai')}
                   onOtherChatView={() => { setLayout('editor'); setShowAICoPilot(true); }}
-                  onOpenNote={path => { const found = notes.find(n => n.relativePath === path); if (found) { setActiveNote(found); setLayout('editor'); } }} />
+                  onOpenNote={path => { const found = notes.find(n => n.relativePath === path); if (found) handleSelectNote(found); }} />
               </ErrorBoundary>
             </div>
           )}
@@ -1692,28 +1689,7 @@ export default function App() {
           <LiquidGlass className="h-full ai-panel sidebar-content">
           <AssistantWorkspace expanded={expandedAI} autoExpanded={windowWidth < 1000} onExpand={toggleAIExpansion} onCollapse={closeAI} config={settings.omniRoute} modelPicker={chatModelPicker} onVaultChanged={handleAgentVaultChanged} key={settings.vaultPath} vaultPath={settings.vaultPath} openRequest={copilotOpenRequest}
             onConsumed={() => setCopilotOpenRequest(null)} onNotebook={() => setLayout('notebook')}
-            onOpenSettings={() => openSettings('ai')} advanced={            <AISidebar
-            key={settings.vaultPath}
-            note={activeNote}
-            allNotes={notes}
-            config={settings.omniRoute}
-            vaultPath={settings.vaultPath}
-            modelPicker={chatModelPicker}
-            onOpenSettings={() => openSettings('ai')}
-            onInsertText={handleInsertText}
-            onOpenSource={async source => {
-              const response = await knowledge.agentCall(source.blockId ? 'read_block' : 'read_note', source.blockId ? {blockId:source.blockId} : {noteId:source.noteId});
-              const result = response.result as {notePath?:string;path?:string;startLine?:number;anchor?:string};
-              const found=notes.find(n=>n.path===(result.notePath ?? result.path));
-              if(!found) throw new Error('Source is no longer in this vault.');
-              setActiveNote(found); setLayout('split');
-              if(result.startLine) setScrollRequest({line:result.startLine,ts:Date.now()});
-            }}
-            onVaultChanged={handleAgentVaultChanged}
-            openRequest={copilotOpenRequest}
-            onOpenRequestConsumed={() => setCopilotOpenRequest(null)}
-            onOpenInNotebook={handleOpenInNotebook}
-          />} />
+            onOpenSettings={() => openSettings('ai')} />
         </LiquidGlass>
         </div>
         </div>

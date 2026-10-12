@@ -32,6 +32,7 @@ pub struct ToolDefinition {
 
 pub fn tool_definitions() -> Vec<ToolDefinition> {
     vec![
+        ToolDefinition { name: "web_search".into(), description: "Search the public web for current information. Input: query. External processing consent still applies. Cite returned URLs.".into(), requires_approval: false, category: "read".into() },
         // Reads — auto-approved, vault-scoped
         ToolDefinition { name: "vault_overview".into(), description: "List vault folder and note metadata. Paginate with offset and limit; optionally filter by folder.".into(), requires_approval: false, category: "read".into() },
         ToolDefinition { name: "read_note".into(), description: "Read a note's full content and blocks by stable id or path".into(), requires_approval: false, category: "read".into() },
@@ -1396,6 +1397,13 @@ pub async fn agent_call_tool(
     let tool = request.tool.clone();
     // Reads — direct, no approval
     match tool.as_str() {
+        "web_search" => {
+            let scope = super::current(&app)?;
+            let query = request.input["query"].as_str().ok_or("web_search requires query")?.to_string();
+            let results = crate::web_search(app.clone(), query).await?;
+            if super::current(&app)?.generation != scope.generation { return Err("Vault changed".into()); }
+            Ok(AgentToolResponse { tool, requires_approval: false, approval_id: None, preview: None, result: Some(serde_json::json!(results)), error: None })
+        }
         "vault_overview" => {
             let scope=super::current(&app)?;
             let generation=scope.generation.clone();

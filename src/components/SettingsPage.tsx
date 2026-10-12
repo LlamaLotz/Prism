@@ -1342,7 +1342,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                       options={[
                         { value: 'graph', label: 'Graph' },
                         { value: 'editor', label: 'Notes' },
-                        { value: 'split', label: 'Split' },
+                        { value: 'split', label: 'Note + graph' },
                         { value: 'topics', label: 'Topics' },
                         { value: 'notebook', label: 'Notebook' },
                       ]}

@@ -129,8 +129,8 @@ export const GraphView: React.FC<GraphViewProps> = ({
     const w = containerRef.current?.clientWidth || 0;
     const h = containerRef.current?.clientHeight || 0;
     return {
-      width: w > 100 ? w : Math.max(600, window.innerWidth - 320),
-      height: h > 100 ? h : Math.max(400, window.innerHeight - 80),
+      width: Math.max(1, w),
+      height: Math.max(1, h),
     };
   };
 
@@ -544,6 +544,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
     // box of every node and fit it to the pane with padding instead, so the
     // whole graph is always visible at once.
     const fitAllNodes = () => {
+      const { width, height } = getDimensions();
       if (d3Nodes.length === 0) return;
       const xs = d3Nodes.map((d: any) => d.x).filter(Number.isFinite);
       const ys = d3Nodes.map((d: any) => d.y).filter(Number.isFinite);
@@ -582,7 +583,22 @@ export const GraphView: React.FC<GraphViewProps> = ({
       fitAllNodes();
     });
 
+    // Preserve the camera's world-space center and zoom as its pane resizes.
+    // The simulation and node positions stay intact during divider drags.
+    let previousSize = getDimensions();
+    const resize = new ResizeObserver(([entry]) => {
+      const { width, height } = entry.contentRect;
+      if (width <= 0 || height <= 0 || !svgRef.current) return;
+      const transform = d3.zoomTransform(svgRef.current);
+      svg.interrupt().call(zoom.transform, d3.zoomIdentity
+        .translate(transform.x + (width - previousSize.width) / 2, transform.y + (height - previousSize.height) / 2)
+        .scale(transform.k));
+      previousSize = { width, height };
+    });
+    if (containerRef.current) resize.observe(containerRef.current);
+
     return () => {
+      resize.disconnect();
       clearTimeout(fitTimer);
       simulation.stop();
     };

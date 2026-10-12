@@ -72,16 +72,11 @@ test.describe('full application composition', () => {
       expect(ratios.text).toBeGreaterThanOrEqual(4.5);
       expect(ratios.secondary).toBeGreaterThanOrEqual(4.5);
 
-      // The advanced assistant keeps its own transcript and shares the tokens.
-      await shared.getByLabel('Assistant options').click();
-      await shared.getByRole('button', { name: 'Web and advanced tools' }).click();
-      const advanced = page.locator('.ai-sidebar');
-      await expect(advanced).toBeVisible();
-      await expect(advanced.getByRole('textbox', { name: 'Message', exact: true })).toBeVisible();
-      expect(await advanced.evaluate(el => getComputedStyle(el).backgroundColor)).not.toBe('rgba(0, 0, 0, 0)');
-      ratios = await contrast(page, '.ai-sidebar');
-      expect(ratios.text).toBeGreaterThanOrEqual(4.5);
-      expect(ratios.secondary).toBeGreaterThanOrEqual(4.5);
+      // All conversations use the same chat, with a direct settings control.
+      await expect(shared.getByRole('button', { name: 'AI settings', exact: true })).toBeVisible();
+      await expect(shared.getByRole('button', { name: 'Web and advanced tools' })).toHaveCount(0);
+      await expect(page.locator('.ai-sidebar')).toHaveCount(0);
+      await expect(shared.getByRole('textbox', { name: 'Message', exact: true })).toBeVisible();
 
       await page.screenshot({ path: `output/playwright/app-sidebar-${theme}-${mode}.png` });
       expect(errors).toEqual([]);

@@ -12,6 +12,7 @@ interface ResizeHandleProps {
   onResizeStart?: () => void;
   onResizeEnd?: (value: number, changed: boolean) => void;
   sign?: 1 | -1;
+  onReset?: () => void;
 }
 export const ResizeHandle: React.FC<ResizeHandleProps> = (props) => {
   const { direction, className = '', label, value, min, max } = props;
@@ -51,6 +52,7 @@ export const ResizeHandle: React.FC<ResizeHandleProps> = (props) => {
     aria-orientation={vertical ? 'horizontal' : 'vertical'} aria-valuenow={value === undefined ? undefined : Math.round(value)} aria-valuemin={min} aria-valuemax={max === undefined ? undefined : Math.round(max)}
     data-dragging={dragging || undefined}
     className={`resize-handle ${vertical ? 'resize-handle-row' : 'resize-handle-column'} ${className}`}
+    onDoubleClick={props.onReset}
     onPointerDown={e => {
       if (e.button !== 0 || drag.current) return;
       e.preventDefault(); e.currentTarget.focus();
