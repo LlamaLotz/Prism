@@ -32,7 +32,7 @@ import {
 import { listen } from '@tauri-apps/api/event';
 import { tauriAPI } from '../types';
 import { EditorView, keymap, lineNumbers, highlightActiveLine, Decoration, ViewUpdate, WidgetType } from '@codemirror/view';
-import { EditorState, StateEffect, StateField, Range, Text } from '@codemirror/state';
+import { EditorState, StateEffect, StateField, Range, Text, Transaction } from '@codemirror/state';
 import { history, historyKeymap, defaultKeymap, indentWithTab, undo, redo, undoDepth, redoDepth } from '@codemirror/commands';
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown';
 import { syntaxHighlighting, defaultHighlightStyle } from '@codemirror/language';
@@ -642,7 +642,9 @@ export const Editor: React.FC<EditorProps> = ({
 
   // Single funnel for programmatic content changes: keeps React state, refs,
   // and the CodeMirror doc in lockstep without triggering the autosave path
-  // (the updateListener skips docs that already match contentRef).
+  // (the updateListener skips docs that already match contentRef) and without
+  // polluting the undo history (opening a note must not create an undo step
+  // back to an empty doc).
   const updateContent = useCallback((next: string) => {
     contentRef.current = next;
     setContent(next);
@@ -650,7 +652,7 @@ export const Editor: React.FC<EditorProps> = ({
     if (view) {
       const current = view.state.doc.toString();
       if (current !== next) {
-        view.dispatch({ changes: { from: 0, to: current.length, insert: next } });
+        view.dispatch({ changes: { from: 0, to: current.length, insert: next }, annotations: Transaction.addToHistory.of(false) });
       }
     }
   }, []);

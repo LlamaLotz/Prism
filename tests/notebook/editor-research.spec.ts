@@ -32,7 +32,13 @@ test("live/source/read preserve edits and undo; properties use the editor save p
     "Changed content.",
   );
   await editor.getByRole("button", { name: "Live", exact: true }).click();
-  await cm.press("Control+z");
+  // `fill` on CodeMirror can land as one history group or as select-all +
+  // insert (two groups) depending on timing. Undo until the original text is
+  // back instead of assuming a fixed number of steps.
+  for (let i = 0; i < 3; i++) {
+    if ((await cm.innerText()).includes("Check evidence")) break;
+    await cm.press("Control+z");
+  }
   await expect(cm).toContainText("Check evidence");
   await editor.locator(".note-properties summary").click();
   await editor.getByLabel("Tags", { exact: true }).fill("science\nதமிழ்");
@@ -411,11 +417,16 @@ test("PDF relinking does not leak into a later reload", async ({ page }) => {
     .getByRole("button", { name: "OK", exact: true })
     .click();
   await expect(reader.getByRole("status")).toHaveText("Annotations saved");
-  expect(
-    await page.evaluate(() =>
-      (window as any).fixtureCalls
-        .filter((c: any) => c.command === "research_open_pdf")
-        .map((c: any) => c.args.relink),
-    ),
-  ).toEqual([false, true, false]);
+  // The reload re-open is an async effect: the status flips synchronously on
+  // setDirty(false) while research.open lands a tick later. Poll instead of
+  // asserting immediately so parallel-worker load can't win the race.
+  await expect
+    .poll(() =>
+      page.evaluate(() =>
+        (window as any).fixtureCalls
+          .filter((c: any) => c.command === "research_open_pdf")
+          .map((c: any) => c.args.relink),
+      ),
+    )
+    .toEqual([false, true, false]);
 });
