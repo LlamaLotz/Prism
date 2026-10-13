@@ -221,9 +221,10 @@ test.describe('rendered contrast', () => {
       await expect(page.getByRole('listbox', { name: 'Chat model' })).toBeVisible();
       failures.push(...(await audit(page)));
       await page.keyboard.press('Escape');
-      await shared.getByLabel('Assistant options').click();
-      await shared.getByRole('button', { name: 'Web and advanced tools' }).click();
-      await expect(page.locator('.ai-sidebar')).toBeVisible();
+      await expect(modelPicker).toHaveAttribute('aria-expanded', 'false');
+      // The shared assistant now exposes settings directly; the legacy
+      // Assistant options / Web and advanced tools menu has been retired.
+      await expect(shared.getByRole('button', { name: 'AI settings', exact: true })).toBeVisible();
       failures.push(...(await audit(page)));
 
       // The portaled navigation popover reported as blending into the content
