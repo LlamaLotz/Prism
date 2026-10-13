@@ -1377,6 +1377,17 @@ fn get_document_source_inner(
         serde_json::json!({"blockId":block_id,"revision":revision,"title":d.title,"extractor":d.extractor,"extractorVersion":d.extractor_version,"location":block.location,"excerpt":block.markdown.chars().take(8000).collect::<String>(),"modified":recorded!=current,"source":d.source.locator,"sourceStatus":status,"retained":copy.is_some()}),
     )
 }
+pub fn pdf_source_path(app: &tauri::AppHandle, block_id: &str) -> Result<PathBuf, String> {
+    let details = get_document_source_inner(app.clone(), block_id.to_string())?;
+    if details["sourceStatus"] != "available" { return Err("Original source is missing or changed".into()); }
+    let scope = super::current(app)?;
+    let c = crate::db::init_db(app)?;
+    let revision = details["revision"].as_str().ok_or("Missing revision")?;
+    let copy: Option<String> = c.query_row("SELECT json_extract(payload,'$.sourceCopy') FROM document_imports WHERE vault_id=?1 AND json_extract(payload,'$.revision')=?2 AND json_extract(payload,'$.sourceCopy') IS NOT NULL LIMIT 1", params![scope.vault_id, revision], |r| r.get(0)).optional().map_err(err)?;
+    let path = PathBuf::from(copy.unwrap_or_else(|| details["source"].as_str().unwrap_or_default().to_string()));
+    if file_hash(&path)? != load_document(&c, &scope, revision)?.source.content_hash { return Err("Original source changed".into()); }
+    Ok(path)
+}
 fn open_document_source_inner(app: tauri::AppHandle, block_id: String) -> Result<(), String> {
     let details = get_document_source_inner(app.clone(), block_id)?;
     if details["sourceStatus"] != "available" {

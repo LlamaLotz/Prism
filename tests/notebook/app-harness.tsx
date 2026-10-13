@@ -68,17 +68,34 @@ const settings = {
   },
 } as unknown as AppSettings;
 
-Object.assign(window, { fixtureCalls: calls, fixtureSettings: settings });
+const noteContents: Record<string,string> = {};
+const documentId = 'a'.repeat(64);
+let annotationFile = JSON.parse(localStorage.getItem('fixture-annotations') || 'null') || { version: 1, documentId, revision: 0, entries: [] };
+Object.assign(window, { fixtureCalls: calls, fixtureSettings: settings, fixtureNoteContents: noteContents });
 Object.defineProperty(window, '__TAURI_EVENT_PLUGIN_INTERNALS__', { value: { unregisterListener: () => {} } });
 Object.defineProperty(window, '__TAURI_INTERNALS__', {
   value: {
     metadata: { currentWindow: { label: 'main' }, currentWebview: { label: 'main' } },
+    convertFileSrc: (handle: string) => handle === 'fixture-image' ? '/tests/fixtures/research.png' : '/tests/fixtures/research.pdf',
     transformCallback: () => 1,
     unregisterCallback: () => {},
     invoke: async (command: string, args: any = {}) => {
       calls.push({ command, args });
       if (command.startsWith('plugin:')) return command.endsWith('is_maximized') ? false : null;
       switch (command) {
+        case 'research_asset': return { handle: 'fixture-image', name: 'research.png', mime: 'image/png', size: 68, documentId: null };
+        case 'research_open_pdf': return { handle: 'fixture-pdf', name: 'research.pdf', mime: 'application/pdf', size: (await (await fetch('/tests/fixtures/research.pdf')).arrayBuffer()).byteLength, documentId };
+        case 'research_read': return (await (await fetch('/tests/fixtures/research.pdf')).arrayBuffer()).slice(args.offset, args.offset + args.length);
+        case 'research_annotations': return structuredClone(annotationFile);
+        case 'research_save_annotations': {
+          if ((window as any).fixtureDelayAnnotationSave) await new Promise<void>(resolve => { (window as any).fixtureFinishAnnotationSave = resolve; });
+          if ((window as any).fixtureAnnotationConflict) throw new Error('CONFLICT: Annotations changed');
+          if (args.expectedRevision !== annotationFile.revision) throw new Error('CONFLICT');
+          annotationFile = { ...annotationFile, revision: annotationFile.revision + 1, entries: structuredClone(args.entries) };
+          localStorage.setItem('fixture-annotations', JSON.stringify(annotationFile));
+          return structuredClone(annotationFile);
+        }
+        case 'write_file': if (query.has('research')) noteContents[args.filePath] = args.content; return null;
         case 'get_runtime_config': return structuredClone(settings);
         case 'save_runtime_config': return { settings: structuredClone(args.config), runtimeWarning: null };
         case 'purge_expired_history': return null;
@@ -86,7 +103,7 @@ Object.defineProperty(window, '__TAURI_INTERNALS__', {
         case 'create_file': return `/vault/${args.relativePath}`;
         case 'read_note_chunk': {
           const note = vaultFiles.find(file => file.path === args.path);
-          const text = `# ${note?.title ?? 'Note'}\n\nA fixture note for workspace layout and resizing.\n`;
+          const text = noteContents[args.path] ?? `# ${note?.title ?? 'Note'}\n\nA fixture note for workspace layout and resizing.\n`;
           return { text, revision: 'fixture-1', nextOffset: null, bytes: new TextEncoder().encode(text).length };
         }
         case 'get_vault_dictionary':

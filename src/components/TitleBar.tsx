@@ -1,3 +1,4 @@
+import { openPdf } from '../services/research';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { Minus, Square, Copy, X, FileText, Sparkles } from 'lucide-react';
@@ -129,6 +130,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
         { divider: true, label: '' },
         { label: 'Open a Prism…', shortcut: 'Ctrl+O', action: () => { onOpenPrism(); closeMenu(); } },
         { divider: true, label: '' },
+        { label: 'Open PDF…', action: () => { onLayoutChange('editor'); openPdf(); closeMenu(); } },
         { label: 'Import content…', shortcut: 'Ctrl+Shift+I', action: () => { onIngestContent(); closeMenu(); } },
       ],
     },

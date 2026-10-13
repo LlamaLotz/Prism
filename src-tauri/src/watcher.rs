@@ -323,41 +323,5 @@ fn handle_rename(app_handle: &AppHandle, from: &Path, to: &Path) {
 /// Supports both inline (`aliases: [A, B]`, `aliases: A, B`) and
 /// block list (`aliases:\n  - A\n  - B`) forms.
 pub fn extract_aliases(content: &str) -> Vec<String> {
-    let mut aliases = Vec::new();
-    let frontmatter = Regex::new(r"(?s)^---\r?\n(.*?)\r?\n---")
-        .ok()
-        .and_then(|re| re.captures(content).map(|c| c[1].to_string()));
-    let Some(block) = frontmatter else {
-        return aliases;
-    };
-
-    if let Ok(re) = Regex::new(r"(?m)^aliases?:\s*(.+)$") {
-        if let Some(caps) = re.captures(&block) {
-            let value = caps[1].trim().trim_start_matches('[').trim_end_matches(']');
-            aliases.extend(
-                value
-                    .split(',')
-                    .map(|s| s.trim().trim_matches('"').trim_matches('\'').to_string())
-                    .filter(|s| !s.is_empty()),
-            );
-        }
-    }
-
-    if let Ok(re) = Regex::new(r"(?m)^aliases?:\s*\r?\n((?:\s+-\s+.+[\r\n]*)+)") {
-        if let Some(caps) = re.captures(&block) {
-            for line in caps[1].lines() {
-                let alias = line
-                    .trim()
-                    .trim_start_matches("- ")
-                    .trim_matches('"')
-                    .trim_matches('\'')
-                    .to_string();
-                if !alias.is_empty() {
-                    aliases.push(alias);
-                }
-            }
-        }
-    }
-
-    aliases
+    crate::note_properties::list(content, "aliases")
 }

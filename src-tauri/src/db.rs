@@ -390,7 +390,10 @@ pub fn sync_note_tags(conn: &Connection, note_id: &str, content: &str) -> Result
         .map_err(|e| e.to_string())?;
 
     let re = regex::Regex::new(r"@([A-Za-z][\w-]*)").map_err(|e| e.to_string())?;
-    let mut seen: Vec<String> = Vec::new();
+    let mut seen = crate::note_properties::list(content, "tags");
+    for tag in &seen {
+        conn.execute("INSERT OR IGNORE INTO tags (note_id, tag_name) VALUES (?1, ?2)", params![note_id, tag]).map_err(|e| e.to_string())?;
+    }
     for cap in re.captures_iter(content) {
         let m = cap.get(0).expect("whole match");
         let preceded_by_word_char = content[..m.start()]

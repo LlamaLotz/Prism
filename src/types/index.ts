@@ -135,6 +135,7 @@ export interface AppSettings {
     backgroundEnvironment: 'none' | 'solar-system' | 'stars' | 'clouds';
   };
   editor: {
+    defaultMode?: 'live' | 'edit' | 'preview';
     autosaveDebounceMs: number;
     fullRenderLineThreshold: number;
     findDebounceMs: number;

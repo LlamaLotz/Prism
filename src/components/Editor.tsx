@@ -1,3 +1,11 @@
+import { Compartment } from '@codemirror/state';
+import { EditorToolbar, type EditorMode } from './editor/EditorToolbar';
+import { NoteProperties } from './editor/NoteProperties';
+import { propertyChange, type PropertyKey } from './editor/properties';
+import { MarkdownView } from './editor/MarkdownView';
+import { liveMarkdown } from './editor/liveMarkdown';
+import { research, openPdf } from '../services/research';
+import './editor/editor.css';
 import { registerEditorRelocation } from '../services/editorRelocation';
 import { LARGE_NOTE_BYTES } from '../services/noteIO';
 import { buildSparseLineIndex, getLineRange, type SparseLineIndex } from '../utils/largeText';
@@ -26,7 +34,7 @@ import { tauriAPI } from '../types';
 import { EditorView, keymap, lineNumbers, highlightActiveLine, Decoration, ViewUpdate, WidgetType } from '@codemirror/view';
 import { EditorState, StateEffect, StateField, Range, Text } from '@codemirror/state';
 import { history, historyKeymap, defaultKeymap, indentWithTab, undo, redo, undoDepth, redoDepth } from '@codemirror/commands';
-import { markdown } from '@codemirror/lang-markdown';
+import { markdown, markdownLanguage } from '@codemirror/lang-markdown';
 import { syntaxHighlighting, defaultHighlightStyle } from '@codemirror/language';
 import { oneDark } from '@codemirror/theme-one-dark';
 import { appLogger } from '../services/appLogger';
@@ -345,6 +353,7 @@ interface EditorProps {
   semanticRefreshToken?: number;
   /** Invoked after the note is split into sections (refresh notes + graph). */
   onVaultChanged?: () => void;
+  onEditorModeChange?: (mode: EditorMode) => void;
 }
 
 export const Editor: React.FC<EditorProps> = ({
@@ -357,9 +366,12 @@ export const Editor: React.FC<EditorProps> = ({
   scrollRequest,
   semanticRefreshToken = 0,
   onVaultChanged,
+  onEditorModeChange,
 }) => {
   const { confirm } = useDialog();
-  const [mode, setMode] = useState<'edit' | 'preview'>('preview');
+  const [mode, setMode] = useState<EditorMode>(settings.editor.defaultMode ?? 'live');
+  const liveCompartment = useRef(new Compartment());
+  const [editorError, setEditorError] = useState('');
   // Bumped on every CodeMirror doc change so the toolbar Undo/Redo buttons
   // re-evaluate their disabled state against the live history depth.
   const [histTick, setHistTick] = useState(0);
@@ -1117,7 +1129,7 @@ export const Editor: React.FC<EditorProps> = ({
     // viewport *past* the highlighted block. Instant + a final re-snap after
     // the band closes keeps the target in view.
     const snapToTarget = (): boolean => {
-      const target = el.querySelector(`[data-line="${lineNo - 1}"]`) as HTMLElement | null;
+      const target = ((el.querySelector(`[data-line="${lineNo - 1}"]`) as HTMLElement | null) ?? Array.from(el.querySelectorAll<HTMLElement>('[data-line][data-line-end]')).reverse().find(node => Number(node.dataset.line) <= lineNo - 1 && Number(node.dataset.lineEnd) >= lineNo - 1) ?? null);
       if (!target) return false;
       const targetTop = target.getBoundingClientRect().top - el.getBoundingClientRect().top + el.scrollTop;
       const max = Math.max(el.scrollHeight - el.clientHeight, 0);
@@ -1170,7 +1182,7 @@ export const Editor: React.FC<EditorProps> = ({
     pendingSnapLineRef.current = null;
     const el = previewRef.current;
     if (!el || mode !== 'preview') return;
-    const target = el.querySelector(`[data-line="${lineNo - 1}"]`) as HTMLElement | null;
+    const target = ((el.querySelector(`[data-line="${lineNo - 1}"]`) as HTMLElement | null) ?? Array.from(el.querySelectorAll<HTMLElement>('[data-line][data-line-end]')).reverse().find(node => Number(node.dataset.line) <= lineNo - 1 && Number(node.dataset.lineEnd) >= lineNo - 1) ?? null);
     const max = Math.max(el.scrollHeight - el.clientHeight, 0);
     if (target) {
       const targetTop = target.getBoundingClientRect().top - el.getBoundingClientRect().top + el.scrollTop;
@@ -1587,7 +1599,7 @@ export const Editor: React.FC<EditorProps> = ({
     if (!note) return;
     let lineIdx: number;
     const view = viewRef.current;
-    if (mode === 'edit' && view) {
+    if (mode !== 'preview' && view) {
       const head = view.state.selection.main.head;
       lineIdx = view.state.doc.lineAt(head).number - 1;
     } else {
@@ -1942,6 +1954,7 @@ const sidecarPath = (notePath: string): string => {
     prevKeywordsRef.current = new Set(extractKeywords(initial).map((k) => k.toLowerCase()));
 
     const sharedExtensions = [
+      liveCompartment.current.of(!isLargeNote && modeRef.current === 'live' ? liveMarkdown(() => linkContextRef.current) : []),
       lineNumbers(),
       highlightActiveLine(),
       // Cap the undo history depth: CodeMirror keeps every undo group's doc
@@ -2067,7 +2080,7 @@ const sidecarPath = (notePath: string): string => {
       }),
     ];
     if (!isLargeNote) {
-      sharedExtensions.push(markdown(), syntaxHighlighting(defaultHighlightStyle));
+      sharedExtensions.push(markdown({base:markdownLanguage}), syntaxHighlighting(defaultHighlightStyle));
       sharedExtensions.push(topicTagField);
       sharedExtensions.push(localKeywordField);
     }
@@ -2090,6 +2103,31 @@ const sidecarPath = (notePath: string): string => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [note?.path, isLargeNote]);
 
+  const linkContextRef = useRef({ notes: allNotes, notePath: note?.path ?? '', activeContent: content, onOpen: onWikiLinkClick });
+  linkContextRef.current = { notes: allNotes, notePath: note?.path ?? '', activeContent: content, onOpen: onWikiLinkClick };
+  useEffect(() => {
+    viewRef.current?.dispatch({ effects: liveCompartment.current.reconfigure(!isLargeNote && mode === 'live' ? liveMarkdown(() => linkContextRef.current) : []) });
+  }, [mode, isLargeNote]);
+  const changeMode = (next: EditorMode) => { if (next === 'preview') forceSave(); setMode(next); onEditorModeChange?.(next); requestAnimationFrame(() => viewRef.current?.requestMeasure()); };
+  const changeProperty = (key: PropertyKey, value: string | string[]) => {
+    try { const view = viewRef.current; if (view) view.dispatch({ changes: propertyChange(view.state.doc.toString(), key, value), userEvent: 'input' }); setEditorError(''); } catch (e) { setEditorError(String(e)); }
+  };
+  const insertText = (text: string) => { const view = viewRef.current; if (!view) return; view.dispatch(view.state.replaceSelection(text), { userEvent: 'input' }); view.focus(); };
+  const insertAttachment = async (file?: File) => {
+    const path = noteRef.current?.path; if (!path) return;
+    try { const target = await research.attach(path, file); if (target && noteRef.current?.path === path) insertText(`![${file?.name.replace(/[\[\]]/g, '') || 'Attachment'}](${target})`); } catch(e) { setEditorError(String(e)); }
+  };
+  const formatSelection = (kind: string) => {
+    const view = viewRef.current; if (!view) return;
+    const { from, to } = view.state.selection.main; const text = view.state.doc.sliceString(from, to);
+    const formats: Record<string, string> = { Bold: `**${text || 'bold'}**`, Italic: `*${text || 'italic'}*`, Heading: `## ${text || 'Heading'}`, Link: `[[${text || 'Note'}]]`, Task: `- [ ] ${text || 'Task'}`, Code: text.includes('\n') ? `\n\`\`\`\n${text}\n\`\`\`\n` : `\`${text || 'code'}\`` };
+    if (mode === 'preview') changeMode('live'); insertText(formats[kind]);
+  };
+  useEffect(() => {
+    const insert = (event: Event) => { const detail = (event as CustomEvent<{ text: string; path: string }>).detail; if (detail.path === noteRef.current?.path) insertText(detail.text); };
+    window.addEventListener('prism-insert-quote', insert); return () => window.removeEventListener('prism-insert-quote', insert);
+  }, []);
+
   // All React hooks are declared above this point: `note` may be null for the
   // rest of the render, but no hook is allowed after a conditional return.
   if (!note) {
@@ -2099,7 +2137,7 @@ const sidecarPath = (notePath: string): string => {
           <div className="w-16 h-16 rounded-2xl bg-slate-900 border border-slate-800 flex items-center justify-center mx-auto text-brand-400/80 shadow-inner">
             <FileText className="w-8 h-8" />
           </div>
-          <h3 className="text-sm font-semibold text-slate-300">No Note Selected</h3>
+          <h3 className="text-sm font-semibold text-slate-300">No Note Selected</h3><button className="runtime-button" onClick={() => openPdf()}>Open PDF</button>
           <p className="text-xs text-slate-500 leading-relaxed">
             Select an existing markdown note from the sidebar or create a new one to begin connecting your knowledge.
           </p>
@@ -2442,29 +2480,8 @@ const sidecarPath = (notePath: string): string => {
         </div>
       )}
 
-      {/* Top Editor Bar */}
-      <div className="px-6 py-3 border-b border-slate-900/60 bg-slate-950/20 flex items-center justify-between shrink-0">
-        <div className="flex items-center gap-2 truncate">
-          <div className="p-1 bg-brand-500/10 border border-brand-500/20 rounded-md text-brand-400">
-            <FileText className="w-4 h-4" />
-          </div>
-          <div className="truncate">
-            <h2 className="text-sm font-semibold text-slate-100 leading-tight truncate">{note.title}</h2>
-            <div className="flex items-center gap-3 text-[10px] text-slate-500 font-medium">
-              <span className="flex items-center gap-1">
-                <Calendar className="w-3 h-3" /> Modified: {formattedDate()}
-              </span>
-              <span>•</span>
-              <span className={isSaved ? "text-emerald-500/80" : "text-amber-500/80 animate-pulse"}>
-                {isSaved ? 'Saved' : 'Typing...'}
-              </span>
-            </div>
-          </div>
-        </div>
-
-        {/* Edit / Preview Segmented Controller */}
-        <div className="flex items-center gap-2">
-          <DocumentSourcesButton path={note.path} />
+      <EditorToolbar mode={mode} change={changeMode} format={formatSelection} attach={() => void insertAttachment()} saved={isSaved} title={note.title} find={() => { setIsSearchOpen(true); requestAnimationFrame(() => searchInputRef.current?.focus()); }}>
+          <button onClick={() => openPdf()}>Open PDF</button><DocumentSourcesButton path={note.path} />
           <LinkerToolbar
             pendingCount={visibleSuggestions.total}
             isScanning={isScanning}
@@ -2578,44 +2595,17 @@ const sidecarPath = (notePath: string): string => {
           >
             <HistoryIcon className="w-3.5 h-3.5" />
           </button>
-          <div className="flex bg-slate-950 border border-slate-800 rounded-lg p-1">
-            <button
-              onClick={() => {
-                forceSave();
-                setMode('preview');
-              }}
-              title="Preview mode: Render this note as formatted markdown — headings, lists, links and tags. Saves before switching."
-              className={`p-1.5 rounded-md transition-all ${
-                mode === 'preview'
-                  ? 'bg-slate-800 text-brand-400 shadow-sm'
-                  : 'text-slate-400 hover:text-slate-200'
-              }`}
-            >
-              <Eye className="w-3.5 h-3.5" />
-            </button>
-            <button
-              onClick={() => setMode('edit')}
-              title="Edit mode: Switch to the raw markdown editor."
-              className={`p-1.5 rounded-md transition-all ${
-                mode === 'edit'
-                  ? 'bg-slate-800 text-brand-400 shadow-sm'
-                  : 'text-slate-400 hover:text-slate-200'
-              }`}
-            >
-              <Edit2 className="w-3.5 h-3.5" />
-            </button>
-          </div>
-        </div>
-      </div>
-
+      </EditorToolbar>
+      <NoteProperties key={note.path} content={content} change={changeProperty} source={() => changeMode('edit')} />
+      {editorError && <p role="alert">{editorError}<button onClick={() => setEditorError('')}>Dismiss</button></p>}
       {/* Editor Body */}
-      <div className="editor-body flex-1 overflow-hidden flex flex-col">
+      <div className="editor-body flex-1 overflow-hidden flex flex-col" onDragOver={e => { if (e.dataTransfer.types.includes('Files')) e.preventDefault(); }} onDrop={e => { if (e.dataTransfer.files.length) { e.preventDefault(); void insertAttachment(e.dataTransfer.files[0]); } }} onPaste={e => { const file = e.clipboardData.files[0]; if (file) { e.preventDefault(); void insertAttachment(file); } }}>
         {/* CodeMirror editor: always mounted so scroll/highlight state survives
             mode switches; hidden (display:none) while in preview. */}
         <div
             ref={cmContainerRef}
 
-          className={`flex-1 w-full overflow-hidden ${mode === 'edit' ? '' : 'hidden'}`}
+          className={`flex-1 w-full overflow-hidden ${mode !== 'preview' ? '' : 'hidden'}`}
         />
         {mode === 'preview' && (
           <div
@@ -2623,7 +2613,7 @@ const sidecarPath = (notePath: string): string => {
             className="markdown-body flex-1 overflow-y-auto px-8 py-6 max-w-4xl mx-auto w-full select-text"
           >
             {content.length === 0 ? (
-              <div className="text-slate-600 italic text-xs">This note is empty. Click "Edit" to add content.</div>
+              <div className="text-slate-600 italic text-xs">This note is empty. Choose Live or Source to add content.</div>
             ) : (
               (() => {
                 const totalLines = lineCount;
@@ -2673,7 +2663,7 @@ const sidecarPath = (notePath: string): string => {
                 if (!windowed) {
                   // Full render: no estimated-height wrapper — real content
                   // heights give an exact scrollbar and a reachable bottom.
-                  return renderMarkdown(getPreviewLineRange(start, end), start);
+                  return isLargeNote ? renderMarkdown(getPreviewLineRange(start, end), start) : <MarkdownView content={content} context={linkContextRef.current} search={searchQuery} highlightLine={previewHighlight?.line} />;
                 }
                 return (
                   <div
@@ -2706,6 +2696,7 @@ const sidecarPath = (notePath: string): string => {
           />
           <div className="flex-1 min-h-0 overflow-hidden">
             <LinkHub
+            activeContent={content}
               mentions={pendingMentions}
               backlinks={incomingBacklinks}
               related={relatedMatches}

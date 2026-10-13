@@ -35,6 +35,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
     backgroundEnvironment: 'none',
   },
   editor: {
+    defaultMode: 'live',
     autosaveDebounceMs: 800,
     fullRenderLineThreshold: 8000,
     findDebounceMs: 1000,

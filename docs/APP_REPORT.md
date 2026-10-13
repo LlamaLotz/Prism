@@ -7,6 +7,43 @@
 
 > Version note: `package.json:2` and `src-tauri/tauri.conf.json:4` still declare `1.0.0`, `src-tauri/Cargo.toml:3` declares `0.1.0`. Release identity comes from git tags (`v1.1.25` latest, `v1.1.26` unreleased). Working tree has uncommitted changes in `src/App.tsx`, `src/components/Editor.tsx`, `GraphView.tsx`, `SettingsPage.tsx`, `TitleBar.tsx`, `ResizeHandle.tsx`, `src-tauri/src/knowledge/agent.rs`, `menu.rs`, `study/mod.rs`. Treat manifests as stale — see §17.
 
+
+## Editor and research delivery update — 2026-10-13
+
+**Status: implementation under validation; release acceptance remains open.** This update supersedes the earlier static editor descriptions below. Markdown remains canonical; existing save/history, source provenance, indexing, shortcuts, large-note thresholds, and AI permission rules are retained.
+
+### Delivered workflow
+
+- Ordinary notes default to **Live**, with **Source** and **Read** modes and an optional persisted `editor.defaultMode` setting. The same CodeMirror document and history remain mounted across modes. Formatting, properties, attachment insertion, and Live task checkboxes use editor transactions and the existing autosave path. History, source details, split tools, and advanced actions remain under **More tools**.
+- Live syntax decorations use the GFM Markdown parser. First-level note embeds render excerpts; recursive embeds become links. Current-note excerpts follow unsaved edits, and widget size changes request CodeMirror measurement. Read mode shares the GFM renderer for nested lists, tables, code, tasks, wiki/block links, and media. Generated linker footers stay hidden while source-line mapping is retained.
+- Note links and LinkHub titles expose bounded previews and an explicit **Open note** action. Keyboard focus opens a preview, Arrow Down/Tab enters it, and Escape restores trigger focus. Duplicate titles resolve by path/local folder or remain visibly ambiguous.
+- Attachments resolve relative to the containing note, preserving media fragments separately from filesystem paths. Images load lazily; audio/video use native controls; PDF cards open the reader. Remote media require an explicit click. File selection, paste, and drop copy attachments into the vault with collision-resistant names.
+- **Open PDF** in Notes/File and **Open in Prism** on retained PDF sources open an in-app reader. PDF.js worker, CMaps, fonts, WASM, and ICC assets are bundled locally. Page navigation, zoom, rotation, selectable text, page search, highlights, point comments, annotation colors/edit/delete, and Markdown quote links share the note workspace. Scanned PDFs support point comments.
+- PDF styles are scoped beneath `.pdf-reader`; the global PDF.js viewer stylesheet is absent. The reader sits below application dialogs and becomes inert during its confirmations. Cancel preserves the recovery draft; confirmed discard removes it. Saving while newer edits exist advances the recovery revision without replacing those edits. Recovery validates IDs, revisions, pages, coordinates, colors, text, and timestamps; malformed drafts remain downloadable. Conflicts remain visible. Relink attempts reset their state and accept only identical content hashes.
+- The collapsible **Properties** panel edits `tags`, `aliases`, `status`, and `source` through targeted YAML edits. It preserves unrelated keys/comments, body bytes, and line endings; reading alone does not rewrite a note. Malformed/duplicate/unsupported editable structures offer **Edit in Source**. Frontmatter tags supplement inline `@tags`; removing a property tag preserves inline tags. Watcher/index aliases use the same YAML parser.
+
+### Storage and bounds
+
+| Data | Location / contract |
+|---|---|
+| Notes and editable properties | Existing `.md` files with optional YAML frontmatter; no metadata database replacement or bulk migration |
+| Added attachments | Vault `attachments/`, uniquely prefixed filenames and relative Markdown links |
+| Directly opened PDFs | `.prism/research/<sha256>.pdf`; original bytes unchanged |
+| Retained imported PDFs | Existing retained `.prism/documents/` copy reused where available |
+| PDF source registry | `.prism/research/<sha256>.source.json`, vault-relative source path |
+| Annotations | `.prism/annotations/<sha256>.json`, version 1, revision-checked atomic writes |
+| Unsaved recovery | Webview localStorage `prism_pdf_draft:<encoded-vault-path>:<sha256>`; optional recovery, not canonical storage |
+| Document links | Ordinary Markdown `prism-pdf:<sha256>?page=<n>&annotation=<id>` links |
+| Asset access | Vault-generation-scoped handles, bounded binary IPC and `prism-media` range responses |
+
+Limits: PDFs 256 MiB; binary reads 1 MiB; playback range responses up to 8 MiB; images 32 MiB; browser paste/drop 16 MiB (native file picker for larger attachments); annotation sidecars 8 MiB / 10,000 annotations; excerpt previews up to 30 lines / 4,000 characters from a bounded note read; embeds one level deep. Existing large-note/plain-text/windowed fallbacks remain. Heading/block excerpts outside the bounded read ask the user to open the note. OCR, embedded PDF markup export, drawing/shapes, PDF text editing, rich-text replacement, executable HTML, and provider-specific web embeds remain excluded.
+
+### Validation and release acceptance
+
+Validation results will be recorded here after the final regression run. The initial baseline was 162 passed / 12 failed browser tests; those failures were the existing six-theme sidebar menu assertions, which remain intact.
+
+**Pending — packaged Windows and macOS acceptance (not performed on this Linux host).** On each platform, install a production package and verify offline PDF worker/font loading, direct and retained-source opening, local audio/video seeking through the custom protocol, annotation save/restart/recovery and hash-safe relinking, quote link navigation to page/annotation, and vault switching invalidating old handles. Browser harnesses use mocked IPC and cannot establish native file-picker, custom-protocol, WebView, or packaged persistence correctness. These checks are release gates; this work is not marked complete or ready to ship until they pass.
+
 ---
 
 ## 1. Executive summary

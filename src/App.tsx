@@ -1,3 +1,5 @@
+import { lazy, Suspense } from 'react';
+const PdfWorkspace = lazy(() => import('./components/editor/PdfReader').then(m => ({ default: m.PdfWorkspace })));
 import { noteGraph } from './services/folderGraph';
 import { MoveNoteDialog } from './components/FolderPicker';
 import { relocateNote } from './services/editorRelocation';
@@ -1455,6 +1457,14 @@ export default function App() {
       matched = activeNote;
     }
 
+    if (!matched && resolvedTitle) {
+      try {
+        const entries = await linkerService.getVaultDictionary();
+        const paths = [...new Set(entries.filter(([label]) => label.toLowerCase() === resolvedTitle.toLowerCase()).map(([, path]) => path))];
+        if (paths.length === 1) matched = notes.find(n => n.path === paths[0]) ?? null;
+      } catch { /* Title/path navigation still works while indexing is unavailable. */ }
+    }
+
     if (matched) {
       setActiveNote(matched);
       navigateWorkspace('editor', true);
@@ -1620,7 +1630,8 @@ export default function App() {
 
         {activeNote&&(layout==='editor'||layout==='split')&&<div className="flex justify-end px-3 py-1"><button className="runtime-button" onClick={()=>setMoveTarget(activeNote)}>Move to folder…</button></div>}
         {/* Workspace Main Panels */}
-        <div className="workspace-panels flex-1 flex min-w-0 min-h-0 overflow-hidden">
+        <div className="workspace-panels relative flex-1 flex min-w-0 min-h-0 overflow-hidden">
+          <Suspense fallback={null}><PdfWorkspace vaultPath={settings.vaultPath} notePath={activeNote?.path} /></Suspense>
           
           <NoteGraphWorkspace showEditor={layout === 'editor' || layout === 'split'} showGraph={layout === 'graph' || layout === 'split'}
             onClose={pane => { const remaining = pane === 'editor' ? 'graph' : 'editor'; setLayout(remaining); focusPane(remaining); }}
@@ -1632,6 +1643,7 @@ export default function App() {
                 vaultPath={settings.vaultPath}
                 settings={settings}
                 onSaveContent={handleSaveContent}
+                onEditorModeChange={mode => { void handleSaveSettings({ ...settings, editor: { ...settings.editor, defaultMode: mode } }).catch(e => alert(String(e), { title: 'Could not save editor preference' })); }}
                 onWikiLinkClick={handleWikiLinkClick}
                 scrollRequest={scrollRequest}
                 semanticRefreshToken={semanticTick}

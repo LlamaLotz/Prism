@@ -1,3 +1,4 @@
+import { NoteLink } from './editor/NoteLink';
 import React, { useMemo, useState } from 'react';
 import { Sparkles, Zap, Link2, RefreshCw, Info, Check, X, ExternalLink, EyeOff, Eye, ChevronDown, Anchor, Unlink } from 'lucide-react';
 import { NoteFile, WikiLink } from '../types';
@@ -18,6 +19,7 @@ interface LinkHubProps {
   notePath: string;
   dictionary: [string, string][];
   allNotes: NoteFile[];
+  activeContent?: string;
   isLoading: boolean;
   error: ErrorDetails | null;
   /** Persisted dismissals (denied suggestions) for the active note — owned by
@@ -90,6 +92,7 @@ export const LinkHub: React.FC<LinkHubProps> = ({
   notePath,
   dictionary,
   allNotes,
+  activeContent = '',
   isLoading,
   error,
   deniedEntries,
@@ -104,6 +107,7 @@ export const LinkHub: React.FC<LinkHubProps> = ({
   onRefresh,
   onCollapse,
 }) => {
+  const previewContext = { notes: allNotes, notePath, activeContent, onOpen: onWikiLinkClick };
   // Three-tab navigation: active suggestions/links vs denied suggestions
   // (keyword/semantic/block) vs hidden applied links (outbound/backlink).
   const [activeTab, setActiveTab] = useState<'active' | 'denied' | 'hidden'>('active');
@@ -543,7 +547,7 @@ export const LinkHub: React.FC<LinkHubProps> = ({
                 <TagPill kind="outbound" />
                 <div className="flex-1 min-w-0">
                   <div className="text-xs font-semibold text-slate-200 truncate">
-                    {l.targetTitle}
+                    <NoteLink raw={`${l.targetTitle}${l.blockId ? `#${l.blockId}` : ''}`} context={previewContext} />
                   </div>
                   <div className="text-[10px] text-slate-500 truncate">
                     {l.alias
@@ -585,7 +589,7 @@ export const LinkHub: React.FC<LinkHubProps> = ({
                     <div className="text-xs font-semibold text-slate-200 truncate">
                       &ldquo;@{m.matchedText}&rdquo;
                     </div>
-                    <div className="text-[10px] text-slate-500 truncate">→ {title}</div>
+                    <div className="text-[10px] text-slate-500 truncate">→ <NoteLink raw={title} context={previewContext}/></div>
                   </div>
                   <ActionButtons
                     onApprove={() => onApproveMention(m)}
@@ -601,7 +605,7 @@ export const LinkHub: React.FC<LinkHubProps> = ({
                 <div key={semanticKey(m)} className={CARD_CLS} onClick={() => onWikiLinkClick(title)}>
                   <TagPill kind="semantic" />
                   <div className="flex-1 min-w-0">
-                    <div className="text-xs font-semibold text-slate-200 truncate">{title}</div>
+                    <div className="text-xs font-semibold text-slate-200 truncate"><NoteLink raw={title} context={previewContext}/></div>
                     <div className="text-[10px] text-slate-500 truncate">
                       {Math.round(m.score * 100)}% similar
                     </div>
@@ -641,7 +645,7 @@ export const LinkHub: React.FC<LinkHubProps> = ({
                 >
                   <TagPill kind="block" />
                   <div className="flex-1 min-w-0">
-                    <div className="text-xs font-semibold text-slate-200 truncate">{title}</div>
+                    <div className="text-xs font-semibold text-slate-200 truncate"><NoteLink raw={title} context={previewContext}/></div>
                     <div className="text-[10px] text-slate-500 line-clamp-2 whitespace-normal">
                       {m.text.split('\n').join(' ')}
                     </div>
@@ -668,7 +672,7 @@ export const LinkHub: React.FC<LinkHubProps> = ({
                 {mutual && <TagPill kind="outbound" />}
                 <TagPill kind="backlink" />
                 <div className="flex-1 min-w-0">
-                  <div className="text-xs font-semibold text-slate-200 truncate">{b.source_title}</div>
+                  <div className="text-xs font-semibold text-slate-200 truncate"><NoteLink raw={b.source_title} context={previewContext}/></div>
                   <div className="text-[10px] text-slate-500 truncate">
                     {b.matched_text
                       ? `Mentioned via \u201c${b.matched_text}\u201d \u2014 not linked`

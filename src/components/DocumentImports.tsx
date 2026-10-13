@@ -1,3 +1,4 @@
+import { openPdf } from '../services/research';
 import { FolderPicker } from './FolderPicker';
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 import { listen } from '@tauri-apps/api/event';
@@ -107,6 +108,7 @@ function SourceDetails({ blockId, close, review }: { blockId: string; close: () 
       <pre tabIndex={0}>{source.excerpt}</pre><p>{source.retained ? 'Retained original' : 'Original reference'} · {source.sourceStatus.replaceAll('_', ' ')}</p>
       <div className="runtime-actions">{source.sourceStatus === 'web_snapshot' && <button className="runtime-button" disabled={busy} onClick={async () => { setBusy(true); try { const p = await documents.prepare('url', source.source, 'yt-dlp', source.revision); review(p.id); } catch(e) { setError(String(e)); } finally { setBusy(false); } }}>Reuse saved revision</button>}
       <button className="runtime-button" disabled={busy || (!source.source.startsWith('http') && source.sourceStatus !== 'available')} onClick={async () => { setBusy(true); try { const p = await documents.prepare(source.sourceStatus === 'web_snapshot' ? 'url' : 'file', source.source); review(p.id); } catch(e) { setError(String(e)); } finally { setBusy(false); } }}>{source.sourceStatus === 'web_snapshot' ? 'Refresh source (privacy approval applies)' : 'Prepare reimport'}</button></div>
+      {/\.pdf$/i.test(source.source) && <button className="runtime-button" disabled={source.sourceStatus !== 'available'} onClick={() => { close(); openPdf({ blockId, page: source.location?.page }); }}>Open in Prism</button>}
       <button className="runtime-button" disabled={source.sourceStatus !== 'available'} onClick={() => void documents.openSource(blockId).catch(e => setError(String(e)))}>Open original</button>
     </>}
   </dialog>;

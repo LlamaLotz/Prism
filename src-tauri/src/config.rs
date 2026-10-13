@@ -67,6 +67,8 @@ pub struct AppearanceConfig {
 #[derive(Serialize, Deserialize, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct EditorConfig {
+    #[serde(default = "default_editor_mode")]
+    pub default_mode: String,
     pub autosave_debounce_ms: u64,
     pub full_render_line_threshold: u64,
     pub find_debounce_ms: u64,
@@ -167,9 +169,12 @@ impl Default for AppearanceConfig {
     }
 }
 
+fn default_editor_mode() -> String { "live".into() }
+
 impl Default for EditorConfig {
     fn default() -> Self {
         Self {
+            default_mode: default_editor_mode(),
             autosave_debounce_ms: 800,
             full_render_line_threshold: 8_000,
             find_debounce_ms: 1_000,

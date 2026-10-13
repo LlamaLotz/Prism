@@ -1,4 +1,6 @@
 mod study;
+mod research;
+mod note_properties;
 mod document_model;
 #[cfg(feature = "ingest-rust")]
 mod native_ingest;
@@ -2208,6 +2210,8 @@ async fn web_search(app: tauri::AppHandle, query: String) -> Result<Vec<WebSearc
 pub fn run() {
     tauri::Builder::default()
         .manage(knowledge::KnowledgeRuntime::default())
+        .manage(research::Assets::default())
+        .register_uri_scheme_protocol("prism-media", |ctx, request| research::response(ctx.app_handle(), request))
         // Rust-backed fetch (reqwest) so the AI Co-Pilot's OpenAI SDK calls
         // don't depend on the webview's network stack (see Cargo.toml note).
         .plugin(tauri_plugin_http::init())
@@ -2279,6 +2283,8 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            research::research_asset, research::research_read, research::research_close,
+            research::research_open_pdf, research::research_import_attachment, research::research_annotations, research::research_save_annotations,
             study::study_request,
             study::study_generate,
             study::study_chat,
