@@ -964,7 +964,7 @@ html.theme-glass {
 }
 
 /* Glass theme: every button without an explicit radius class becomes a pill */
-.theme-glass button:not([class*="rounded"]):not([class*="titlebar"]):not(:where(.study-workspace *, .study-assistant *, .prism-navigation-menu *)) {
+.theme-glass button:not([class*="rounded"]):not([class*="titlebar"]):not(:where(.study-workspace *, .study-assistant *, .prism-navigation-menu *, .pdf-reader *)) {
   border-radius: 9999px !important;
 }
 
@@ -984,11 +984,11 @@ button.titlebar-menu-dropdown:hover {
 }
 
 /* Glass theme: text-like inputs are pills */
-.theme-glass input[type="text"]:not(:where(.study-workspace *, .study-assistant *, .prism-navigation-menu *)),
-.theme-glass input[type="search"]:not(:where(.study-workspace *, .study-assistant *, .prism-navigation-menu *)),
-.theme-glass input:not([type="range"]):not([type="checkbox"]):not([type="radio"]):not([type="color"]):not([type="file"]):not(:where(.study-workspace *, .study-assistant *, .prism-navigation-menu *)),
-.theme-glass textarea:not(:where(.study-workspace *, .study-assistant *, .prism-navigation-menu *)),
-.theme-glass select:not(:where(.study-workspace *, .study-assistant *, .prism-navigation-menu *)) {
+.theme-glass input[type="text"]:not(:where(.study-workspace *, .study-assistant *, .prism-navigation-menu *, .pdf-reader *)),
+.theme-glass input[type="search"]:not(:where(.study-workspace *, .study-assistant *, .prism-navigation-menu *, .pdf-reader *)),
+.theme-glass input:not([type="range"]):not([type="checkbox"]):not([type="radio"]):not([type="color"]):not([type="file"]):not(:where(.study-workspace *, .study-assistant *, .prism-navigation-menu *, .pdf-reader *)),
+.theme-glass textarea:not(:where(.study-workspace *, .study-assistant *, .prism-navigation-menu *, .pdf-reader *)),
+.theme-glass select:not(:where(.study-workspace *, .study-assistant *, .prism-navigation-menu *, .pdf-reader *)) {
   border-radius: 9999px !important;
 }
 
@@ -1017,11 +1017,11 @@ button.titlebar-menu-dropdown:hover {
 }
 
 /* Glass theme: button hover is a static specular highlight, not amber glow */
-.theme-glass button:not(:disabled):hover:not(:where(.study-workspace *, .study-assistant *, .prism-navigation-menu *)) {
+.theme-glass button:not(:disabled):hover:not(:where(.study-workspace *, .study-assistant *, .prism-navigation-menu *, .pdf-reader *)) {
   box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.6), 0 2px 8px rgba(0, 0, 0, 0.04);
   border-color: var(--color-border);
 }
-.theme-glass button:not(:disabled):active:not(:where(.study-workspace *, .study-assistant *, .prism-navigation-menu *)) {
+.theme-glass button:not(:disabled):active:not(:where(.study-workspace *, .study-assistant *, .prism-navigation-menu *, .pdf-reader *)) {
   box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.08);
 }
 
@@ -1141,10 +1141,10 @@ button.titlebar-menu-dropdown:hover {
 
 /* Gloss controls: icon actions stay compact; text actions get a stable
    capsule with enough horizontal breathing room for their labels. */
-.theme-gloss button:not(.titlebar-menu):not(.titlebar-menu-dropdown):not(.titlebar-window-control):not(.titlebar-action):not(:where(.study-workspace *, .study-assistant *, .prism-navigation-menu *)) {
+.theme-gloss button:not(.titlebar-menu):not(.titlebar-menu-dropdown):not(.titlebar-window-control):not(.titlebar-action):not(:where(.study-workspace *, .study-assistant *, .prism-navigation-menu *, .pdf-reader *)) {
   border-radius: var(--radius-button, 9999px) !important;
 }
-.theme-gloss button:not(.titlebar-menu):not(.titlebar-menu-dropdown):not(.titlebar-window-control):not(.titlebar-action):has(span:not(.sr-only)):not(:where(.study-workspace *, .study-assistant *, .prism-navigation-menu *)) {
+.theme-gloss button:not(.titlebar-menu):not(.titlebar-menu-dropdown):not(.titlebar-window-control):not(.titlebar-action):has(span:not(.sr-only)):not(:where(.study-workspace *, .study-assistant *, .prism-navigation-menu *, .pdf-reader *)) {
   min-height: 32px;
   padding-inline: 16px;
   padding-block: 6px;
@@ -1392,11 +1392,11 @@ button.titlebar-menu-dropdown:hover {
 }
 
 /* Gloss: hover / active / focus states */
-.theme-gloss button:not(:disabled):hover:not(:where(.study-workspace *, .study-assistant *, .prism-navigation-menu *)) {
+.theme-gloss button:not(:disabled):hover:not(:where(.study-workspace *, .study-assistant *, .prism-navigation-menu *, .pdf-reader *)) {
   box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.8), 0 2px 12px var(--accent-glow);
   border-color: var(--accent-border);
 }
-.theme-gloss button:not(:disabled):active:not(:where(.study-workspace *, .study-assistant *, .prism-navigation-menu *)) {
+.theme-gloss button:not(:disabled):active:not(:where(.study-workspace *, .study-assistant *, .prism-navigation-menu *, .pdf-reader *)) {
   box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.06);
 }
 .theme-gloss *:focus-visible {
@@ -1416,11 +1416,11 @@ button.titlebar-menu-dropdown:hover {
 }
 
 /* Gloss: pill inputs */
-.theme-gloss input[type="text"]:not(:where(.study-workspace *, .study-assistant *, .prism-navigation-menu *)),
-.theme-gloss input[type="search"]:not(:where(.study-workspace *, .study-assistant *, .prism-navigation-menu *)),
-.theme-gloss input:not([type="range"]):not([type="checkbox"]):not([type="radio"]):not([type="color"]):not([type="file"]):not(:where(.study-workspace *, .study-assistant *, .prism-navigation-menu *)),
-.theme-gloss textarea:not(:where(.study-workspace *, .study-assistant *, .prism-navigation-menu *)),
-.theme-gloss select:not(:where(.study-workspace *, .study-assistant *, .prism-navigation-menu *)) {
+.theme-gloss input[type="text"]:not(:where(.study-workspace *, .study-assistant *, .prism-navigation-menu *, .pdf-reader *)),
+.theme-gloss input[type="search"]:not(:where(.study-workspace *, .study-assistant *, .prism-navigation-menu *, .pdf-reader *)),
+.theme-gloss input:not([type="range"]):not([type="checkbox"]):not([type="radio"]):not([type="color"]):not([type="file"]):not(:where(.study-workspace *, .study-assistant *, .prism-navigation-menu *, .pdf-reader *)),
+.theme-gloss textarea:not(:where(.study-workspace *, .study-assistant *, .prism-navigation-menu *, .pdf-reader *)),
+.theme-gloss select:not(:where(.study-workspace *, .study-assistant *, .prism-navigation-menu *, .pdf-reader *)) {
   border-radius: 9999px !important;
 }
 

@@ -42,7 +42,7 @@ function ColorPicker({ color, change, label }: { color: string; change: (color: 
     if (event.key === "Escape") { event.stopPropagation(); setOpen(false); trigger.current?.focus(); }
   }} onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget)) setOpen(false); }}>
     <button ref={trigger} type="button" className="pdf-icon-button" aria-label={`${label}: ${color}`} title={`${label}: ${color}`} aria-expanded={open} onClick={() => setOpen(!open)}>
-      <span className="pdf-color-swatch" style={{ backgroundColor: colors[color] }} />
+      <span className="pdf-color-swatch" style={{ backgroundColor: colors[color] ?? colors.yellow }} />
     </button>
     {open && <div className="pdf-color-palette" role="group" aria-label={label}>
       {Object.entries(colors).map(([name, value]) => <button key={name} type="button" className="pdf-icon-button" aria-label={name} title={name} aria-pressed={name === color} onClick={() => { change(name); setOpen(false); trigger.current?.focus(); }}>
@@ -776,13 +776,13 @@ function PdfPage({
                   <span
                     key={`${a.id}-${i}`}
                     className={a.text ? "pdf-mark" : "pdf-comment-dot"}
+                    data-selected={selected === a.id}
                     style={{
                       left: Math.min(x1, x2),
                       top: Math.min(y1, y2),
                       width: Math.max(12, Math.abs(x2 - x1)),
                       height: Math.max(12, Math.abs(y2 - y1)),
-                      background: colors[a.color],
-                      outline: selected === a.id ? "2px solid #222" : undefined,
+                      backgroundColor: colors[a.color] ?? colors.yellow,
                     }}
                   />
                 );

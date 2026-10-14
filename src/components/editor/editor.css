@@ -900,23 +900,24 @@ html body .editor-find button:hover:not([aria-pressed='true']) { background: var
 /* Annotation pins are circular even in Industrial; document marks stay square. */
 html .pdf-reader .pdf-comment-dot { border-radius: 50% !important; }
 
-/* Keep control fill and ink together despite global theme button rules. */
-html body :is(.pdf-reader, .editor-mode-group, .linkhub-tabs) button {
+/* Keep control fill and ink together despite global theme button rules.
+   The annotation excerpt heading is document content, not a control. */
+html body :is(.pdf-reader, .editor-mode-group, .linkhub-tabs) button:not(.pdf-annotation-heading) {
   /* Switching ink and fill atomically avoids unreadable mid-transition colors. */
   transition-property: border-color, box-shadow, transform;
   color: var(--nb-text) !important;
   background: var(--nb-card) !important;
 }
-html body :is(.pdf-reader, .editor-mode-group, .linkhub-tabs) button[aria-pressed="true"] {
+html body :is(.pdf-reader, .editor-mode-group, .linkhub-tabs) button:not(.pdf-annotation-heading)[aria-pressed="true"] {
   color: var(--nb-selected-ink) !important;
   background: var(--nb-selected-bg) !important;
   border-color: var(--nb-selected-border) !important;
 }
-html body :is(.pdf-reader, .editor-mode-group, .linkhub-tabs) button:hover:not(:disabled):not([aria-pressed="true"]) {
+html body :is(.pdf-reader, .editor-mode-group, .linkhub-tabs) button:not(.pdf-annotation-heading):hover:not(:disabled):not([aria-pressed="true"]) {
   background: var(--nb-hover-bg) !important;
   border-color: var(--nb-focus);
 }
-html body :is(.pdf-reader, .editor-mode-group, .linkhub-tabs) button:disabled {
+html body :is(.pdf-reader, .editor-mode-group, .linkhub-tabs) button:not(.pdf-annotation-heading):disabled {
   color: var(--nb-secondary) !important;
   opacity: .6;
   cursor: not-allowed;
@@ -937,4 +938,34 @@ html body .pdf-reader .pdf-icon-button {
 .pdf-annotations textarea { box-sizing: border-box; min-width: 0; max-width: 100%; resize: vertical; }
 .pdf-color-picker { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
 .pdf-color-palette { display: flex; flex-wrap: wrap; gap: 4px; }
-.pdf-color-swatch { display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; border-radius: 50%; border: 1px solid #555; }
+.pdf-color-swatch { flex: 0 0 18px; display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; border-radius: 50%; border: 1px solid #555; }
+
+/* Keep long excerpts readable as document content, not oversized action pills. */
+html body .pdf-reader .pdf-annotation-heading,
+html body .pdf-reader .pdf-annotation-heading:hover:not(:disabled),
+html body .pdf-reader .pdf-annotation-heading:active:not(:disabled) {
+  display: block !important;
+  width: 100% !important;
+  min-height: 0 !important;
+  padding: 4px 0 !important;
+  background: transparent !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  text-align: left !important;
+  justify-content: flex-start !important;
+  align-items: flex-start !important;
+  white-space: normal !important;
+  overflow-wrap: anywhere !important;
+  line-height: 1.5 !important;
+  font-size: 12px !important;
+  font-weight: 600 !important;
+  color: var(--nb-text) !important;
+  cursor: pointer !important;
+}
+/* Swatches stay circular even under the industrial square-everything reset. */
+.theme-industrial .pdf-color-swatch { border-radius: 50% !important; }
+/* Marks are document content: never an outline or shadow box. */
+.pdf-mark { outline: none !important; box-shadow: none !important; }
+.pdf-annotations article[data-selected="true"] { border-color: var(--nb-focus); }
+.pdf-mark[data-selected="true"] { opacity: .45; }

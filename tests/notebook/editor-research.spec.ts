@@ -593,3 +593,61 @@ test("long annotation headings wrap without truncation or horizontal overflow", 
   expect(await heading.evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true);
   expect(await reader.locator('.pdf-annotations').evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true);
 });
+
+for (const theme of ['industrial', 'glass', 'gloss']) {
+  for (const mode of ['light', 'dark']) {
+    test(`PDF annotation colors and shapes in ${theme} ${mode}`, async ({ page }) => {
+      await page.goto(`/tests/notebook/app-harness.html?theme=${theme}&mode=${mode}&view=editor&research`);
+      await expect(page.locator('.sidebar')).toBeVisible({ timeout: 45000 });
+      await page.evaluate((text) => {
+        (window as any).fixtureNoteContents["/vault/Loose.md"] = text;
+      }, "# Research\n\nA **bold** idea.\n");
+      const note = page.locator('[data-note-path="/vault/Loose.md"]');
+      await expect(note).toBeVisible({ timeout: 45000 });
+      await note.click();
+      await expect(
+        page.locator('[data-region="editor"] .cm-content'),
+      ).toContainText("Research", { timeout: 45000 });
+      await page.evaluate(() => {
+        localStorage.setItem(`prism_pdf_draft:${encodeURIComponent('/vault')}:${'a'.repeat(64)}`, JSON.stringify({
+          version: 1, documentId: 'a'.repeat(64), revision: 0,
+          entries: [{ id: 'color-test', page: 1, rects: [[70, 710, 230, 728]], text: 'A long selected excerpt with multiple lines of research evidence. '.repeat(5), comment: 'Evidence', color: 'yellow', createdAt: Date.now(), updatedAt: Date.now() }],
+        }));
+      });
+      const reader = await openReader(page);
+      const heading = reader.locator('.pdf-annotation-heading');
+      await expect(heading).toBeVisible({ timeout: 15000 });
+      await heading.click();
+      const mark = reader.locator('.pdf-mark').first();
+      await expect(mark).toHaveAttribute('data-selected', 'true');
+      await expect(mark).toHaveCSS('outline-style', 'none');
+      await expect(mark).toHaveCSS('background-color', 'rgb(245, 212, 66)');
+      await expect(heading).toHaveCSS('border-top-width', '0px');
+      for (const control of [heading, reader.getByLabel('Comment on page 1')]) {
+        expect(await control.evaluate(el => parseFloat(getComputedStyle(el).borderTopLeftRadius))).toBeLessThanOrEqual(12);
+        expect(await control.evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true);
+      }
+      const picker = reader.getByRole('button', { name: 'Annotation color on page 1: yellow', exact: true });
+      const swatch = picker.locator('.pdf-color-swatch');
+      expect((await swatch.boundingBox())!.width).toBeGreaterThanOrEqual(18);
+      expect((await swatch.boundingBox())!.height).toBeGreaterThanOrEqual(18);
+      await expect(swatch).toHaveCSS('background-color', 'rgb(245, 212, 66)');
+      await picker.click();
+      const blue = reader.getByRole('button', { name: 'blue', exact: true });
+      expect((await blue.locator('.pdf-color-swatch').boundingBox())!.width).toBeGreaterThanOrEqual(18);
+      await blue.click();
+      await expect(mark).toHaveCSS('background-color', 'rgb(101, 168, 245)');
+      await expect(reader.getByRole('button', { name: 'Annotation color on page 1: blue', exact: true }).locator('.pdf-color-swatch')).toHaveCSS('background-color', 'rgb(101, 168, 245)');
+      // Keyboard focus must remain visible even though marks have none.
+      // Industrial uses outline; glass/gloss use a box-shadow ring.
+      await heading.focus();
+      await page.keyboard.press('Tab');
+      await expect(reader.getByLabel('Comment on page 1')).toBeFocused();
+      await expect.poll(async () => await reader.getByLabel('Comment on page 1').evaluate(el => {
+        const style = getComputedStyle(el);
+        return style.outlineStyle !== 'none' || style.boxShadow !== 'none';
+      })).toBe(true);
+      if (theme === 'gloss' && mode === 'dark') await page.screenshot({ path: '/tmp/prism-pdf-annotation-fix.png' });
+    });
+  }
+}
