@@ -153,10 +153,20 @@ jobs:
           }
           $libDirectory = $importLibrary.DirectoryName
           $runtime = Join-Path $libDirectory 'onnxruntime.dll'
-          python scripts/verify-onnxruntime.py $runtime
-          if ($LASTEXITCODE -ne 0) { throw 'Invalid Windows ONNX Runtime' }
           New-Item -ItemType Directory -Force src-tauri/onnxruntime | Out-Null
           Copy-Item $runtime src-tauri/onnxruntime/onnxruntime.dll -Force
+          # App-local release CRT files: no machine-wide prerequisite or UAC.
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $vs = & $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+          if (-not $vs) { throw 'Visual C++ tools installation was not found' }
+          $redistRoot = Join-Path $vs 'VC\Redist\MSVC'
+          $crt = Get-ChildItem $redistRoot -Directory | Sort-Object { [version]$_.Name } -Descending |
+            ForEach-Object { Join-Path $_.FullName 'x64\Microsoft.VC143.CRT' } |
+            Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (-not $crt) { throw 'Redistributable x64 release CRT was not found' }
+          Copy-Item (Join-Path $crt '*.dll') src-tauri/onnxruntime/ -Force
+          python scripts/verify-onnxruntime.py src-tauri/onnxruntime/onnxruntime.dll
+          if ($LASTEXITCODE -ne 0) { throw 'Invalid Windows ONNX Runtime bundle' }
           "ORT_LIB_LOCATION=$libDirectory" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           # The library directory itself contains the import library and DLL.
           # A dot profile also enables ort-sys's copy-dylibs path for the DLL.

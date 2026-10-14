@@ -1641,7 +1641,15 @@ export default function App() {
                 vaultPath={settings.vaultPath}
                 settings={settings}
                 onSaveContent={handleSaveContent}
-                onEditorModeChange={mode => { void handleSaveSettings({ ...settings, editor: { ...settings.editor, defaultMode: mode } }).catch(e => alert(String(e), { title: 'Could not save editor preference' })); }}
+                onEditorModeChange={mode => {
+                  void handleSaveSettings({ ...settings, editor: { ...settings.editor, defaultMode: mode } }).catch(e => {
+                    if (e instanceof SettingsApplyError) {
+                      setEmbeddingError(createRawErrorDetails(e.message, 'Editor preference saved. Semantic search is unavailable.'));
+                      return;
+                    }
+                    return alert(String(e), { title: 'Could not save editor preference' });
+                  });
+                }}
                 onWikiLinkClick={handleWikiLinkClick}
                 scrollRequest={scrollRequest}
                 semanticRefreshToken={semanticTick}

@@ -97,7 +97,9 @@ Object.defineProperty(window, '__TAURI_INTERNALS__', {
         }
         case 'write_file': if (query.has('research')) noteContents[args.filePath] = args.content; return null;
         case 'get_runtime_config': return structuredClone(settings);
-        case 'save_runtime_config': return { settings: structuredClone(args.config), runtimeWarning: null };
+        case 'save_runtime_config':
+          if (query.has('settings-save-error')) throw new Error('Disk unavailable');
+          return { settings: structuredClone(args.config), runtimeWarning: query.has('runtime-warning') ? 'ONNX dependency unavailable (Windows error 126)' : null };
         case 'purge_expired_history': return null;
         case 'index_vault': return { files: structuredClone(vaultFiles), folders: [...vaultFolders] };
         case 'create_file': return `/vault/${args.relativePath}`;

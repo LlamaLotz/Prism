@@ -1299,6 +1299,34 @@ pub(crate) fn initialize_windows_runtime() -> Result<(), String> {
     if !runtime.is_file() {
         return Err(format!("Bundled ONNX Runtime missing at {}. Reinstall Prism to repair it.", runtime.display()));
     }
+    use std::os::windows::ffi::OsStrExt;
+    use windows_sys::Win32::System::LibraryLoader::{
+        LoadLibraryExW, LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR, LOAD_LIBRARY_SEARCH_DEFAULT_DIRS,
+    };
+    // ort's default loader does not search the DLL's own directory for its
+    // dependencies. Load with an explicit, restricted search before ort opens
+    // the same module, and preserve the native error before another API call.
+    let wide: Vec<u16> = runtime.as_os_str().encode_wide().chain(Some(0)).collect();
+    let handle = unsafe {
+        LoadLibraryExW(wide.as_ptr(), std::ptr::null_mut(),
+            LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR | LOAD_LIBRARY_SEARCH_DEFAULT_DIRS)
+    };
+    if handle.is_null() {
+        let error = std::io::Error::last_os_error();
+        return Err(format!(
+            "Semantic engine could not load {}: {} (Windows error {}). The bundled runtime or one of its dependencies could not be loaded. Notes and settings remain available.",
+            runtime.display(), error, error.raw_os_error().unwrap_or(0)
+        ));
+    }
+    // Keep the preflight reference alive until ort has acquired its own, also
+    // releasing it on unwind if ort rejects the runtime's API version.
+    struct LoadedRuntime(windows_sys::Win32::Foundation::HMODULE);
+    impl Drop for LoadedRuntime {
+        fn drop(&mut self) {
+            unsafe { windows_sys::Win32::Foundation::FreeLibrary(self.0); }
+        }
+    }
+    let _loaded = LoadedRuntime(handle);
     ort::init_from(runtime.to_string_lossy()).commit().map_err(|e| e.to_string())
 }
 

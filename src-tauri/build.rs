@@ -52,7 +52,7 @@ fn main() {
   if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("windows") {
     let manifest = std::path::PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap());
     let source = manifest.join("onnxruntime/onnxruntime.dll");
-    println!("cargo:rerun-if-changed={}", source.display());
+    println!("cargo:rerun-if-changed={}", source.parent().unwrap().display());
     println!("cargo:rerun-if-changed=../scripts/verify-onnxruntime.py");
     assert!(source.is_file(), "Stage ONNX Runtime 1.18.1 at src-tauri/onnxruntime/onnxruntime.dll before building Windows");
     let status = std::process::Command::new("python")
@@ -62,7 +62,13 @@ fn main() {
     let out = std::path::PathBuf::from(std::env::var_os("OUT_DIR").unwrap());
     let destination = out.ancestors().nth(3).expect("Cargo profile directory").join("onnxruntime");
     std::fs::create_dir_all(&destination).expect("Create ONNX runtime directory");
-    std::fs::copy(&source, destination.join("onnxruntime.dll")).expect("Stage ONNX runtime");
+    for entry in std::fs::read_dir(source.parent().unwrap()).expect("Read runtime bundle") {
+      let path = entry.expect("Read runtime file").path();
+      if path.extension().and_then(|s| s.to_str()).is_some_and(|s| s.eq_ignore_ascii_case("dll")) {
+        println!("cargo:rerun-if-changed={}", path.display());
+        std::fs::copy(&path, destination.join(path.file_name().unwrap())).expect("Stage runtime dependency");
+      }
+    }
   }
 
   tauri_build::build()
