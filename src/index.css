@@ -892,19 +892,6 @@ input[type='range'].hue-slider::-moz-range-thumb {
   --thumb-radius: 9999px;
 }
 
-/* Glass theme: override the industrial zero-radius on structural UI */
-.theme-glass div:not(:where(.study-workspace *, .study-assistant *, .prism-navigation-menu *)),
-.theme-glass input:not(:where(.study-workspace *, .study-assistant *, .prism-navigation-menu *)),
-.theme-glass textarea:not(:where(.study-workspace *, .study-assistant *, .prism-navigation-menu *)),
-.theme-glass select:not(:where(.study-workspace *, .study-assistant *, .prism-navigation-menu *)),
-.theme-glass dialog:not(:where(.study-workspace *, .study-assistant *, .prism-navigation-menu *)),
-.theme-glass header:not(:where(.study-workspace *, .study-assistant *, .prism-navigation-menu *)),
-.theme-glass aside:not(:where(.study-workspace *, .study-assistant *, .prism-navigation-menu *)),
-.theme-glass section:not(:where(.study-workspace *, .study-assistant *, .prism-navigation-menu *)),
-.theme-glass article:not(:where(.study-workspace *, .study-assistant *, .prism-navigation-menu *)) {
-  border-radius: unset !important;
-}
-
 /* Glass theme: cards, panels, modals get pill-soft radii */
 .theme-glass [class*="rounded-2xl"] { border-radius: var(--radius-2xl) !important; }
 .theme-glass [class*="rounded-xl"] { border-radius: var(--radius-xl) !important; }
@@ -1114,17 +1101,6 @@ button.titlebar-menu-dropdown:hover {
   --radius-4xl: 32px;
   --thumb-radius: 9999px;
 }
-.theme-gloss div:not(:where(.study-workspace *, .study-assistant *, .prism-navigation-menu *)),
-.theme-gloss input:not(:where(.study-workspace *, .study-assistant *, .prism-navigation-menu *)),
-.theme-gloss textarea:not(:where(.study-workspace *, .study-assistant *, .prism-navigation-menu *)),
-.theme-gloss select:not(:where(.study-workspace *, .study-assistant *, .prism-navigation-menu *)),
-.theme-gloss dialog:not(:where(.study-workspace *, .study-assistant *, .prism-navigation-menu *)),
-.theme-gloss header:not(:where(.study-workspace *, .study-assistant *, .prism-navigation-menu *)),
-.theme-gloss aside:not(:where(.study-workspace *, .study-assistant *, .prism-navigation-menu *)),
-.theme-gloss section:not(:where(.study-workspace *, .study-assistant *, .prism-navigation-menu *)),
-.theme-gloss article:not(:where(.study-workspace *, .study-assistant *, .prism-navigation-menu *)) {
-  border-radius: unset !important;
-}
 .theme-gloss [class*="rounded-2xl"] { border-radius: var(--radius-2xl) !important; }
 .theme-gloss [class*="rounded-xl"]  { border-radius: var(--radius-xl) !important; }
 .theme-gloss [class*="rounded-lg"]  { border-radius: var(--radius-lg) !important; }
@@ -1312,11 +1288,7 @@ button.titlebar-menu-dropdown:hover {
 .theme-glass .sidebar-collapsed-rail {
   margin: 0;
 }
-/* Gloss: the theme's universal `div { border-radius: unset !important }`
-   reset would otherwise strip the rail's radius, and the gloss panel list
-   doesn't include [data-region="sidebar"]. Re-apply the shared panel radius
-   so the collapsed rail is rounded exactly like the workspace / expanded
-   sidebar (and like the Rounded theme's rail). */
+/* Match the collapsed rail to the workspace and expanded sidebar geometry. */
 .theme-gloss .sidebar-collapsed-rail {
   margin: 0;
   border-radius: var(--radius-module, 24px) !important;
@@ -1328,7 +1300,7 @@ button.titlebar-menu-dropdown:hover {
   background: color-mix(in srgb, var(--color-base) 72%, transparent) !important;
 }
 .settings-unsaved-dialog {
-  background: var(--color-panel) !important;
+  background: var(--nb-overlay) !important;
   border-color: var(--color-border) !important;
   color: var(--color-text-body);
   border-radius: var(--radius-xl, 20px) !important;
@@ -1700,51 +1672,20 @@ html.theme-gloss {
   font-weight: 700;
 }
 
-/* Shared dropdown/context surface. Gloss uses a higher-opacity fill so the
-   underlying editor or graph cannot reduce menu text contrast.
-   Industrial theme: sharp corners, opaque fill. */
-.gloss-dropdown-surface {
-  background: var(--color-panel);
-  border: 1px solid var(--color-border);
-  border-radius: 14px;
+/* Floating menus share opaque backing and archetype geometry. */
+html .gloss-dropdown-surface {
+  background: var(--nb-overlay) !important;
+  color: var(--nb-text);
+  border: 1px solid var(--nb-border);
+  border-radius: var(--nb-radius-sm) !important;
   overflow: hidden;
-  backdrop-filter: blur(20px) saturate(160%);
-  -webkit-backdrop-filter: blur(20px) saturate(160%);
-  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.24), inset 0 1px 0 rgba(255, 255, 255, 0.16);
-}
-.theme-industrial .gloss-dropdown-surface {
-  border-radius: 0 !important;
-  background: var(--color-surface);
-  backdrop-filter: none !important;
-  -webkit-backdrop-filter: none !important;
-}
-/* Glass theme: dropdowns keep their soft curvature. The blanket
-   `.theme-glass div { border-radius: unset }` reset (higher specificity)
-   would otherwise square off the shared dropdown/context surface. */
-.theme-glass .gloss-dropdown-surface {
-  border-radius: 14px !important;
-  overflow: hidden !important;
+  box-shadow: var(--nb-shadow), var(--nb-edge);
 }
 .gloss-dropdown-surface > button,
 .gloss-dropdown-surface .titlebar-menu-dropdown {
   border: none !important;
   border-radius: 0 !important;
   box-shadow: none !important;
-}
-.theme-gloss .gloss-dropdown-surface {
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  border-radius: 14px !important;
-  overflow: hidden !important;
-  backdrop-filter: none !important;
-  -webkit-backdrop-filter: none !important;
-  box-shadow: 0 14px 28px rgba(0, 0, 0, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.16);
-}
-.theme-gloss.mode-dark .gloss-dropdown-surface {
-  background: rgba(24, 24, 27, 0.85);
-}
-.theme-gloss.mode-light .gloss-dropdown-surface {
-  background: rgba(255, 255, 255, 0.85);
-  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.16), inset 0 1px 0 rgba(255, 255, 255, 0.55);
 }
 
 /* Time Machine ruler track & ticks */

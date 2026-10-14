@@ -585,7 +585,7 @@ html .study-menu-body {
   min-width: 190px;
   max-width: calc(100vw - 48px);
   padding: 5px;
-  background: var(--nb-menu);
+  background: var(--nb-overlay);
   border: 1px solid var(--nb-border);
   border-radius: var(--nb-radius-sm);
   box-shadow: var(--nb-edge), var(--nb-shadow);
@@ -995,7 +995,7 @@ html .study-generation-dialog {
   margin: auto;
   padding: 24px;
   color: var(--nb-text);
-  background-color: var(--nb-menu);
+  background-color: var(--nb-overlay);
   background-image: var(--nb-sheen);
   border: 1px solid var(--nb-border);
   border-radius: var(--nb-radius);

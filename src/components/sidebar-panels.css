@@ -59,7 +59,7 @@ html .sidebar button:hover:not(:disabled), html .sidebar-collapsed-rail button:h
 html .sidebar :is(button, input):focus-visible, html .sidebar-collapsed-rail button:focus-visible { outline: 2px solid var(--nb-focus); outline-offset: -2px; }
 html .sidebar :is(input, textarea)::placeholder, html .ai-sidebar :is(input, textarea)::placeholder { color: var(--nb-secondary); opacity: 1; }
 html .sidebar button:disabled { opacity: 1; color: var(--nb-secondary) !important; cursor: default; }
-html .sidebar .gloss-dropdown-surface { color: var(--nb-text); background: var(--nb-menu) !important; border: 1px solid var(--nb-border); max-width: calc(100cqi - 24px); }
+html .sidebar .gloss-dropdown-surface { color: var(--nb-text); background: var(--nb-overlay) !important; border: 1px solid var(--nb-border); max-width: calc(100cqi - 24px); }
 html .sidebar-collapsed-rail { width: 44px; }
 .sidebar-shell .study-assistant { min-height: 0; }
 .sidebar-shell .study-assistant > .study-toolbar { flex-wrap: nowrap; gap: 6px; }
@@ -93,7 +93,7 @@ html .sidebar .sidebar-toolbar-button:hover { color: var(--nb-text) !important; 
   .sidebar-note-row [data-secondary-action] { display: none; }
   .sidebar-compact-actions { display: inline-flex; }
 }
-html body .sidebar-context-menu { background: var(--nb-menu) !important; color: var(--nb-text); border: 1px solid var(--nb-border); border-radius: var(--nb-radius-sm); box-shadow: var(--nb-shadow); }
+html body .sidebar-context-menu { background: var(--nb-overlay) !important; color: var(--nb-text); border: 1px solid var(--nb-border); border-radius: var(--nb-radius-sm); box-shadow: var(--nb-shadow); }
 html .sidebar-context-menu button { color: var(--nb-text) !important; background: transparent !important; }
 html .sidebar-context-menu button svg { color: inherit !important; }
 html .sidebar-context-menu button:is(:hover, :focus-visible) { background: var(--nb-selection) !important; color: var(--nb-text) !important; outline: 2px solid var(--nb-focus); outline-offset: -2px; }

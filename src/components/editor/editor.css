@@ -5,6 +5,7 @@
   container-name: editor;
 }
 .editor-toolbar {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -240,7 +241,7 @@
   max-height: min(60cqi, 380px);
   overflow: auto;
   padding: 4px;
-  background: var(--nb-menu);
+  background: var(--nb-overlay);
   border: 1px solid var(--nb-border);
   border-radius: var(--nb-radius-sm);
   box-shadow: var(--nb-shadow);
@@ -306,11 +307,11 @@
   top: calc(100% + 6px);
   z-index: 60;
   padding: 12px;
-  background: var(--nb-menu);
+  background: var(--nb-overlay);
   border: 1px solid var(--nb-border);
   border-radius: var(--nb-radius-sm);
   box-shadow: var(--nb-shadow);
-  min-width: 240px;
+  min-width: min(240px, calc(100cqi - 16px));
   max-width: min(340px, calc(100cqi - 16px));
   max-height: min(50cqi, 420px);
   overflow: auto;
@@ -337,6 +338,11 @@
   }
 }
 @container editor (max-width: 420px) {
+  /* Anchor to the full toolbar when a wrapped trigger is near the left edge. */
+  .editor-format,
+  .editor-overflow { position: static; }
+  .editor-format > div,
+  .editor-overflow-body { right: 12px; }
   .editor-toolbar {
     padding: 8px 12px;
     gap: 8px;
@@ -345,14 +351,6 @@
   .editor-actions summary {
     padding: 6px 10px;
     font-size: 11px;
-  }
-  .editor-format > div,
-  .editor-overflow-body {
-    position: fixed;
-    left: 50%;
-    right: auto;
-    transform: translateX(-50%);
-    max-width: calc(100vw - 24px);
   }
 }
 .note-properties {
@@ -511,6 +509,11 @@
   }
 }
 @container editor (max-width: 420px) {
+  /* Anchor to the full toolbar when a wrapped trigger is near the left edge. */
+  .editor-format,
+  .editor-overflow { position: static; }
+  .editor-format > div,
+  .editor-overflow-body { right: 12px; }
   .linkhub-panel .px-6 {
     padding-left: 12px;
     padding-right: 12px;
@@ -608,7 +611,7 @@
   overflow: auto;
   padding: 12px;
   background: var(--nb-card);
-  border-radius: 8px;
+  border-radius: var(--nb-radius-sm);
 }
 .rich-markdown code {
   font-family: monospace;
@@ -649,10 +652,10 @@
   top: 100%;
   width: min(340px, 65vw);
   padding: 14px;
-  background: var(--nb-menu);
+  background: var(--nb-overlay);
   color: var(--nb-text);
   border: 1px solid var(--nb-border);
-  border-radius: 10px;
+  border-radius: var(--nb-radius-sm);
   box-shadow: var(--nb-shadow);
   display: flex;
   flex-direction: column;
@@ -679,6 +682,11 @@
   max-width: min(280px, calc(100cqi - 32px));
 }
 @container editor (max-width: 420px) {
+  /* Anchor to the full toolbar when a wrapped trigger is near the left edge. */
+  .editor-format,
+  .editor-overflow { position: static; }
+  .editor-format > div,
+  .editor-overflow-body { right: 12px; }
   .editor-container .absolute.top-16.right-6 {
     left: 12px;
     right: 12px;
@@ -704,7 +712,7 @@
   display: block;
   max-width: 100%;
   max-height: 480px;
-  border-radius: 8px;
+  border-radius: var(--nb-radius-sm);
 }
 .note-media audio {
   max-width: 100%;
@@ -754,7 +762,7 @@
   z-index: 40;
   display: flex;
   flex-direction: column;
-  background: var(--nb-panel);
+  background: var(--nb-canvas);
   color: var(--nb-text);
   min-height: 0;
   padding: 12px;
@@ -798,7 +806,7 @@
 .pdf-annotations article {
   padding: 10px;
   border: 1px solid var(--nb-border);
-  border-radius: 8px;
+  border-radius: var(--nb-radius-sm);
   margin-bottom: 8px;
 }
 .pdf-annotations textarea {
@@ -848,3 +856,46 @@
     max-width: 24ch;
   }
 }
+
+/* Floating find controls must obscure the document beneath them. */
+.editor-find {
+  position: absolute;
+  top: 64px;
+  right: 12px;
+  z-index: 30;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  max-width: calc(100% - 24px);
+  padding: 6px 8px;
+  background: var(--nb-overlay);
+  color: var(--nb-text);
+  border: 1px solid var(--nb-border);
+  border-radius: var(--nb-radius-sm);
+  box-shadow: var(--nb-shadow);
+}
+.editor-find input {
+  width: 180px;
+  min-width: 0;
+  flex: 1 1 100px;
+  color: var(--nb-text);
+  background: transparent;
+  font-size: 12px;
+}
+.editor-find input::placeholder,
+.editor-find-count { color: var(--nb-secondary); }
+html body .editor-find button {
+  color: var(--nb-text) !important;
+  background: var(--nb-overlay) !important;
+  border: 1px solid var(--nb-hairline);
+  border-radius: var(--nb-radius-sm) !important;
+  padding: 3px 6px;
+}
+html body .editor-find button[aria-pressed='true'] {
+  color: var(--nb-selected-ink) !important;
+  background: var(--nb-selected-bg) !important;
+}
+html body .editor-find button:hover:not([aria-pressed='true']) { background: var(--nb-selection) !important; }
+/* Annotation pins are circular even in Industrial; document marks stay square. */
+html .pdf-reader .pdf-comment-dot { border-radius: 50% !important; }

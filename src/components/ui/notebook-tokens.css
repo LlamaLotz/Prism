@@ -27,6 +27,8 @@
       i.e. it was never buying the frosted look it appeared to.
    ========================================================================== */
 
+/* --nb-overlay is the opaque counterpart of --nb-menu for floating surfaces. */
+
 /* --- Shared geometry tokens (overridden per archetype below) -------------- */
 :root {
   --nb-radius: 16px;
@@ -43,6 +45,7 @@
   --nb-panel: #171b21;
   --nb-card: #1f242c;
   --nb-menu: #232a33;
+  --nb-overlay: #232a33;
   --nb-text: #f4f6fa;
   --nb-secondary: #bbc5d3;
   --nb-border: #69768a;
@@ -67,6 +70,7 @@
   --nb-panel: #171b21;
   --nb-card: #1f242c;
   --nb-menu: #232a33;
+  --nb-overlay: #232a33;
   --nb-text: #f4f6fa;
   --nb-secondary: #bbc5d3;
   --nb-border: #69768a;
@@ -79,6 +83,7 @@
   --nb-panel: #ffffff;
   --nb-card: #f4f6f8;
   --nb-menu: #ffffff;
+  --nb-overlay: #ffffff;
   --nb-text: #101520;
   --nb-secondary: #46536a;
   --nb-border: #75808f;
@@ -105,6 +110,7 @@
   --nb-panel: rgb(26 30 37 / 0.78);
   --nb-card: rgb(38 44 54 / 0.72);
   --nb-menu: rgb(28 33 41 / 0.97);
+  --nb-overlay: rgb(28 33 41);
   --nb-text: #ffffff;
   --nb-secondary: #cbd5e1;
   --nb-border: rgb(255 255 255 / 0.38);
@@ -117,6 +123,7 @@
   --nb-panel: rgb(255 255 255 / 0.78);
   --nb-card: rgb(255 255 255 / 0.92);
   --nb-menu: rgb(255 255 255 / 0.98);
+  --nb-overlay: rgb(255 255 255);
   --nb-text: #0c1220;
   --nb-secondary: #3f4c60;
   --nb-border: rgb(51 65 85 / 0.62);
@@ -144,6 +151,7 @@
   --nb-panel: rgb(24 25 32 / 0.66);
   --nb-card: rgb(40 42 54 / 0.62);
   --nb-menu: rgb(30 32 41 / 0.97);
+  --nb-overlay: rgb(30 32 41);
   --nb-text: #ffffff;
   --nb-secondary: #cfd6e2;
   --nb-border: rgb(255 255 255 / 0.4);
@@ -156,6 +164,7 @@
   --nb-panel: rgb(255 255 255 / 0.64);
   --nb-card: rgb(255 255 255 / 0.78);
   --nb-menu: rgb(255 255 255 / 0.98);
+  --nb-overlay: rgb(255 255 255);
   --nb-text: #0b1020;
   --nb-secondary: #3b4757;
   --nb-border: rgb(51 65 85 / 0.66);
@@ -225,7 +234,7 @@ html :is(.study-workspace, .study-assistant, .ai-sidebar)
 
 /* Portaled / floating surfaces are opaque enough to read over any content. */
 html .model-picker__menu {
-  background: var(--nb-menu) !important;
+  background: var(--nb-overlay) !important;
   color: var(--nb-text);
   border: 1px solid var(--nb-border);
   border-radius: var(--nb-radius-sm) !important;

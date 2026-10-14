@@ -339,9 +339,67 @@ for (const theme of ["industrial", "glass", "gloss"])
         .getByRole("button", { name: "AI assistant", exact: true })
         .click();
       await page.setViewportSize({ width: 720, height: 900 });
+      const editor = page.locator('[data-region="editor"]');
+      const radius = theme === "industrial" ? 0 : theme === "glass" ? 10 : 12;
+      for (const menu of [".editor-format", ".editor-overflow"]) {
+        await editor.locator(`${menu} > summary`).click();
+        const surface = editor.locator(`${menu} > div`);
+        await expect(surface).toBeVisible();
+        const menuBounds = await surface.boundingBox();
+        const editorBounds = await editor.boundingBox();
+        expect(menuBounds!.x).toBeGreaterThanOrEqual(editorBounds!.x);
+        expect(menuBounds!.x + menuBounds!.width).toBeLessThanOrEqual(720);
+        expect(menuBounds!.y + menuBounds!.height).toBeLessThanOrEqual(900);
+        expect(await surface.evaluate(el => parseFloat(getComputedStyle(el).borderTopLeftRadius))).toBe(radius);
+        expect(await surface.evaluate(el => getComputedStyle(el).backgroundColor)).toMatch(/^rgb\(/);
+        await expect(surface.getByText(/Move to folder/i)).toHaveCount(0);
+        if (menu === ".editor-overflow") {
+          await page.screenshot({ path: `/tmp/prism-tools-${theme}-${mode}.png` });
+          await surface.getByRole("button", { name: "Tools", exact: true }).click();
+          expect(await surface.locator('.editor-menu').evaluate(el => parseFloat(getComputedStyle(el).borderTopLeftRadius))).toBe(radius);
+          await surface.getByRole("button", { name: "Tools", exact: true }).click();
+        }
+        await editor.locator(`${menu} > summary`).click();
+      }
+      await editor.locator('.cm-content').fill('Evidence evidence EVIDENCE');
+      await editor.getByRole('button', { name: 'Find', exact: true }).click();
+      const find = editor.getByRole('search', { name: 'Find in note' });
+      const query = find.getByRole('textbox', { name: 'Find in note' });
+      await query.fill('evidence');
+      await expect(find.locator('.editor-find-count')).toHaveText('1/3');
+      await query.press('Enter');
+      await expect(find.locator('.editor-find-count')).toHaveText('2/3');
+      await query.press('Shift+Enter');
+      await expect(find.locator('.editor-find-count')).toHaveText('1/3');
+      await find.getByRole('button', { name: 'Match case', exact: true }).click();
+      await expect(find.locator('.editor-find-count')).toHaveText('1/1');
+      const caseButton = find.getByRole('button', { name: 'Match case', exact: true });
+      await expect.poll(() => caseButton.evaluate(el => {
+        const probe = document.createElement('span');
+        probe.style.backgroundColor = 'var(--nb-selected-bg)';
+        el.append(probe);
+        const expected = getComputedStyle(probe).backgroundColor;
+        probe.remove();
+        return getComputedStyle(el).backgroundColor === expected;
+      })).toBe(true);
+      expect(await find.evaluate(el => getComputedStyle(el).backgroundColor)).toMatch(/^rgb\(/);
+      expect(await find.evaluate(el => parseFloat(getComputedStyle(el).borderTopLeftRadius))).toBe(radius);
+      const bounds = await find.boundingBox();
+      expect(bounds!.x).toBeGreaterThanOrEqual(0);
+      expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(720);
+      await page.screenshot({ path: `/tmp/prism-find-${theme}-${mode}.png` });
+      await query.press('Escape');
+      await expect(find).toHaveCount(0);
       await page.getByRole("button", { name: "Source", exact: true }).click();
       await page.getByRole("button", { name: "Live", exact: true }).click();
       const reader = await openReader(page);
+      expect(await reader.evaluate(el => getComputedStyle(el).backgroundColor)).toMatch(/^rgb\(/);
+      expect(await reader.locator('.pdf-page').first().evaluate(el => parseFloat(getComputedStyle(el).borderTopLeftRadius))).toBe(0);
+      await reader.getByRole('textbox', { name: 'Find in PDF' }).fill('Research');
+      await reader.getByRole('button', { name: 'Search PDF', exact: true }).click();
+      await expect(reader.getByRole('button', { name: 'Page 1', exact: true })).toBeVisible();
+      await page.screenshot({ path: `/tmp/prism-pdf-${theme}-${mode}.png` });
+
       await reader
         .getByRole("button", { name: "Zoom in", exact: true })
         .click();

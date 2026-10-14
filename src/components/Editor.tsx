@@ -2408,7 +2408,7 @@ const sidecarPath = (notePath: string): string => {
       
       {/* Find-in-note overlay */}
       {isSearchOpen && (
-        <div className="absolute top-16 right-6 z-20 flex items-center gap-1.5 bg-slate-950/95 border border-slate-800 rounded-lg shadow-xl px-2 py-1.5">
+        <div className="editor-find" role="search" aria-label="Find in note">
           <Search className="w-3.5 h-3.5 text-brand-400 shrink-0" />
           <input
             ref={searchInputRef}
@@ -2426,19 +2426,16 @@ const sidecarPath = (notePath: string): string => {
               if (e.key === 'Escape') closeSearch();
             }}
             placeholder="Find in note…"
-            className="w-52 bg-transparent text-xs text-slate-200 placeholder:text-slate-600 outline-none"
+            aria-label="Find in note"
           />
           <button
             onClick={() => setSearchCaseSensitive((v) => !v)}
             title="Match case"
-            className={`px-1.5 py-0.5 text-[10px] font-bold rounded border transition-all ${
-              searchCaseSensitive
-                ? 'bg-brand-500/20 border-brand-500/40 text-brand-300'
-                : 'bg-slate-800/50 border-slate-700 text-slate-400 hover:text-slate-200'
-            }`}
+            aria-label="Match case"
+            aria-pressed={searchCaseSensitive}
           >
             Aa
-          </button>          <span className="text-[10px] text-slate-500 whitespace-nowrap text-center min-w-12 tabular-nums" title={searchTruncated ? 'Showing the first 20,000 matches.' : undefined}>
+          </button>          <span className="editor-find-count text-[10px] whitespace-nowrap text-center min-w-12 tabular-nums" title={searchTruncated ? 'Showing the first 20,000 matches.' : undefined}>
 
             {searchQuery
               ? `${matches.length ? activeMatchIndex + 1 : 0}/${searchTruncated ? '20,000+' : matches.length}`
