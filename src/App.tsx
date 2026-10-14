@@ -1,5 +1,4 @@
-import { lazy, Suspense } from 'react';
-const PdfWorkspace = lazy(() => import('./components/editor/PdfReader').then(m => ({ default: m.PdfWorkspace })));
+import { PdfWorkspace } from './components/editor/PdfWorkspace';
 import { noteGraph } from './services/folderGraph';
 import { MoveNoteDialog } from './components/FolderPicker';
 import { relocateNote } from './services/editorRelocation';
@@ -1630,7 +1629,7 @@ export default function App() {
 
         {/* Workspace Main Panels */}
         <div className="workspace-panels relative flex-1 flex min-w-0 min-h-0 overflow-hidden">
-          <Suspense fallback={null}><PdfWorkspace vaultPath={settings.vaultPath} notePath={activeNote?.path} /></Suspense>
+          <PdfWorkspace vaultPath={settings.vaultPath} notePath={activeNote?.path} />
           
           <NoteGraphWorkspace showEditor={layout === 'editor' || layout === 'split'} showGraph={layout === 'graph' || layout === 'split'}
             onClose={pane => { const remaining = pane === 'editor' ? 'graph' : 'editor'; setLayout(remaining); focusPane(remaining); }}

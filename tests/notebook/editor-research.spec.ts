@@ -186,6 +186,32 @@ const draft = (page: Page) =>
     return key ? JSON.parse(localStorage.getItem(key)!) : null;
   });
 
+test("PDF open survives a delayed reader module", async ({ page }) => {
+  let releaseModule!: () => void;
+  const moduleGate = new Promise<void>(resolve => { releaseModule = resolve; });
+  let requested = false;
+  await page.route('**/src/components/editor/PdfReader.tsx*', async route => {
+    requested = true;
+    await moduleGate;
+    await route.continue();
+  });
+  try {
+    await boot(page);
+    // The editor is usable while the PDF module is still in flight. Opening
+    // must retain the request rather than dispatch to a missing listener.
+    await page.evaluate(() => window.dispatchEvent(new CustomEvent('prism-open-pdf', {
+      detail: { documentId: 'a'.repeat(64) },
+    })));
+    await expect.poll(() => requested).toBe(true);
+    releaseModule();
+    const reader = page.getByRole('region', { name: 'PDF reader' });
+    await expect(reader.locator('.textLayer').first()).toContainText('Research evidence', { timeout: 15000 });
+  } finally {
+    releaseModule();
+    await page.unrouteAll({ behavior: 'wait' });
+  }
+});
+
 test("PDF cancel preserves recovery; mouse-confirmed discard removes it on reopening", async ({
   page,
 }) => {
