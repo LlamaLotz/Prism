@@ -261,77 +261,62 @@ export const LinkHub: React.FC<LinkHubProps> = ({
 
   return (
     <div className="linkhub-panel relative h-full flex flex-col overflow-hidden bg-panel rounded-t-2xl">
-      <div className="px-6 py-2 border-b border-slate-900/40 flex items-center justify-between shrink-0">
-        <div className="flex items-center gap-3 min-w-0">
+      <div className="linkhub-header px-6 py-2 border-b border-slate-900/40 flex items-center justify-between shrink-0">
+        <div className="linkhub-header-left flex items-center gap-3 min-w-0">
           <h3 className="text-[11px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5 shrink-0">
             <Link2 className="w-3.5 h-3.5 text-brand-400" /> Links
           </h3>
-          <div className="flex items-center gap-1 bg-slate-950 border border-slate-800 rounded-lg p-0.5">
+          <div className="seg-control linkhub-tabs flex items-center gap-1" role="tablist" aria-label="Link filters">
             <button
+              role="tab"
+              aria-selected={activeTab === 'active'}
+              aria-pressed={activeTab === 'active'}
               onClick={() => setActiveTab('active')}
-              className={`flex items-center gap-1.5 px-2.5 py-1 text-[10px] font-semibold rounded-md transition-all ${
-                activeTab === 'active'
-                  ? 'bg-slate-800 text-brand-400 shadow-sm'
-                  : 'text-slate-400 hover:text-slate-200'
-              }`}
+              className="seg-button"
             >
               Active
               <span
-                className={`rounded-md px-1 text-[9px] font-bold ${
-                  activeTab === 'active'
-                    ? 'bg-brand-500/20 text-brand-300'
-                    : 'bg-slate-800 text-slate-500'
-                }`}
+                className="linkhub-count"
               >
                 {total}
               </span>
             </button>
             <button
+              role="tab"
+              aria-selected={activeTab === 'denied'}
+              aria-pressed={activeTab === 'denied'}
               onClick={() => setActiveTab('denied')}
-              className={`flex items-center gap-1.5 px-2.5 py-1 text-[10px] font-semibold rounded-md transition-all ${
-                activeTab === 'denied'
-                  ? 'bg-slate-800 text-violet-400 shadow-sm'
-                  : 'text-slate-400 hover:text-slate-200'
-              }`}
+              className="seg-button"
             >
               Denied
               <span
-                className={`rounded-md px-1 text-[9px] font-bold ${
-                  deniedSuggestions.length > 0
-                    ? 'bg-violet-500/20 text-violet-300'
-                    : 'bg-slate-800 text-slate-500'
-                }`}
+                className="linkhub-count"
               >
                 {deniedSuggestions.length}
               </span>
             </button>
             <button
+              role="tab"
+              aria-selected={activeTab === 'hidden'}
+              aria-pressed={activeTab === 'hidden'}
               onClick={() => setActiveTab('hidden')}
-              className={`flex items-center gap-1.5 px-2.5 py-1 text-[10px] font-semibold rounded-md transition-all ${
-                activeTab === 'hidden'
-                  ? 'bg-slate-800 text-sky-400 shadow-sm'
-                  : 'text-slate-400 hover:text-slate-200'
-              }`}
+              className="seg-button"
             >
               Hidden
               <span
-                className={`rounded-md px-1 text-[9px] font-bold ${
-                  hiddenLinks.length > 0
-                    ? 'bg-sky-500/20 text-sky-300'
-                    : 'bg-slate-800 text-slate-500'
-                }`}
+                className="linkhub-count"
               >
                 {hiddenLinks.length}
               </span>
             </button>
           </div>
         </div>
-        <div className="flex items-center gap-2">
-          {isLoading && <span className="text-[10px] text-slate-500 italic">Scanning…</span>}
+        <div className="linkhub-header-actions flex items-center gap-2 shrink-0">
+          {isLoading && <span className="text-[10px] text-slate-500 italic whitespace-nowrap">Scanning…</span>}
           <button
             onClick={onCollapse}
             title="Collapse links panel"
-            className="text-[10px] text-slate-600 hover:text-brand-400 transition-colors"
+            className="text-[10px] text-slate-600 hover:text-brand-400 transition-colors shrink-0"
           >
             <ChevronDown className="w-3.5 h-3.5" />
           </button>
@@ -339,7 +324,7 @@ export const LinkHub: React.FC<LinkHubProps> = ({
             onClick={handleRefresh}
             disabled={isLoading}
             title="Refresh all link types"
-            className="inline-flex items-center gap-1.5 px-4 py-1 text-[10px] text-slate-500 hover:text-brand-400 transition-colors disabled:opacity-50"
+            className="linkhub-refresh inline-flex items-center gap-1.5 px-4 py-1 text-[10px] text-slate-500 hover:text-brand-400 transition-colors disabled:opacity-50 whitespace-nowrap shrink-0"
           >
             <RefreshCw className={`w-3 h-3 ${isLoading ? 'animate-spin' : ''}`} /> Refresh
           </button>
@@ -492,7 +477,7 @@ export const LinkHub: React.FC<LinkHubProps> = ({
               No keywords yet. Add one below to tag this note locally.
             </p>
           )}
-          <div className="flex items-center gap-1.5 mt-2">
+          <div className="linkhub-keyword-row flex items-center gap-1.5 mt-2">
             <input
               value={keywordInput}
               onChange={(e) => setKeywordInput(e.target.value)}
@@ -500,12 +485,12 @@ export const LinkHub: React.FC<LinkHubProps> = ({
                 if (e.key === 'Enter') submitKeyword();
               }}
               placeholder="Add keyword… (e.g. productivity)"
-              className="flex-1 min-w-0 bg-slate-950/70 border border-slate-800 rounded-md px-2 py-1 text-[11px] text-slate-200 placeholder:text-slate-600 outline-none focus:border-amber-500/40 transition-colors"
+              className="linkhub-keyword-input flex-1 min-w-0 bg-slate-950/70 border border-slate-800 rounded-md px-2 py-1 text-[11px] text-slate-200 placeholder:text-slate-600 outline-none focus:border-amber-500/40 transition-colors"
             />
             <button
               onClick={submitKeyword}
               title="Add a hidden local keyword to this note"
-              className="flex items-center gap-1 px-2.5 py-1 text-[10px] font-bold rounded-md border transition-all bg-amber-500/10 border-amber-500/40 text-amber-400 hover:bg-amber-500/20"
+              className="linkhub-add flex items-center gap-1 px-2.5 py-1 text-[10px] font-bold rounded-md border transition-all"
             >
               <Check className="w-3 h-3" /> Add
             </button>

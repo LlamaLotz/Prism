@@ -315,3 +315,86 @@ html .ai-sidebar {
 .study-workspace__body[hidden] {
   display: none !important;
 }
+
+/* ==========================================================================
+   Shared interactive control contract — user-accent selection system
+   --------------------------------------------------------------------------
+   Every segmented control / tab group (editor modes, graph modes, link
+   filters) resolves selection the same way:
+     selected   = user accent fill + computed contrast ink (WCAG AA via
+                  applyAccentColor's black/white choice) + semibold
+     unselected = neutral card fill + standard text + visible border
+     hover      = selection tint, never the full fill (distinct from selected)
+     focus      = 2px focus outline, never the same as selection
+     disabled   = dimmed chrome, secondary-ink label, not-allowed cursor
+   Container queries (not viewport media) drive narrow-pane collapsing.
+   ========================================================================== */
+:root {
+  --nb-control-min-height: 32px;
+  --nb-control-gap: 8px;
+  --nb-selected-bg: var(--color-brand-500);
+  --nb-selected-ink: var(--color-brand-contrast, var(--nb-accent-ink));
+  --nb-selected-border: var(--color-brand-600);
+  --nb-hover-bg: var(--nb-selection);
+  --nb-hover-border: var(--nb-focus);
+}
+:root.theme-industrial.mode-light {
+  --nb-selected-border: var(--color-brand-700);
+}
+:root.theme-glass.mode-light,
+:root.theme-gloss.mode-light {
+  --nb-selected-border: color-mix(in srgb, var(--color-brand-700) 70%, black);
+}
+
+.seg-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px;
+  min-height: var(--nb-control-min-height);
+  background: var(--nb-card);
+  border: 1px solid var(--nb-border);
+  border-radius: var(--nb-radius-sm);
+  flex-shrink: 0;
+}
+.seg-control .seg-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 26px;
+  min-width: 44px;
+  padding: 4px 12px;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.2;
+  white-space: nowrap;
+  color: var(--nb-text);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: calc(var(--nb-radius-sm) * 0.75);
+  cursor: pointer;
+}
+.seg-control .seg-button:hover:not(:disabled):not([aria-pressed="true"]) {
+  background: var(--nb-hover-bg);
+  border-color: var(--nb-hover-border);
+  color: var(--nb-text);
+}
+.seg-control .seg-button[aria-pressed="true"] {
+  background: var(--nb-selected-bg);
+  color: var(--nb-selected-ink);
+  border-color: var(--nb-selected-border);
+  font-weight: 650;
+}
+.seg-control .seg-button[aria-pressed="true"] svg {
+  color: inherit;
+}
+.seg-control .seg-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  color: var(--nb-secondary);
+}
+.seg-control .seg-button:focus-visible {
+  outline: 2px solid var(--nb-focus);
+  outline-offset: 2px;
+}

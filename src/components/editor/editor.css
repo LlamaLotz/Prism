@@ -1,16 +1,27 @@
+/* Editor pane is a container: toolbar / properties / linkhub respond to the
+   actual pane width (side-by-side vs full width), not the viewport. */
+[data-region="editor"] {
+  container-type: inline-size;
+  container-name: editor;
+}
 .editor-toolbar {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 12px 16px;
+  row-gap: 8px;
+  padding: 10px 16px;
   border-bottom: 1px solid var(--nb-border);
   background: var(--nb-panel);
   color: var(--nb-text);
   flex-wrap: wrap;
+  flex-shrink: 0;
+  min-height: 52px;
 }
 .editor-title {
+  flex: 1 1 160px;
   min-width: 0;
+  max-width: 100%;
 }
 .editor-title h2 {
   font-size: 16px;
@@ -23,39 +34,276 @@
 .editor-title span {
   font-size: 11px;
   color: var(--nb-secondary);
+  white-space: nowrap;
 }
 .editor-actions {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--nb-control-gap, 8px);
   flex-wrap: wrap;
+  flex-shrink: 1;
+  min-width: 0;
+  justify-content: flex-end;
+}
+.editor-mode-group {
+  flex-shrink: 0;
+}
+.editor-secondary-group {
+  display: flex;
+  align-items: center;
+  gap: var(--nb-control-gap, 8px);
+  flex-wrap: wrap;
+  min-width: 0;
 }
 .editor-actions button,
 .editor-actions summary,
 .note-properties button,
 .pdf-reader button,
 .note-media button {
-  padding: 5px 9px;
+  min-height: var(--nb-control-min-height, 32px);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 6px 12px;
   border: 1px solid var(--nb-border);
   border-radius: var(--nb-radius-sm);
   background: var(--nb-card);
   color: var(--nb-text);
   cursor: pointer;
   font-size: 12px;
+  font-weight: 500;
+  line-height: 1.2;
+  white-space: nowrap;
 }
+.editor-actions button:hover:not(:disabled):not([aria-pressed="true"]),
+.editor-actions summary:hover {
+  background: var(--nb-hover-bg, var(--nb-selection));
+  border-color: var(--nb-hover-border, var(--nb-focus));
+  color: var(--nb-text);
+}
+/* Selected editing mode: user-accent fill + computed contrast ink.
+   Never outline-only — fill carries the state, outline is reserved for focus. */
 .editor-actions button[aria-pressed="true"] {
+  background: var(--nb-selected-bg, var(--color-brand-500));
+  color: var(--nb-selected-ink, var(--color-brand-contrast, #0b0e13));
+  border-color: var(--nb-selected-border, var(--color-brand-600));
+  font-weight: 650;
+  outline: none;
+}
+.editor-actions button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  color: var(--nb-secondary);
+}
+.editor-actions button:focus-visible,
+.editor-actions summary:focus-visible {
+  outline: 2px solid var(--nb-focus);
+  outline-offset: 2px;
+}
+/* Segmented mode group keeps its compact geometry inside the toolbar:
+   the generic .editor-actions button rule above would stretch seg buttons
+   to full control height — re-assert the 26px seg geometry here. */
+.editor-actions .editor-mode-group.seg-control {
+  padding: 3px;
+  gap: 4px;
+}
+.editor-actions .editor-mode-group .seg-button {
+  min-height: 26px;
+  padding: 4px 12px;
+  border-radius: calc(var(--nb-radius-sm) * 0.75);
+}
+/* Suppress the app-wide brand glow inside the note toolbar: hover/focus here
+   are flat tints + focus ring only, per the minimal archetype. The global
+   rule uses !important, so this override must match it. */
+.editor-toolbar button:not(:disabled):hover,
+.editor-overflow-body button:not(:disabled):hover {
+  border-color: var(--nb-hover-border, var(--nb-focus)) !important;
+  box-shadow: none !important;
+}
+.editor-toolbar button:not(:disabled):active {
+  border-color: var(--nb-focus) !important;
+  box-shadow: none !important;
+}
+/* Shared More-Tools controls: every direct child resolves to the same
+   neutral button language regardless of which component rendered it
+   (Open PDF, Sources, Scan, Review, AI tools, Tools, icon actions). */
+.editor-overflow-body .editor-btn {
+  min-height: var(--nb-control-min-height, 32px);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.2;
+  white-space: nowrap;
+  color: var(--nb-text);
+  background: var(--nb-card);
+  border: 1px solid var(--nb-border);
+  border-radius: var(--nb-radius-sm);
+  cursor: pointer;
+}
+.editor-overflow-body .editor-btn:hover:not(:disabled) {
+  background: var(--nb-hover-bg, var(--nb-selection));
+  border-color: var(--nb-hover-border, var(--nb-focus)) !important;
+  box-shadow: none !important;
+  color: var(--nb-text);
+}
+.editor-overflow-body .editor-btn:disabled {
+  opacity: 1;
+  color: var(--nb-secondary);
+  border-color: color-mix(in srgb, var(--nb-border) 70%, transparent);
+  cursor: not-allowed;
+}
+.editor-overflow-body .editor-btn:focus-visible {
+  outline: 2px solid var(--nb-focus);
+  outline-offset: 2px;
+}
+/* Selected Review toggle: unmistakable accent fill + contrast ink. */
+.editor-overflow-body .editor-btn[aria-pressed="true"] {
+  background: var(--nb-selected-bg, var(--color-brand-500));
+  color: var(--nb-selected-ink, var(--color-brand-contrast, #0b0e13));
+  border-color: var(--nb-selected-border, var(--color-brand-600));
+  font-weight: 650;
+}
+.editor-overflow-body .editor-btn[aria-pressed="true"] svg {
+  color: inherit;
+}
+/* Icon-only actions share one compact square target and stroke. */
+.editor-overflow-body .editor-icon-btn {
+  width: var(--nb-control-min-height, 32px);
+  height: var(--nb-control-min-height, 32px);
+  min-height: var(--nb-control-min-height, 32px);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  color: var(--nb-text);
+  background: var(--nb-card);
+  border: 1px solid var(--nb-border);
+  border-radius: var(--nb-radius-sm);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.editor-overflow-body .editor-icon-btn svg {
+  width: 14px;
+  height: 14px;
+}
+.editor-overflow-body .editor-icon-btn:hover:not(:disabled) {
+  background: var(--nb-hover-bg, var(--nb-selection));
+  border-color: var(--nb-hover-border, var(--nb-focus)) !important;
+  box-shadow: none !important;
+  color: var(--nb-text);
+}
+.editor-overflow-body .editor-icon-btn:disabled {
+  opacity: 1;
+  color: var(--nb-secondary);
+  border-color: color-mix(in srgb, var(--nb-border) 70%, transparent);
+  cursor: not-allowed;
+}
+.editor-overflow-body .editor-icon-btn:focus-visible {
+  outline: 2px solid var(--nb-focus);
+  outline-offset: 2px;
+}
+/* Undo/Redo pair: borderless group, no extra toolbar-section box. */
+.editor-overflow-body .editor-icon-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+/* Count badge on Review: legible on both neutral and accent fills. */
+.editor-overflow-body .editor-badge {
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  border-radius: 9999px;
+  background: #e11d48;
+  color: #ffffff;
+  flex-shrink: 0;
+}
+.theme-industrial .editor-overflow-body .editor-badge {
+  border-radius: 0;
+}
+/* Tools menu: compact list anchored to its trigger, same tokens as Format. */
+.editor-menu {
+  min-width: 200px;
+  max-width: min(300px, calc(100cqi - 24px));
+  max-height: min(60cqi, 380px);
+  overflow: auto;
+  padding: 4px;
+  background: var(--nb-menu);
+  border: 1px solid var(--nb-border);
+  border-radius: var(--nb-radius-sm);
+  box-shadow: var(--nb-shadow);
+}
+.editor-menu-item {
+  width: 100%;
+  min-height: 32px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--nb-text);
+  background: transparent;
+  border: none;
+  border-radius: calc(var(--nb-radius-sm) * 0.6);
+  cursor: pointer;
+  text-align: left;
+  white-space: nowrap;
+}
+.editor-menu-item svg {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  color: inherit;
+}
+.editor-menu-item:hover:not(:disabled) {
+  background: var(--nb-hover-bg, var(--nb-selection));
+  color: var(--nb-text);
+}
+.editor-menu-item:disabled {
+  opacity: 1;
+  color: var(--nb-secondary);
+  cursor: not-allowed;
+}
+.editor-menu-item:focus-visible {
   outline: 2px solid var(--nb-focus);
   outline-offset: -2px;
+}
+.editor-menu-sep {
+  margin: 4px 2px;
+  border-top: 1px solid var(--nb-hairline);
 }
 .editor-format,
 .editor-overflow {
   position: relative;
+  flex-shrink: 0;
+}
+.editor-format > summary,
+.editor-overflow > summary {
+  list-style: none;
+  cursor: pointer;
+}
+.editor-format > summary::-webkit-details-marker,
+.editor-overflow > summary::-webkit-details-marker {
+  display: none;
 }
 .editor-format > div,
 .editor-overflow-body {
   position: absolute;
   right: 0;
-  top: 100%;
+  top: calc(100% + 6px);
   z-index: 60;
   padding: 12px;
   background: var(--nb-menu);
@@ -63,11 +311,49 @@
   border-radius: var(--nb-radius-sm);
   box-shadow: var(--nb-shadow);
   min-width: 240px;
-  max-width: 90vw;
+  max-width: min(340px, calc(100cqi - 16px));
+  max-height: min(50cqi, 420px);
+  overflow: auto;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 8px;
+}
+/* Narrow editor pane: title takes its own row, actions wrap below without
+   colliding into the title / save-status area. */
+@container editor (max-width: 620px) {
+  .editor-toolbar {
+    align-items: flex-start;
+  }
+  .editor-title {
+    flex: 1 1 100%;
+  }
+  .editor-title h2 {
+    max-width: 100%;
+  }
+  .editor-actions {
+    flex: 1 1 100%;
+    justify-content: flex-start;
+  }
+}
+@container editor (max-width: 420px) {
+  .editor-toolbar {
+    padding: 8px 12px;
+    gap: 8px;
+  }
+  .editor-actions button,
+  .editor-actions summary {
+    padding: 6px 10px;
+    font-size: 11px;
+  }
+  .editor-format > div,
+  .editor-overflow-body {
+    position: fixed;
+    left: 50%;
+    right: auto;
+    transform: translateX(-50%);
+    max-width: calc(100vw - 24px);
+  }
 }
 .note-properties {
   padding: 8px 16px;
@@ -78,13 +364,18 @@
   overflow: auto;
   flex-shrink: 0;
   font-size: 12px;
+  container-type: inline-size;
+  container-name: properties;
 }
 .note-properties summary {
   cursor: pointer;
+  min-height: var(--nb-control-min-height, 32px);
+  display: inline-flex;
+  align-items: center;
 }
 .note-properties-fields {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   gap: 12px;
   padding: 10px 0;
 }
@@ -104,6 +395,183 @@
   border-radius: 6px;
   padding: 6px;
   min-width: 0;
+  min-height: var(--nb-control-min-height, 32px);
+}
+/* Properties fields are data inputs, never pills — even in glass/gloss where
+   generic text inputs become capsules. Textareas keep a small radius so the
+   resize handle and multi-line content don't clip inside a pill. */
+.theme-glass .note-properties input,
+.theme-gloss .note-properties input,
+.theme-glass .note-properties textarea,
+.theme-gloss .note-properties textarea {
+  border-radius: 6px !important;
+}
+@container properties (max-width: 520px) {
+  .note-properties-fields {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@container properties (max-width: 360px) {
+  .note-properties {
+    padding: 8px 12px;
+  }
+  .note-properties-fields {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* ==========================================================================
+   LinkHub panel — responsive to the editor pane width via container queries.
+   Tab group uses the shared seg-control (accent fill when selected); counts
+   inherit contrast ink so they clear 4.5:1 on the accent fill. Header wraps
+   instead of overlapping (fixes Hidden/Refresh collision in narrow panes).
+   ========================================================================== */
+.linkhub-panel {
+  container-type: inline-size;
+  container-name: linkhub;
+}
+.linkhub-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+  row-gap: 8px;
+  flex-wrap: wrap;
+  flex-shrink: 0;
+}
+.linkhub-header-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  flex: 1 1 auto;
+  flex-wrap: wrap;
+}
+.linkhub-tabs.seg-control {
+  flex-shrink: 1;
+  min-width: 0;
+  max-width: 100%;
+}
+.linkhub-tabs .seg-button {
+  min-width: 0;
+  padding: 4px 10px;
+  font-size: 10px;
+}
+.linkhub-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  padding: 0 5px;
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 1.5;
+  min-width: 20px;
+  background: color-mix(in srgb, var(--nb-text) 12%, transparent);
+  color: var(--nb-secondary);
+}
+.seg-button[aria-pressed="true"] .linkhub-count {
+  background: color-mix(in srgb, var(--nb-selected-ink) 22%, transparent);
+  color: var(--nb-selected-ink);
+}
+.linkhub-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.linkhub-refresh {
+  min-height: var(--nb-control-min-height, 32px);
+  display: inline-flex;
+  align-items: center;
+}
+@container linkhub (max-width: 520px) {
+  .linkhub-header {
+    align-items: flex-start;
+  }
+  .linkhub-header-left {
+    flex: 1 1 100%;
+  }
+  .linkhub-header-actions {
+    flex: 1 1 100%;
+    justify-content: flex-start;
+  }
+}
+@container linkhub (max-width: 380px) {
+  .linkhub-header {
+    padding-left: 12px;
+    padding-right: 12px;
+  }
+  .linkhub-tabs.seg-control {
+    flex: 1 1 100%;
+    overflow-x: auto;
+  }
+  .linkhub-tabs .seg-button {
+    flex: 1 1 0;
+  }
+}
+@container editor (max-width: 420px) {
+  .linkhub-panel .px-6 {
+    padding-left: 12px;
+    padding-right: 12px;
+  }
+}
+
+/* Keyword entry row: input + accent Add action. Add uses the user-accent fill
+   (not amber) so the primary action matches every other selected control;
+   keyword pills themselves stay amber as semantic labels. */
+.linkhub-keyword-row {
+  flex-wrap: wrap;
+}
+.linkhub-keyword-input {
+  min-height: var(--nb-control-min-height, 32px);
+  flex: 1 1 160px;
+}
+.linkhub-add {
+  min-height: var(--nb-control-min-height, 32px);
+  min-width: 64px;
+  white-space: nowrap;
+  background: var(--nb-selected-bg, var(--color-brand-500));
+  color: var(--nb-selected-ink, var(--color-brand-contrast, #0b0e13));
+  border: 1px solid var(--nb-selected-border, var(--color-brand-600));
+  font-weight: 650;
+}
+.linkhub-add:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+.linkhub-add:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.linkhub-add:focus-visible,
+.linkhub-keyword-input:focus-visible {
+  outline: 2px solid var(--nb-focus);
+  outline-offset: 2px;
+}
+@container linkhub (max-width: 380px) {
+  .linkhub-keyword-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .linkhub-keyword-input {
+    flex: 1 1 auto;
+    width: 100%;
+  }
+  .linkhub-add {
+    width: 100%;
+    justify-content: center;
+  }
+}
+/* Link cards: actions keep a 32px target, wrap below content in narrow panes
+   instead of squishing or clipping. */
+.linkhub-panel button:focus-visible {
+  outline: 2px solid var(--nb-focus);
+  outline-offset: 2px;
+}
+@container linkhub (max-width: 420px) {
+  .linkhub-panel .flex.items-center.gap-2\.5 {
+    flex-wrap: wrap;
+  }
 }
 .rich-markdown {
   display: block;
@@ -196,6 +664,29 @@
   white-space: pre-wrap;
   max-height: 200px;
   overflow: auto;
+}
+
+/* Dropdowns + floating overlays stay inside the editor pane (container
+   relative, never viewport-relative) and never clip controls. */
+.editor-container .gloss-dropdown-surface {
+  max-width: min(300px, calc(100cqi - 24px));
+  max-height: min(60cqi, 380px);
+  overflow: auto;
+}
+.editor-overflow-body .relative .gloss-dropdown-surface {
+  right: 0;
+  left: auto;
+  max-width: min(280px, calc(100cqi - 32px));
+}
+@container editor (max-width: 420px) {
+  .editor-container .absolute.top-16.right-6 {
+    left: 12px;
+    right: 12px;
+  }
+  .editor-container .absolute.top-16.right-6 input {
+    width: 100%;
+    min-width: 0;
+  }
 }
 .embedded-note {
   display: block;

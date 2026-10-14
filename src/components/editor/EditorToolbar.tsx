@@ -26,10 +26,11 @@ export function EditorToolbar({
         <span role="status">{saved ? "Saved" : "Unsaved changes"}</span>
       </div>
       <div className="editor-actions">
-        <div role="group" aria-label="Editor mode">
+        <div className="seg-control editor-mode-group" role="group" aria-label="Editor mode">
           {(["live", "edit", "preview"] as const).map((value) => (
             <button
               key={value}
+              className="seg-button"
               aria-pressed={mode === value}
               title={
                 value === "edit"
@@ -48,24 +49,26 @@ export function EditorToolbar({
             </button>
           ))}
         </div>
-        <details className="editor-format">
-          <summary>Format</summary>
-          <div>
-            {["Bold", "Italic", "Heading", "Link", "Task", "Code"].map(
-              (kind) => (
-                <button key={kind} onClick={() => format(kind)}>
-                  {kind}
-                </button>
-              ),
-            )}
-            <button onClick={attach}>Insert attachment</button>
-          </div>
-        </details>
-        <button onClick={find}>Find</button>
-        <details className="editor-overflow">
-          <summary>More tools</summary>
-          <div className="editor-overflow-body">{children}</div>
-        </details>
+        <div className="editor-secondary-group">
+          <details className="editor-format">
+            <summary>Format</summary>
+            <div>
+              {["Bold", "Italic", "Heading", "Link", "Task", "Code"].map(
+                (kind) => (
+                  <button key={kind} onClick={() => format(kind)}>
+                    {kind}
+                  </button>
+                ),
+              )}
+              <button onClick={attach}>Insert attachment</button>
+            </div>
+          </details>
+          <button onClick={find}>Find</button>
+          <details className="editor-overflow">
+            <summary>More tools</summary>
+            <div className="editor-overflow-body">{children}</div>
+          </details>
+        </div>
       </div>
     </header>
   );

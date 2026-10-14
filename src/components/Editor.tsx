@@ -2483,7 +2483,7 @@ const sidecarPath = (notePath: string): string => {
       )}
 
       <EditorToolbar mode={mode} change={changeMode} format={formatSelection} attach={() => void insertAttachment()} saved={isSaved} title={note.title} find={() => { setIsSearchOpen(true); requestAnimationFrame(() => searchInputRef.current?.focus()); }}>
-          <button onClick={() => openPdf()}>Open PDF</button><DocumentSourcesButton path={note.path} />
+          <button className="editor-btn" onClick={() => openPdf()}>Open PDF</button><DocumentSourcesButton path={note.path} />
           <LinkerToolbar
             pendingCount={visibleSuggestions.total}
             isScanning={isScanning}
@@ -2496,12 +2496,12 @@ const sidecarPath = (notePath: string): string => {
               commands the Ctrl/Cmd+Z / Ctrl/Cmd+Shift+Z shortcuts use), so
               button clicks undo/redo actual edits and the group disables
               itself when the history is empty at one end. */}
-          <div className="flex bg-slate-950 border border-slate-800 rounded-lg p-1">
+          <div className="editor-icon-group">
             <button
               onClick={handleUndo}
               disabled={!canUndo}
               title="Undo last edit: Revert the most recent change to this note. Shortcut: Ctrl/Cmd+Z"
-              className="p-1.5 rounded-md text-slate-400 hover:text-brand-400 transition-all disabled:opacity-40 disabled:hover:text-slate-400"
+              className="editor-icon-btn"
             >
               <Undo2 className="w-3.5 h-3.5" />
             </button>
@@ -2509,7 +2509,7 @@ const sidecarPath = (notePath: string): string => {
               onClick={handleRedo}
               disabled={!canRedo}
               title="Redo edit: Re-apply the change you just undid. Shortcut: Ctrl/Cmd+Shift+Z"
-              className="p-1.5 rounded-md text-slate-400 hover:text-brand-400 transition-all disabled:opacity-40 disabled:hover:text-slate-400"
+              className="editor-icon-btn"
             >
               <Redo2 className="w-3.5 h-3.5" />
             </button>
@@ -2523,44 +2523,44 @@ const sidecarPath = (notePath: string): string => {
             <button
               onClick={() => setToolsOpen(!toolsOpen)}
               title="Editing tools: Split, Format, and Block operations"
-              className="gloss-text-button flex items-center gap-1 px-3 py-1 text-xs font-medium rounded-lg border border-slate-800 text-slate-400 hover:text-brand-400 hover:border-brand-500/40 transition-all"
+              className="editor-btn"
             >
               <Wand2 className="w-3.5 h-3.5" /> Tools
             </button>
             {toolsOpen && (
-              <div className="gloss-dropdown-surface absolute right-0 top-full mt-1 z-50 min-w-[180px] py-1">
+              <div className="editor-menu absolute right-0 top-full mt-1 z-50">
                 <button
                   onClick={() => { handleFormat(); setToolsOpen(false); }}
-                  className="w-full px-3 py-1.5 flex items-center gap-2 text-xs text-slate-300 hover:bg-brand-500/10 hover:text-brand-400 transition-colors border-none"
+                  className="editor-menu-item"
                 >
                   <Wand2 className="w-3.5 h-3.5" /> Format
                 </button>
                 <button
                   onClick={() => { handleUndoFormat(); setToolsOpen(false); }}
                   disabled={formatSnapshot === null}
-                  className="w-full px-3 py-1.5 flex items-center gap-2 text-xs text-slate-300 hover:bg-brand-500/10 hover:text-brand-400 transition-colors disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-slate-500 border-none"
+                  className="editor-menu-item"
                 >
                   <RotateCcw className="w-3.5 h-3.5" /> Undo format
                 </button>
-                <div className="my-1 border-t border-border" />
+                <div className="editor-menu-sep" />
                 <button
                   onClick={() => { handleSplit(); setToolsOpen(false); }}
                   disabled={h2Count < 2 || isSplitting}
-                  className="w-full px-3 py-1.5 flex items-center gap-2 text-xs text-slate-300 hover:bg-brand-500/10 hover:text-brand-400 transition-colors disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-slate-500 border-none"
+                  className="editor-menu-item"
                 >
                   <Scissors className="w-3.5 h-3.5" /> {isSplitting ? 'Splitting…' : 'Split note'}
                 </button>
                 <button
                   onClick={() => { handleUndoSplit(); setToolsOpen(false); }}
                   disabled={splitSnapshot === null || isSplitting}
-                  className="w-full px-3 py-1.5 flex items-center gap-2 text-xs text-slate-300 hover:bg-brand-500/10 hover:text-brand-400 transition-colors disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-slate-500 border-none"
+                  className="editor-menu-item"
                 >
                   <RotateCcw className="w-3.5 h-3.5" /> Undo split
                 </button>
-                <div className="my-1 border-t border-border" />
+                <div className="editor-menu-sep" />
                 <button
                   onClick={() => { insertBlockAnchor(); setToolsOpen(false); }}
-                  className="w-full px-3 py-1.5 flex items-center gap-2 text-xs text-slate-300 hover:bg-brand-500/10 hover:text-brand-400 transition-colors border-none"
+                  className="editor-menu-item"
                 >
                   <Anchor className="w-3.5 h-3.5" /> Insert block
                 </button>
@@ -2579,21 +2579,21 @@ const sidecarPath = (notePath: string): string => {
               });
             }}
             title="Find in note: Search within the current note's text. Enter jumps to the next match, Shift+Enter to the previous one, Esc closes the search. Shortcut: Ctrl/Cmd+F"
-            className="p-1.5 rounded-lg border border-slate-800 text-slate-400 hover:text-brand-400 hover:border-brand-500/40 transition-all"
+            className="editor-icon-btn"
           >
             <Search className="w-3.5 h-3.5" />
           </button>
           <button
             onClick={() => setShowNoteMeta(true)}
             title="Note metadata: View title, file path, modified time, line / word / character counts, links and keywords for this note."
-            className="p-1.5 rounded-lg border border-slate-800 text-slate-400 hover:text-brand-400 hover:border-brand-500/40 transition-all"
+            className="editor-icon-btn"
           >
             <Info className="w-3.5 h-3.5" />
           </button>
           <button
             onClick={openHistory}
             title="Time Machine: Browse autosaved snapshots of this note and restore any older version."
-            className="p-1.5 rounded-lg border border-slate-800 text-slate-400 hover:text-brand-400 hover:border-brand-500/40 transition-all"
+            className="editor-icon-btn"
           >
             <HistoryIcon className="w-3.5 h-3.5" />
           </button>

@@ -680,34 +680,34 @@ export const GraphView: React.FC<GraphViewProps> = ({
       data-region="graph"
       className="flex-1 bg-slate-950/40 border-r border-slate-900/60 flex flex-col h-full relative select-none overflow-hidden"
     >
-      {/* Header bar */}
-      <div className="px-6 py-3.5 border-b border-slate-900/60 bg-slate-950/60 flex items-center justify-between shrink-0 z-10">
-        <div className="flex items-center gap-2">
-          <Network className="w-4 h-4 text-brand-400" />
+      {/* Header bar — wraps to two rows in narrow graph panes (container query). */}
+      <div className="graph-header px-6 py-3.5 border-b border-slate-900/60 bg-slate-950/60 shrink-0 z-10">
+        <div className="graph-header-title flex items-center gap-2">
+          <Network className="w-4 h-4 text-brand-400 shrink-0" />
           <h2 className="text-sm font-semibold text-slate-100">Knowledge Network</h2>
         </div>
-        <div className="text-[10px] text-slate-500 font-medium flex items-center gap-2">
+        <div className="graph-header-controls text-[10px] text-slate-500 font-medium flex items-center gap-2">
           {toolbarExtra}
-          <span className="hidden lg:block">Drag to arrange • Scroll to zoom</span>
+          <span className="graph-hint">Drag to arrange • Scroll to zoom</span>
           <button
             onClick={handleResetGraph}
             title="Reset graph view & re-arrange nodes"
-            className="p-1.5 rounded-md bg-slate-900/80 border border-slate-800/80 text-slate-400 hover:text-brand-400 hover:border-brand-500/50 transition-colors flex items-center gap-1"
+            className="graph-icon-btn p-1.5 rounded-md bg-slate-900/80 border border-slate-800/80 text-slate-400 hover:text-brand-400 hover:border-brand-500/50 transition-colors flex items-center gap-1"
           >
             <Home className="w-3.5 h-3.5" />
           </button>
           <button
             onClick={handleResetGraph}
             title="Re-animate physics simulation"
-            className="p-1.5 rounded-md bg-slate-900/80 border border-slate-800/80 text-slate-400 hover:text-brand-400 hover:border-brand-500/50 transition-colors flex items-center gap-1"
+            className="graph-icon-btn p-1.5 rounded-md bg-slate-900/80 border border-slate-800/80 text-slate-400 hover:text-brand-400 hover:border-brand-500/50 transition-colors flex items-center gap-1"
           >
             <RotateCw className="w-3.5 h-3.5" />
           </button>
         </div>
       </div>
 
-      {/* SVG Container */}
-      <div ref={containerRef} className="flex-1 overflow-hidden relative w-full h-full">
+      {/* SVG Container — fills remaining space beneath the header. */}
+      <div ref={containerRef} className="graph-canvas flex-1 overflow-hidden relative w-full h-full">
         <svg ref={svgRef} className="w-full h-full block" />
 
         {/* Legend */}

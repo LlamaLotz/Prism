@@ -1628,7 +1628,6 @@ export default function App() {
       <div data-region="workspace" className="flex-1 min-w-0 flex flex-col h-full overflow-hidden">
 
 
-        {activeNote&&(layout==='editor'||layout==='split')&&<div className="flex justify-end px-3 py-1"><button className="runtime-button" onClick={()=>setMoveTarget(activeNote)}>Move to folder…</button></div>}
         {/* Workspace Main Panels */}
         <div className="workspace-panels relative flex-1 flex min-w-0 min-h-0 overflow-hidden">
           <Suspense fallback={null}><PdfWorkspace vaultPath={settings.vaultPath} notePath={activeNote?.path} /></Suspense>

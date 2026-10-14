@@ -77,28 +77,33 @@ export const GraphViewContainer: React.FC<GraphViewContainerProps> = ({
   };
 
   const toggle = (
-    <div className="graph-switcher flex items-center bg-[var(--color-surface)] p-1 rounded-lg border border-[var(--color-border)]">
-      <label className="px-2 text-xs"><input type="checkbox" checked={showFolders} onChange={e=>{setShowFolders(e.target.checked);localStorage.setItem('prism_graph_folders',String(e.target.checked));}}/> Show folders</label>
-      <button
-        onClick={() => switchMode('2d')}
-        className={`px-3 py-1 text-xs rounded-md transition-colors ${
-          graphMode === '2d'
-            ? 'bg-brand-500 text-[#0F172A] font-semibold'
-            : 'text-[var(--color-text-body)] hover:text-[var(--color-text-hi)]'
-        }`}
-      >
-        2D Graph
-      </button>
-      <button
-        onClick={() => switchMode('3d')}
-        className={`px-3 py-1 text-xs rounded-md transition-colors ${
-          graphMode === '3d'
-            ? 'bg-brand-500 text-[#0F172A] font-semibold'
-            : 'text-[var(--color-text-body)] hover:text-[var(--color-text-hi)]'
-        }`}
-      >
-        3D Graph
-      </button>
+    <div className="graph-switcher">
+      <label className="graph-folders-toggle" title="Show folder nodes in the graph">
+        <input
+          type="checkbox"
+          checked={showFolders}
+          onChange={e => { setShowFolders(e.target.checked); localStorage.setItem('prism_graph_folders', String(e.target.checked)); }}
+        />
+        <span>Show folders</span>
+      </label>
+      <div className="seg-control graph-mode-group" role="group" aria-label="Graph mode">
+        <button
+          type="button"
+          className="seg-button"
+          aria-pressed={graphMode === '2d'}
+          onClick={() => switchMode('2d')}
+        >
+          2D Graph
+        </button>
+        <button
+          type="button"
+          className="seg-button"
+          aria-pressed={graphMode === '3d'}
+          onClick={() => switchMode('3d')}
+        >
+          3D Graph
+        </button>
+      </div>
     </div>
   );
 

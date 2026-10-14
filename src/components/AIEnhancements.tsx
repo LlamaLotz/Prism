@@ -56,7 +56,7 @@ export function AIEnhancements({ path, content, onChanged }: { path: string; con
     pending.current = null;
   };
   return <>
-    <button className="runtime-button" onClick={() => setOpen(true)}>AI tools</button>
+    <button className="editor-btn" onClick={() => setOpen(true)}>AI tools</button>
     <dialog ref={dialog} className="runtime-dialog runtime-surface document-dialog" aria-labelledby="enhancement-title" onCancel={close}>
       <h2 id="enhancement-title">Optional AI enhancements</h2>
       <p>Save your note first. Each action uses its selected provider and privacy policy. Review the proposed changes before applying them. AI scan adds suggested tags and a category tag.</p>

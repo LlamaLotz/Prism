@@ -114,7 +114,7 @@ function SourceDetails({ blockId, close, review }: { blockId: string; close: () 
   </dialog>;
 }
 
-export function DocumentSourcesButton({path}:{path:string}) { const {note}=useDocumentImports(); return <button className="runtime-button" title="Original document sources" onClick={() => note(path)}>Sources</button>; }
+export function DocumentSourcesButton({path}:{path:string}) { const {note}=useDocumentImports(); return <button className="editor-btn" title="Original document sources" onClick={() => note(path)}>Sources</button>; }
 function NoteSources({path, close, choose}:{path:string;close:()=>void;choose:(id:string)=>void}) {
  const [page,setPage]=useState<Awaited<ReturnType<typeof documents.noteSources>>|null>(null),[error,setError]=useState('');
  const modal=useModal(close);

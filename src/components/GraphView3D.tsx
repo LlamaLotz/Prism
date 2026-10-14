@@ -575,26 +575,26 @@ export const GraphView3D: React.FC<GraphView3DProps> = ({
   }, []);
 
   return (
-    <div data-region="graph" className="flex-1 bg-neutral-950/20 border-r border-slate-900/60 flex flex-col h-full relative select-none">
-      <div className="px-6 py-3.5 border-b border-slate-900/60 bg-slate-950/20 flex items-center justify-between shrink-0">
-        <div className="flex items-center gap-2">
-          <Network className="w-4 h-4 text-brand-400" />
+    <div data-region="graph" className="flex-1 bg-neutral-950/20 border-r border-slate-900/60 flex flex-col h-full relative select-none overflow-hidden">
+      <div className="graph-header px-6 py-3.5 border-b border-slate-900/60 bg-slate-950/20 shrink-0">
+        <div className="graph-header-title flex items-center gap-2">
+          <Network className="w-4 h-4 text-brand-400 shrink-0" />
           <h2 className="text-sm font-semibold text-slate-100">Knowledge Network</h2>
         </div>
-        <div className="text-[10px] text-slate-500 font-medium flex items-center gap-2">
+        <div className="graph-header-controls text-[10px] text-slate-500 font-medium flex items-center gap-2">
           {toolbarExtra}
-          <span className="hidden lg:block">Drag to rotate • Scroll to zoom • Right-drag to pan</span>
-          <button onClick={() => setAutoRotate((v) => !v)} title="Slowly rotate the camera around the graph"
-            className={`p-1.5 rounded-md border transition-colors flex items-center gap-1 ${autoRotate ? 'bg-brand-500/20 border-brand-500/50 text-brand-400' : 'bg-slate-900/60 border-slate-800/80 text-slate-400 hover:text-brand-400 hover:border-brand-500/50'}`}>
+          <span className="graph-hint">Drag to rotate • Scroll to zoom • Right-drag to pan</span>
+          <button onClick={() => setAutoRotate((v) => !v)} title="Slowly rotate the camera around the graph" aria-pressed={autoRotate}
+            className={`graph-icon-btn p-1.5 rounded-md border transition-colors flex items-center gap-1 ${autoRotate ? 'bg-brand-500/20 border-brand-500/50 text-brand-400' : 'bg-slate-900/60 border-slate-800/80 text-slate-400 hover:text-brand-400 hover:border-brand-500/50'}`}>
             <Orbit className="w-3.5 h-3.5" />
           </button>
           <button onClick={handleResetCamera} title="Reset camera to fit all nodes in view"
-            className="p-1.5 rounded-md bg-slate-900/60 border border-slate-800/80 text-slate-400 hover:text-brand-400 hover:border-brand-500/50 transition-colors flex items-center gap-1">
+            className="graph-icon-btn p-1.5 rounded-md bg-slate-900/60 border border-slate-800/80 text-slate-400 hover:text-brand-400 hover:border-brand-500/50 transition-colors flex items-center gap-1">
             <Home className="w-3.5 h-3.5" />
           </button>
         </div>
       </div>
-      <div ref={containerRef} className="flex-1 overflow-hidden relative bg-[var(--color-base)]" onPointerLeave={handlePointerLeave}>
+      <div ref={containerRef} className="graph-canvas flex-1 overflow-hidden relative bg-[var(--color-base)]" onPointerLeave={handlePointerLeave}>
         <ForceGraph3D
           ref={graphRef} graphData={stableData} width={size.width} height={size.height}
           controlType="orbit"

@@ -1841,6 +1841,9 @@ html.theme-gloss {
    ===================================================================== */
 
 /* Any element explicitly marked active / pressed.
+   Selected fill is always the user accent (var(--color-brand-500)); ink is the
+   computed contrast color from applyAccentColor (black/white whichever clears
+   4.5:1), never a hardcoded dark value that vanishes on dark fills.
    NOTE: dark ink is only correct when the pressed fill is the accent pill.
    The Notebook, AI sidebar and legacy notebook style their own pressed state
    on neutral or translucent surfaces, where dark ink would be unreadable, so
@@ -1848,11 +1851,11 @@ html.theme-gloss {
    view / AI assistant) do the same. */
 tab-active,
 .tab-active,
-button[aria-pressed="true"]:not(:where(.study-workspace *, .study-assistant *, .ai-sidebar *, .prompt-bar *, .notebook-page *, .prism-navigation-menu *, .liquid-gloss-header *)),
-button[aria-selected="true"]:not(:where(.study-workspace *, .study-assistant *, .ai-sidebar *, .prompt-bar *, .notebook-page *, .prism-navigation-menu *, .liquid-gloss-header *)),
-button[role="tab"][data-state="active"]:not(:where(.study-workspace *, .study-assistant *, .ai-sidebar *, .prompt-bar *, .notebook-page *, .prism-navigation-menu *, .liquid-gloss-header *)),
-button[role="tab"][aria-selected="true"]:not(:where(.study-workspace *, .study-assistant *, .ai-sidebar *, .prompt-bar *, .notebook-page *, .prism-navigation-menu *, .liquid-gloss-header *)) {
-  color: #0F172A !important;
+button[aria-pressed="true"]:not(:where(.study-workspace *, .study-assistant *, .ai-sidebar *, .prompt-bar *, .notebook-page *, .prism-navigation-menu *, .liquid-gloss-header *, .seg-control *)),
+button[aria-selected="true"]:not(:where(.study-workspace *, .study-assistant *, .ai-sidebar *, .prompt-bar *, .notebook-page *, .prism-navigation-menu *, .liquid-gloss-header *, .seg-control *)),
+button[role="tab"][data-state="active"]:not(:where(.study-workspace *, .study-assistant *, .ai-sidebar *, .prompt-bar *, .notebook-page *, .prism-navigation-menu *, .liquid-gloss-header *, .seg-control *)),
+button[role="tab"][aria-selected="true"]:not(:where(.study-workspace *, .study-assistant *, .ai-sidebar *, .prompt-bar *, .notebook-page *, .prism-navigation-menu *, .liquid-gloss-header *, .seg-control *)) {
+  color: var(--color-brand-contrast, #0F172A) !important;
   font-weight: 600 !important;
 }
 
@@ -2124,8 +2127,18 @@ button[role="tab"][aria-selected="true"]:not(:where(.study-workspace *, .study-a
 :is(.theme-glass,.theme-gloss) .liquid-gloss-app { border-radius: var(--app-radius) !important; overflow: hidden; isolation: isolate; clip-path: inset(0 round var(--app-radius)); }
 .window-edge-to-edge { --app-radius: 0px; }
 :is(.theme-glass,.theme-gloss) body, :is(.theme-glass,.theme-gloss) #root { background: transparent; }
-:is(.runtime-button,.runtime-trigger,.nb-button) { border-color: var(--control-edge); border-radius: var(--control-radius); }
-.runtime-button[aria-pressed=true], .runtime-button[aria-pressed=true]:hover { color: var(--color-text-hi); border-color: var(--control-edge); }
+:is(.runtime-button,.runtime-trigger,.nb-button) { border-color: var(--control-edge); border-radius: var(--control-radius); min-height: var(--nb-control-min-height, 32px); }
+/* Pressed runtime buttons (agent toggles and similar switches) use the
+   user-accent fill + computed contrast ink so selection is immediately
+   identifiable and clears WCAG AA in both modes. Hover deepens the fill;
+   focus stays a text-hi outline (distinct from selection). */
+.runtime-button[aria-pressed="true"],
+.runtime-button[aria-pressed="true"]:hover {
+  background: var(--nb-selected-bg, var(--color-brand-500)) !important;
+  color: var(--nb-selected-ink, var(--color-brand-contrast, #0b0e13)) !important;
+  border-color: var(--nb-selected-border, var(--color-brand-600)) !important;
+  font-weight: 650;
+}
 button:focus-visible, [role="button"]:focus-visible { outline: 2px solid var(--color-text-hi); outline-offset: 2px; }
 .agent-mode-hint { padding: 6px 12px; color: var(--color-text-body); font-size: 11px; }
 
