@@ -48,5 +48,22 @@ fn main() {
     }
   }
 
+  // Explicit Windows staging avoids ort-sys's cached/default 1.17 DLL.
+  if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("windows") {
+    let manifest = std::path::PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap());
+    let source = manifest.join("onnxruntime/onnxruntime.dll");
+    println!("cargo:rerun-if-changed={}", source.display());
+    println!("cargo:rerun-if-changed=../scripts/verify-onnxruntime.py");
+    assert!(source.is_file(), "Stage ONNX Runtime 1.18.1 at src-tauri/onnxruntime/onnxruntime.dll before building Windows");
+    let status = std::process::Command::new("python")
+      .arg(manifest.join("../scripts/verify-onnxruntime.py")).arg(&source)
+      .status().expect("Python is required to validate the Windows ONNX Runtime");
+    assert!(status.success(), "Bundled ONNX Runtime validation failed");
+    let out = std::path::PathBuf::from(std::env::var_os("OUT_DIR").unwrap());
+    let destination = out.ancestors().nth(3).expect("Cargo profile directory").join("onnxruntime");
+    std::fs::create_dir_all(&destination).expect("Create ONNX runtime directory");
+    std::fs::copy(&source, destination.join("onnxruntime.dll")).expect("Stage ONNX runtime");
+  }
+
   tauri_build::build()
 }

@@ -367,6 +367,24 @@ for (const theme of ["industrial", "glass", "gloss"])
       await page.setViewportSize({ width: 720, height: 900 });
       const editor = page.locator('[data-region="editor"]');
       const radius = theme === "industrial" ? 0 : theme === "glass" ? 10 : 12;
+      // Selected ink must always accompany its intended accent fill.
+      for (const selector of ['.editor-mode-group button[aria-pressed="true"]', '.linkhub-tabs button[aria-pressed="true"]']) {
+        const selected = editor.locator(selector);
+        if (await selected.count()) {
+          expect(await selected.evaluate(el => {
+            const probe = document.createElement('span');
+            probe.style.backgroundColor = 'var(--nb-selected-bg)';
+            probe.style.color = 'var(--nb-selected-ink)';
+            el.append(probe);
+            const expected = getComputedStyle(probe);
+            const actual = getComputedStyle(el);
+            const matches = actual.backgroundColor === expected.backgroundColor && actual.color === expected.color;
+            probe.remove();
+            return matches;
+          })).toBe(true);
+        }
+      }
+
       for (const menu of [".editor-format", ".editor-overflow"]) {
         await editor.locator(`${menu} > summary`).click();
         const surface = editor.locator(`${menu} > div`);
@@ -420,6 +438,23 @@ for (const theme of ["industrial", "glass", "gloss"])
       await page.getByRole("button", { name: "Live", exact: true }).click();
       const reader = await openReader(page);
       expect(await reader.evaluate(el => getComputedStyle(el).backgroundColor)).toMatch(/^rgb\(/);
+      const commentButton = reader.getByRole('button', { name: 'Add point comment', exact: true });
+      for (const pressed of [false, true]) {
+        if (pressed) await commentButton.click();
+        expect(await commentButton.evaluate(el => {
+          const style = getComputedStyle(el);
+          const luminance = (color: string) => {
+            const components = color.match(/[\d.]+/g)!.slice(0, 3).map(Number).map(n => {
+              const value = n / 255;
+              return value <= .04045 ? value / 12.92 : ((value + .055) / 1.055) ** 2.4;
+            });
+            return components[0] * .2126 + components[1] * .7152 + components[2] * .0722;
+          };
+          const ink = luminance(style.color), fill = luminance(style.backgroundColor);
+          return (Math.max(ink, fill) + .05) / (Math.min(ink, fill) + .05);
+        })).toBeGreaterThanOrEqual(4.5);
+      }
+
       expect(await reader.locator('.pdf-page').first().evaluate(el => parseFloat(getComputedStyle(el).borderTopLeftRadius))).toBe(0);
       await reader.getByRole('textbox', { name: 'Find in PDF' }).fill('Research');
       await reader.getByRole('button', { name: 'Search PDF', exact: true }).click();
@@ -513,4 +548,48 @@ test("PDF relinking does not leak into a later reload", async ({ page }) => {
       ),
     )
     .toEqual([false, true, false]);
+});
+
+test("PDF icons, palette, scrolling and collapsed drafts remain usable", async ({ page }) => {
+  await boot(page);
+  const reader = await openReader(page);
+  for (const name of ["Zoom in", "Zoom out", "Rotate", "Search PDF", "Close PDF"]) {
+    const button = reader.getByRole("button", { name, exact: true });
+    await expect(button.locator("svg")).toBeVisible();
+    await expect(button).toHaveAttribute("title", name);
+  }
+  await reader.getByRole("button", { name: "Highlight color: yellow", exact: true }).click();
+  await reader.getByRole("button", { name: "pink", exact: true }).click();
+  await expect(reader.getByRole("button", { name: "Highlight color: pink", exact: true })).toBeVisible();
+  await pointComment(page, "Unsaved comment that must survive collapsing");
+  const toggle = reader.getByRole("button", { name: /Annotations \(1\)/ });
+  await toggle.click();
+  await expect(reader.getByRole("complementary", { name: "Annotations" })).toBeHidden();
+  await toggle.click();
+  await expect(reader.getByLabel("Comment on page 1")).toHaveValue("Unsaved comment that must survive collapsing");
+  await reader.getByRole("button", { name: "Annotation color on page 1: pink" }).click();
+  await reader.getByRole("button", { name: "blue", exact: true }).click();
+  await expect(reader.getByRole("button", { name: "Annotation color on page 1: blue" })).toBeVisible();
+  await reader.locator('.pdf-pages').evaluate(el => { el.scrollTop = el.scrollHeight; });
+  await expect(reader.getByRole("spinbutton", { name: "Page", exact: true })).toHaveValue("2");
+  await reader.locator('.pdf-pages').evaluate(el => { el.scrollTop = 0; });
+  await expect(reader.getByRole("spinbutton", { name: "Page", exact: true })).toHaveValue("1");
+  await reader.getByRole("button", { name: "Close PDF", exact: true }).click();
+  await expect(page.getByRole("dialog")).toContainText("Discard unsaved PDF annotations?");
+});
+
+test("long annotation headings wrap without truncation or horizontal overflow", async ({ page }) => {
+  await boot(page);
+  const text = "A long research excerpt " + "unbroken".repeat(45);
+  await page.evaluate(text => {
+    localStorage.setItem(`prism_pdf_draft:${encodeURIComponent('/vault')}:${'a'.repeat(64)}`, JSON.stringify({
+      version: 1, documentId: 'a'.repeat(64), revision: 0,
+      entries: [{ id: 'long', page: 1, rects: [[10, 10, 30, 30]], text, comment: 'Comment', color: 'yellow', createdAt: Date.now(), updatedAt: Date.now() }],
+    }));
+  }, text);
+  const reader = await openReader(page);
+  const heading = reader.locator('.pdf-annotation-heading');
+  await expect(heading).toContainText(text);
+  expect(await heading.evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true);
+  expect(await reader.locator('.pdf-annotations').evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true);
 });

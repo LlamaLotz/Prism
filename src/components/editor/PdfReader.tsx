@@ -1,3 +1,4 @@
+import { ZoomIn, ZoomOut, RotateCw, Search, X, Check, PanelRightClose, PanelRightOpen } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import {
   getDocument,
@@ -25,6 +26,32 @@ const colors: Record<string, string> = {
   blue: "#65a8f5",
   pink: "#f68bcc",
 };
+function ColorPicker({ color, change, label }: { color: string; change: (color: string) => void; label: string }) {
+  const [open, setOpen] = useState(false);
+  const root = useRef<HTMLDivElement>(null);
+  const trigger = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const dismiss = (event: PointerEvent) => {
+      if (!root.current?.contains(event.target as Node)) setOpen(false);
+    };
+    document.addEventListener("pointerdown", dismiss);
+    return () => document.removeEventListener("pointerdown", dismiss);
+  }, [open]);
+  return <div ref={root} className="pdf-color-picker" onKeyDown={event => {
+    if (event.key === "Escape") { event.stopPropagation(); setOpen(false); trigger.current?.focus(); }
+  }} onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget)) setOpen(false); }}>
+    <button ref={trigger} type="button" className="pdf-icon-button" aria-label={`${label}: ${color}`} title={`${label}: ${color}`} aria-expanded={open} onClick={() => setOpen(!open)}>
+      <span className="pdf-color-swatch" style={{ backgroundColor: colors[color] }} />
+    </button>
+    {open && <div className="pdf-color-palette" role="group" aria-label={label}>
+      {Object.entries(colors).map(([name, value]) => <button key={name} type="button" className="pdf-icon-button" aria-label={name} title={name} aria-pressed={name === color} onClick={() => { change(name); setOpen(false); trigger.current?.focus(); }}>
+        <span className="pdf-color-swatch" style={{ backgroundColor: value }}>{name === color && <Check size={14} color="#111" />}</span>
+      </button>)}
+    </div>}
+  </div>;
+}
+
 type SelectionPart = {
   page: number;
   rects: [number, number, number, number][];
@@ -49,6 +76,7 @@ export function PdfReader({
   dirtyChanged: (v: boolean) => void;
 }) {
   const { confirm } = useDialog();
+  const [annotationsOpen, setAnnotationsOpen] = useState(true);
   const [confirming, setConfirming] = useState(false);
   const [invalidDraft, setInvalidDraft] = useState<string | null>(null);
   const draftKey = (id: string) =>
@@ -220,6 +248,32 @@ export function PdfReader({
   useEffect(() => {
     if (pdf) requestAnimationFrame(() => navigate(page));
   }, [pdf]);
+  useEffect(() => {
+    const container = pages.current;
+    if (!pdf || !container) return;
+    let frame = 0;
+    const update = () => {
+      frame = 0;
+      const viewport = container.getBoundingClientRect();
+      let best = 0, visible = 0, distance = Infinity;
+      container.querySelectorAll<HTMLElement>("[data-pdf-page]").forEach(element => {
+        const rect = element.getBoundingClientRect();
+        const height = Math.max(0, Math.min(rect.bottom, viewport.bottom) - Math.max(rect.top, viewport.top));
+        const offset = Math.abs(rect.top - viewport.top);
+        if (height > visible || (height > 0 && height === visible && offset < distance)) {
+          best = Number(element.dataset.pdfPage); visible = height; distance = offset;
+        }
+      });
+      if (best) setPage(best);
+    };
+    const schedule = () => { if (!frame) frame = requestAnimationFrame(update); };
+    const observer = new ResizeObserver(schedule);
+    observer.observe(container);
+    container.querySelectorAll("[data-pdf-page]").forEach(element => observer.observe(element));
+    container.addEventListener("scroll", schedule, { passive: true });
+    schedule();
+    return () => { observer.disconnect(); container.removeEventListener("scroll", schedule); cancelAnimationFrame(frame); };
+  }, [pdf, scale, rotation]);
   const change = (next: PdfAnnotation[]) => {
     currentEntries.current = next;
     setEntries(next);
@@ -362,9 +416,8 @@ export function PdfReader({
       className="pdf-reader"
       aria-label="PDF reader"
     >
-      <header className="pdf-toolbar">
+      <header className="pdf-toolbar pdf-header">
         <strong>PDF reader</strong>
-        <button onClick={close}>Close PDF</button>
         <button disabled={!dirty || busy || !file} onClick={() => void save()}>
           {busy ? "Saving…" : "Save annotations"}
         </button>
@@ -375,6 +428,10 @@ export function PdfReader({
               ? "Annotations saved"
               : "Opening PDF…"}
         </span>
+        <button className="pdf-annotations-toggle" aria-expanded={annotationsOpen} aria-controls="pdf-annotations" onClick={() => setAnnotationsOpen(value => !value)}>
+          {annotationsOpen ? <PanelRightClose size={18} /> : <PanelRightOpen size={18} />} Annotations ({entries.length})
+        </button>
+        <button className="pdf-icon-button pdf-close" aria-label="Close PDF" title="Close PDF" onClick={close}><X size={18} /></button>
       </header>
       {error && (
         <div role="alert">
@@ -482,16 +539,10 @@ export function PdfReader({
             >
               Next page
             </button>
-            <button onClick={() => setScale((v) => Math.max(0.4, v - 0.2))}>
-              Zoom out
-            </button>
+            <button className="pdf-icon-button" aria-label="Zoom out" title="Zoom out" onClick={() => setScale((v) => Math.max(0.4, v - 0.2))}><ZoomOut size={18} /></button>
             <span>{Math.round(scale * 100)}%</span>
-            <button onClick={() => setScale((v) => Math.min(3, v + 0.2))}>
-              Zoom in
-            </button>
-            <button onClick={() => setRotation((v) => (v + 90) % 360)}>
-              Rotate
-            </button>
+            <button className="pdf-icon-button" aria-label="Zoom in" title="Zoom in" onClick={() => setScale((v) => Math.min(3, v + 0.2))}><ZoomIn size={18} /></button>
+            <button className="pdf-icon-button" aria-label="Rotate" title="Rotate" onClick={() => setRotation((v) => (v + 90) % 360)}><RotateCw size={18} /></button>
             <input
               className="pdf-search"
               aria-label="Find in PDF"
@@ -506,9 +557,7 @@ export function PdfReader({
                 if (e.key === "Enter") void search();
               }}
             />
-            <button disabled={searching} onClick={() => void search()}>
-              {searching ? "Searching…" : "Search PDF"}
-            </button>
+            <button className="pdf-icon-button" aria-label="Search PDF" title={searching ? "Searching…" : "Search PDF"} aria-busy={searching} disabled={searching} onClick={() => void search()}><Search size={18} /></button>
             {searchDone && !matches.length && <span>No matching pages</span>}
             {searchDone &&
               matches.map((n) => (
@@ -518,14 +567,7 @@ export function PdfReader({
               ))}
           </nav>
           <div className="pdf-selection">
-            <label>
-              Highlight color{" "}
-              <select value={color} onChange={(e) => setColor(e.target.value)}>
-                {Object.keys(colors).map((c) => (
-                  <option key={c}>{c}</option>
-                ))}
-              </select>
-            </label>
+            <ColorPicker color={color} change={setColor} label="Highlight color" />
             <button disabled={!selection.length} onClick={() => add(selection)}>
               Highlight selection
             </button>
@@ -568,17 +610,17 @@ export function PdfReader({
                 />
               ))}
             </div>
-            <aside className="pdf-annotations" aria-label="Annotations">
+            <aside id="pdf-annotations" hidden={!annotationsOpen} className="pdf-annotations" aria-label="Annotations">
               {entries.length === 0 && <p>No annotations yet.</p>}
               {entries.map((a) => (
                 <article key={a.id} data-selected={selected === a.id}>
-                  <button
+                  <button className="pdf-annotation-heading"
                     onClick={() => {
                       setSelected(a.id);
                       navigate(a.page);
                     }}
                   >
-                    Page {a.page} · {a.text.slice(0, 90) || "Point comment"}
+                    Page {a.page} · {a.text || "Point comment"}
                   </button>
                   <label>
                     Comment
@@ -601,29 +643,7 @@ export function PdfReader({
                       }
                     />
                   </label>
-                  <label>
-                    Color
-                    <select
-                      value={a.color}
-                      onChange={(e) =>
-                        change(
-                          entries.map((item) =>
-                            item.id === a.id
-                              ? {
-                                  ...item,
-                                  color: e.target.value,
-                                  updatedAt: Date.now(),
-                                }
-                              : item,
-                          ),
-                        )
-                      }
-                    >
-                      {Object.keys(colors).map((c) => (
-                        <option key={c}>{c}</option>
-                      ))}
-                    </select>
-                  </label>
+                  <ColorPicker color={a.color} label={`Annotation color on page ${a.page}`} change={color => change(entries.map(item => item.id === a.id ? { ...item, color, updatedAt: Date.now() } : item))} />
                   <button
                     disabled={!notePath}
                     title={!notePath ? "Select a note first" : undefined}

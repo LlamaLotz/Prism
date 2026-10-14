@@ -899,3 +899,42 @@ html body .editor-find button[aria-pressed='true'] {
 html body .editor-find button:hover:not([aria-pressed='true']) { background: var(--nb-selection) !important; }
 /* Annotation pins are circular even in Industrial; document marks stay square. */
 html .pdf-reader .pdf-comment-dot { border-radius: 50% !important; }
+
+/* Keep control fill and ink together despite global theme button rules. */
+html body :is(.pdf-reader, .editor-mode-group, .linkhub-tabs) button {
+  /* Switching ink and fill atomically avoids unreadable mid-transition colors. */
+  transition-property: border-color, box-shadow, transform;
+  color: var(--nb-text) !important;
+  background: var(--nb-card) !important;
+}
+html body :is(.pdf-reader, .editor-mode-group, .linkhub-tabs) button[aria-pressed="true"] {
+  color: var(--nb-selected-ink) !important;
+  background: var(--nb-selected-bg) !important;
+  border-color: var(--nb-selected-border) !important;
+}
+html body :is(.pdf-reader, .editor-mode-group, .linkhub-tabs) button:hover:not(:disabled):not([aria-pressed="true"]) {
+  background: var(--nb-hover-bg) !important;
+  border-color: var(--nb-focus);
+}
+html body :is(.pdf-reader, .editor-mode-group, .linkhub-tabs) button:disabled {
+  color: var(--nb-secondary) !important;
+  opacity: .6;
+  cursor: not-allowed;
+}
+.pdf-header { position: relative; padding-right: 42px; min-height: 34px; }
+.pdf-annotations-toggle { margin-left: auto; }
+html body .pdf-reader .pdf-icon-button {
+  width: 34px; height: 34px; min-width: 34px; padding: 6px;
+  flex-shrink: 0;
+}
+.pdf-close { position: absolute; top: 0; right: 0; }
+.pdf-annotations[hidden] { display: none; }
+.pdf-annotations { min-width: 0; }
+.pdf-annotations article { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.pdf-annotations article > button { white-space: normal; overflow-wrap: anywhere; max-width: 100%; }
+.pdf-annotations .pdf-annotation-heading { text-align: left; justify-content: flex-start; }
+.pdf-annotations label { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.pdf-annotations textarea { box-sizing: border-box; min-width: 0; max-width: 100%; resize: vertical; }
+.pdf-color-picker { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+.pdf-color-palette { display: flex; flex-wrap: wrap; gap: 4px; }
+.pdf-color-swatch { display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; border-radius: 50%; border: 1px solid #555; }

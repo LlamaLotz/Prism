@@ -2208,6 +2208,13 @@ async fn web_search(app: tauri::AppHandle, query: String) -> Result<Vec<WebSearc
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    #[cfg(target_os = "windows")]
+    if std::env::args().any(|arg| arg == "--verify-onnx-runtime") {
+        let result = engine::embeddings::initialize_safely(engine::embeddings::initialize_windows_runtime);
+        if let Err(error) = &result { eprintln!("{error}"); }
+        std::process::exit(if result.is_ok() { 0 } else { 1 });
+    }
+
     tauri::Builder::default()
         .manage(knowledge::KnowledgeRuntime::default())
         .manage(research::Assets::default())

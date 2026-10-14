@@ -483,6 +483,8 @@ impl EmbeddingEngine {
             intra_op_threads: Some(config.linking.embedding_threads.clamp(1, 64)),
         };
 
+        #[cfg(target_os = "windows")]
+        initialize_windows_runtime()?;
         let model = TextEmbedding::try_new(options).map_err(|e| e.to_string())?;
         let revision =
             std::fs::read_to_string(model_repo_dir.join("refs/main")).unwrap_or_default();
@@ -1286,6 +1288,18 @@ impl EmbeddingEngine {
         index.append(&mut new_blocks);
         Ok(count)
     }
+}
+
+/// Resolve only the runtime shipped with Prism, before any ort API access.
+#[cfg(target_os = "windows")]
+pub(crate) fn initialize_windows_runtime() -> Result<(), String> {
+    let executable = std::env::current_exe().map_err(|e| e.to_string())?;
+    let runtime = executable.parent().ok_or("Executable directory unavailable")?
+        .join("onnxruntime").join("onnxruntime.dll");
+    if !runtime.is_file() {
+        return Err(format!("Bundled ONNX Runtime missing at {}. Reinstall Prism to repair it.", runtime.display()));
+    }
+    ort::init_from(runtime.to_string_lossy()).commit().map_err(|e| e.to_string())
 }
 
 /// Hot-applies live-tunable embedding parameters (similarity threshold,

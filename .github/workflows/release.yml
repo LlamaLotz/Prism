@@ -152,6 +152,11 @@ jobs:
             throw 'ONNX Runtime import library was not found'
           }
           $libDirectory = $importLibrary.DirectoryName
+          $runtime = Join-Path $libDirectory 'onnxruntime.dll'
+          python scripts/verify-onnxruntime.py $runtime
+          if ($LASTEXITCODE -ne 0) { throw 'Invalid Windows ONNX Runtime' }
+          New-Item -ItemType Directory -Force src-tauri/onnxruntime | Out-Null
+          Copy-Item $runtime src-tauri/onnxruntime/onnxruntime.dll -Force
           "ORT_LIB_LOCATION=$libDirectory" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           # The library directory itself contains the import library and DLL.
           # A dot profile also enables ort-sys's copy-dylibs path for the DLL.
@@ -195,6 +200,26 @@ jobs:
           # build off that CDN; with load-dynamic enabled it does not link.
           echo "ORT_LIB_LOCATION=$work/arm64" >> "$GITHUB_ENV"
           echo 'ORT_LIB_PROFILE=lib' >> "$GITHUB_ENV"
+
+      - name: Verify Windows application runtime before publishing
+        if: matrix.platform == 'windows-latest'
+        shell: pwsh
+        run: |
+          cargo build --release --manifest-path src-tauri/Cargo.toml --bin app
+          if ($LASTEXITCODE -ne 0) { throw 'Windows build failed' }
+          python scripts/verify-onnxruntime.py src-tauri/target/release/onnxruntime/onnxruntime.dll
+          if ($LASTEXITCODE -ne 0) { throw 'Staged runtime validation failed' }
+          # A conflicting runtime on PATH and in ORT_DYLIB_PATH must be ignored.
+          $archive = Join-Path $env:RUNNER_TEMP 'onnx-old.zip'
+          $old = Join-Path $env:RUNNER_TEMP 'onnx-old'
+          Invoke-WebRequest -Uri 'https://github.com/microsoft/onnxruntime/releases/download/v1.17.1/onnxruntime-win-x64-1.17.1.zip' -OutFile $archive
+          Expand-Archive $archive $old -Force
+          $oldDll = Get-ChildItem $old -Recurse -Filter onnxruntime.dll | Select-Object -First 1
+          if (-not $oldDll) { throw 'Conflict fixture missing' }
+          $env:PATH = "$($oldDll.DirectoryName);$env:PATH"
+          $env:ORT_DYLIB_PATH = $oldDll.FullName
+          $process = Start-Process -FilePath (Resolve-Path src-tauri/target/release/app.exe) -ArgumentList '--verify-onnx-runtime' -Wait -PassThru
+          if ($process.ExitCode -ne 0) { throw 'Application loaded an incompatible runtime' }
 
       - name: Build and Package with Tauri Action
         uses: tauri-apps/tauri-action@v1
