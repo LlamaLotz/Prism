@@ -4,7 +4,8 @@ Windows builds require the x64 ONNX Runtime 1.18.1 DLL at
 `src-tauri/onnxruntime/onnxruntime.dll`. Extract it from Microsoft's
 `onnxruntime-win-x64-1.18.1.zip` release archive. Release CI downloads and
 stages it automatically, together with the x64 release DLLs from Visual Studio's
-`VC/Redist/MSVC/<version>/x64/Microsoft.VC143.CRT` directory. For local Windows
+`VC/Redist/MSVC/<version>/x64/Microsoft.VC*.CRT` directory (newest versioned
+redist first, newest `VC143/VC144/VC145` CRT inside it). For local Windows
 builds, copy those redistributable DLLs into the same `src-tauri/onnxruntime`
 directory. Do not use debug CRT DLLs or copies from System32. Python must be available as `python` during builds.
 

@@ -160,9 +160,26 @@ jobs:
           $vs = & $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
           if (-not $vs) { throw 'Visual C++ tools installation was not found' }
           $redistRoot = Join-Path $vs 'VC\Redist\MSVC'
-          $crt = Get-ChildItem $redistRoot -Directory | Sort-Object { [version]$_.Name } -Descending |
-            ForEach-Object { Join-Path $_.FullName 'x64\Microsoft.VC143.CRT' } |
-            Where-Object { Test-Path $_ } | Select-Object -First 1
+          Write-Host "VC Redist versions under ${redistRoot}:"
+          Get-ChildItem $redistRoot -Directory | Select-Object -ExpandProperty Name | ForEach-Object { Write-Host "  $_" }
+          # Newer VS layouts include non-numeric entries (e.g. "v145") that [version] cannot parse,
+          # and the CRT folder is versioned by toolset (VC143/VC144/VC145). Tolerate both.
+          # Bare generations like "v145" need a minor component for [version] ("145" alone throws).
+          $crt = Get-ChildItem $redistRoot -Directory |
+            Where-Object { $_.Name -match '^v?\d' } |
+            Sort-Object { try { $n = $_.Name -replace '^v', ''; if ($n -notmatch '\.') { $n += '.0' }; [version]$n } catch { [version]'0.0' } } -Descending |
+            ForEach-Object { Get-ChildItem (Join-Path $_.FullName 'x64') -Directory -Filter 'Microsoft.VC*.CRT' -ErrorAction SilentlyContinue | Sort-Object Name -Descending } |
+            Where-Object { $_ -and (Test-Path $_.FullName) } |
+            Select-Object -First 1 -ExpandProperty FullName
+          if (-not $crt) {
+            # Fallback for reshuffled layouts (e.g. generation folder containing versioned children):
+            # pick the newest toolset CRT anywhere under the redist root.
+            Write-Host 'Direct x64 CRT lookup missed; falling back to recursive search.'
+            $crt = Get-ChildItem $redistRoot -Directory -Recurse -Filter 'Microsoft.VC*.CRT' -ErrorAction SilentlyContinue |
+              Where-Object { $_.FullName -match '\\x64\\' } |
+              Sort-Object FullName -Descending |
+              Select-Object -First 1 -ExpandProperty FullName
+          }
           if (-not $crt) { throw 'Redistributable x64 release CRT was not found' }
           Copy-Item (Join-Path $crt '*.dll') src-tauri/onnxruntime/ -Force
           python scripts/verify-onnxruntime.py src-tauri/onnxruntime/onnxruntime.dll
