@@ -59,7 +59,7 @@ const HELPERS = `
     }
     return parts.join(' > ');
   };
-  const roots = () => Array.from(document.querySelectorAll('.study-workspace, .study-assistant, .ai-sidebar, .sidebar, .sidebar-collapsed-rail, .sidebar-context-menu, .notebook-library, .prompt-bar, .prism-navigation-menu'));
+  const roots = () => Array.from(document.querySelectorAll('.study-workspace, .study-assistant, .ai-sidebar, .sidebar, .sidebar-collapsed-rail, .sidebar-context-menu, .notebook-library, .prompt-bar, .prism-navigation-menu, .settings-page-overlay, .liquid-gloss-header, .titlebar, .toolbar'));
 `;
 
 const AUDIT = `(() => {${HELPERS}
@@ -184,6 +184,45 @@ test.describe('rendered contrast', () => {
       failures.push(...(await audit(page)));
 
       expect(report(`notebook ${theme} ${mode}`, failures)).toBe('');
+    });
+
+    test(`notebook ${theme} ${mode} dark accent pressed states`, async ({ page }) => {
+      test.setTimeout(120000);
+      await page.setViewportSize({ width: 1440, height: 960 });
+      await page.goto(`/tests/notebook/study-harness.html?theme=${theme}&mode=${mode}&library`);
+      await expect(page.getByRole('heading', { name: 'Notebooks', exact: true })).toBeVisible();
+      await page.evaluate(async () => {
+        const mod = await import(/* @vite-ignore */ '/src/utils/accentColor.ts');
+        mod.applyAccentColor('#1D4ED8');
+      });
+      const failures: Failure[] = await audit(page);
+
+      await page.getByRole('button', { name: /Open notebook/ }).first().click();
+      await expect(page.locator('.study-panel')).toHaveCount(3);
+      failures.push(...(await audit(page)));
+
+      await page.getByRole('button', { name: 'Add sources', exact: true }).click();
+      failures.push(...(await audit(page)));
+      await page.getByRole('button', { name: 'Done adding sources' }).click();
+
+      for (const material of ['Thirukkural Structure', 'Learning check', 'Learning comparison', 'Connected ideas', 'A conversation about learning']) {
+        await page.getByRole('button', { name: new RegExp(material) }).first().click();
+        await expect(page.locator('.study-artifact:visible').first()).toBeVisible();
+        failures.push(...(await audit(page)));
+        await page.getByRole('button', { name: 'Tools', exact: true }).first().click();
+      }
+
+      await page.getByRole('button', { name: 'Agent OFF' }).click();
+      await page.getByLabel('Message', { exact: true }).fill('{"tool":"edit_note","input":{"noteId":"s1","operations":[]}}');
+      await page.getByRole('button', { name: 'Send', exact: true }).click();
+      await expect(page.getByRole('button', { name: 'Approve', exact: true })).toBeVisible();
+      failures.push(...(await audit(page)));
+
+      await page.setViewportSize({ width: 700, height: 850 });
+      await expect(page.getByRole('navigation', { name: 'Notebook areas' })).toBeVisible();
+      failures.push(...(await audit(page)));
+
+      expect(report(`notebook ${theme} ${mode} dark-accent`, failures)).toBe('');
     });
 
     test(`AI sidebar ${theme} ${mode}`, async ({ page }) => {

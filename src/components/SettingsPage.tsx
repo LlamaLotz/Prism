@@ -309,7 +309,7 @@ const AccentPicker: React.FC<{ value: string; onChange: (hex: string) => void }>
                     onClick={() => setMode(f)}
                     className={`px-2 py-0.5 text-[10px] uppercase rounded transition-colors ${
                       mode === f
-                        ? 'bg-brand-500 text-[#0F172A] font-semibold'
+                        ? 'bg-brand-500 text-[color:var(--color-brand-contrast)] font-semibold'
                         : 'text-slate-400 hover:text-slate-200'
                     }`}
                   >
@@ -653,7 +653,7 @@ const Segmented: React.FC<{
           isRounded ? 'rounded-full' : ''
         } ${
           value === o.value
-            ? 'bg-brand-500 text-[#0F172A] font-semibold'
+            ? 'bg-brand-500 text-[color:var(--color-brand-contrast)] font-semibold'
             : 'text-slate-400 hover:text-slate-200'
         }`}
       >
@@ -1844,7 +1844,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                           <button
                             type="button"
                             onClick={installUpdate}
-                            className="bg-brand-500 hover:bg-brand-400 text-slate-950 text-xs font-semibold px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-colors cursor-pointer"
+                            className="bg-brand-500 hover:bg-brand-400 text-[color:var(--color-brand-contrast)] text-xs font-semibold px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-colors cursor-pointer"
                           >
                             <RotateCw className="w-3.5 h-3.5" /> Install and restart
                           </button>

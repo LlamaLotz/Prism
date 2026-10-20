@@ -279,7 +279,7 @@ const DialogModal: React.FC<{
             className={`px-3.5 py-1.5 text-xs font-semibold rounded-lg transition-colors ${
               isDanger
                 ? 'bg-red-500 text-white hover:bg-red-400'
-                : 'bg-brand-500 text-[#0F172A] font-semibold hover:bg-brand-400'
+                : 'bg-brand-500 text-[color:var(--color-brand-contrast)] font-semibold hover:bg-brand-400'
             }`}
           >
             {confirmLabel}
