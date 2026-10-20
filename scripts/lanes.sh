@@ -37,7 +37,7 @@ ASSUME_YES=false
 KEEP_CONFLICTS=false
 VERIFY="quick"
 
-die() { printf 'error: %s\n' "$*" >&2; exit 1; }
+die() { printf 'error: %b\n' "$*" >&2; exit 1; }
 say() { printf '%s\n' "$*"; }
 
 usage() {
@@ -220,9 +220,9 @@ contract_cmd() {
   prepare_main
 
   if [[ -z $sha ]]; then
-    sha=$(git -C "$wt" log -1 --format=%H "$BACKEND_BRANCH" -- docs/IPC_CONTRACT.md)
+    sha=$(git -C "$wt" log -1 --format=%H "$BACKEND_BRANCH" --not main -- docs/IPC_CONTRACT.md)
   fi
-  [[ -n $sha ]] || die "no contract commit found on $BACKEND_BRANCH"
+  [[ -n $sha ]] || die "no contract commit ahead of main found on $BACKEND_BRANCH"
 
   git -C "$wt" merge-base --is-ancestor "$sha" "$BACKEND_BRANCH" \
     || die "$sha is not on $BACKEND_BRANCH"
