@@ -11,6 +11,35 @@ async function boot(page: Page, theme = 'industrial', mode = 'dark', view = 'edi
 async function note(page: Page) { await page.locator('[data-note-path="/vault/Loose.md"]').click(); }
 
 for (const theme of ['industrial', 'glass', 'gloss']) for (const mode of ['light', 'dark']) {
+  test(`graph mode button contrast ${theme} ${mode}`, async ({ page }) => {
+    await boot(page, theme, mode, 'graph');
+    const modes = page.locator(`${graph} .graph-mode-group`);
+    const twoD = modes.getByRole('button', { name: '2D Graph', exact: true });
+    const threeD = modes.getByRole('button', { name: '3D Graph', exact: true });
+    await expect(twoD).toHaveAttribute('aria-pressed', 'true');
+    await expect(threeD).toHaveAttribute('aria-pressed', 'false');
+    const highContrastText = await page.locator('html').evaluate(el =>
+      getComputedStyle(el).getPropertyValue('--color-text-hi').trim()
+    );
+    const expectedInactiveColor = await page.evaluate(value => {
+      const probe = document.createElement('span');
+      probe.style.color = value;
+      document.body.append(probe);
+      const resolved = getComputedStyle(probe).color;
+      probe.remove();
+      return resolved;
+    }, highContrastText);
+    await expect.poll(() => threeD.evaluate(el => getComputedStyle(el).color)).toBe(expectedInactiveColor);
+    await threeD.focus();
+    await expect(threeD).toBeFocused();
+    await threeD.click();
+    await expect(twoD).toHaveAttribute('aria-pressed', 'false');
+    await expect(threeD).toHaveAttribute('aria-pressed', 'true');
+    await expect.poll(() => twoD.evaluate(el => getComputedStyle(el).color)).toBe(
+      expectedInactiveColor
+    );
+  });
+
   test(`automatic split and both arrangements ${theme} ${mode}`, async ({ page }) => {
     test.setTimeout(90000);
     await boot(page, theme, mode);

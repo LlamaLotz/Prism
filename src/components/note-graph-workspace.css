@@ -108,6 +108,9 @@ html:is(.theme-glass, .theme-gloss) [data-workspace-pane="editor"] > .workspace-
 .graph-mode-group {
   flex-shrink: 0;
 }
+.graph-mode-group .seg-button:not([aria-pressed="true"]):not(:disabled) {
+  color: var(--color-text-hi, var(--nb-text, #f4f6fa));
+}
 .graph-mode-group .seg-button {
   min-width: 68px;
 }
