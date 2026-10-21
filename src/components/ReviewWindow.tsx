@@ -183,7 +183,7 @@ export const ReviewWindow: React.FC = () => {
             className={`flex items-center gap-1.5 px-4 py-1.5 text-xs font-bold rounded-lg transition-all ${
               pendingCount === 0
                 ? 'bg-neutral-900 text-neutral-600 cursor-not-allowed'
-                : 'bg-brand-500 hover:bg-brand-400 text-[#0F172A] font-semibold'
+                : 'bg-brand-500 hover:bg-brand-400 text-[color:var(--color-brand-contrast)] font-semibold'
             }`}
           >
             {isApplying ? 'Applying…' : `Apply ${pendingCount} Link${pendingCount === 1 ? '' : 's'}`}

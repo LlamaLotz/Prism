@@ -125,7 +125,7 @@ export const UpdateBanner: React.FC = () => {
             <button
               type="button"
               onClick={install}
-              className="mt-3 inline-flex items-center gap-1.5 bg-brand-500 px-3 py-1.5 text-xs font-semibold text-slate-950 transition-colors hover:bg-brand-400"
+              className="mt-3 inline-flex items-center gap-1.5 bg-brand-500 px-3 py-1.5 text-xs font-semibold text-[color:var(--color-brand-contrast)] transition-colors hover:bg-brand-400"
             >
               <RefreshCw className="h-3.5 w-3.5" />
               Install and restart

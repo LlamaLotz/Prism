@@ -309,7 +309,7 @@ const AccentPicker: React.FC<{ value: string; onChange: (hex: string) => void }>
                     onClick={() => setMode(f)}
                     className={`px-2 py-0.5 text-[10px] uppercase rounded transition-colors ${
                       mode === f
-                        ? 'bg-brand-500 text-[#0F172A] font-semibold'
+                        ? 'bg-brand-500 text-[color:var(--color-brand-contrast)] font-semibold'
                         : 'text-slate-400 hover:text-slate-200'
                     }`}
                   >
@@ -653,7 +653,7 @@ const Segmented: React.FC<{
           isRounded ? 'rounded-full' : ''
         } ${
           value === o.value
-            ? 'bg-brand-500 text-[#0F172A] font-semibold'
+            ? 'bg-brand-500 text-[color:var(--color-brand-contrast)] font-semibold'
             : 'text-slate-400 hover:text-slate-200'
         }`}
       >
@@ -930,8 +930,8 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
               onClick={() => setSection(s.id)}
               className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-[13px] font-medium transition-colors text-left relative ${
                 section === s.id
-                  ? 'bg-brand-500/10 text-brand-400 border border-brand-500/20'
-                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900 border border-transparent'
+                  ? 'bg-brand-500/10 text-slate-100 border border-brand-500/20'
+                  : 'text-slate-300 hover:text-slate-200 hover:bg-slate-900 border border-transparent'
               }`}
             >
               {s.icon}
@@ -987,10 +987,10 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                     <button
                       onClick={runInstaller}
                       disabled={isInstallingEngine}
-                      className="gloss-text-button text-xs bg-brand-600 hover:bg-brand-500 disabled:opacity-50 text-white font-semibold px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-colors border border-brand-400/20"
+                      className="gloss-text-button text-xs bg-brand-600 hover:bg-brand-500 disabled:opacity-50 text-[color:var(--color-brand-600-contrast)] font-semibold px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-colors border border-brand-400/20"
                     >
                       {isInstallingEngine ? (
-                        <Loader2 className="w-3.5 h-3.5 animate-spin text-brand-200" />
+                        <Loader2 className="w-3.5 h-3.5 animate-spin text-current" />
                       ) : (
                         <Wrench className="w-3.5 h-3.5" />
                       )}
@@ -1844,7 +1844,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                           <button
                             type="button"
                             onClick={installUpdate}
-                            className="bg-brand-500 hover:bg-brand-400 text-slate-950 text-xs font-semibold px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-colors cursor-pointer"
+                            className="bg-brand-500 hover:bg-brand-400 text-[color:var(--color-brand-contrast)] text-xs font-semibold px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-colors cursor-pointer"
                           >
                             <RotateCw className="w-3.5 h-3.5" /> Install and restart
                           </button>
@@ -1893,7 +1893,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
           <div className="flex gap-2 items-center">
             <button
               onClick={requestClose}
-              className="gloss-text-button px-4 py-2 text-sm font-medium text-slate-400 hover:text-slate-200 hover:bg-slate-800 rounded-lg transition-colors"
+              className="gloss-text-button px-4 py-2 text-sm font-medium text-slate-300 hover:text-slate-100 hover:bg-slate-800 rounded-lg transition-colors"
             >
               Cancel
             </button>
@@ -1906,7 +1906,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
             </button>
             <button
               onClick={handleSave}
-              className={`gloss-text-button px-4 py-2 bg-gradient-to-r from-brand-500 to-brand-600 hover:from-brand-400 hover:to-brand-500 text-white text-sm font-medium rounded-lg flex items-center gap-1.5 shadow-md shadow-brand-500/10 hover:shadow-brand-500/20 transition-all border border-brand-400/20 ${
+              className={`gloss-text-button px-4 py-2 bg-gradient-to-r from-brand-500 to-brand-600 hover:from-brand-400 hover:to-brand-500 text-[color:var(--color-brand-600-contrast)] text-sm font-medium rounded-lg flex items-center gap-1.5 shadow-md shadow-brand-500/10 hover:shadow-brand-500/20 transition-all border border-brand-400/20 ${
                 justSaved ? 'from-emerald-500 to-emerald-600 hover:from-emerald-400 hover:to-emerald-500' : ''
               }`}
             >

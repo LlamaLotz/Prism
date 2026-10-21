@@ -19,11 +19,26 @@ import { test, expect, type Page } from '@playwright/test';
 interface Failure { kind: string; selector: string; text: string; ratio: number; required: number }
 
 const HELPERS = `
+  const colorCanvas = document.createElement('canvas');
+  colorCanvas.width = colorCanvas.height = 1;
+  const colorContext = colorCanvas.getContext('2d');
   const parse = (value) => {
+    if (!value || value === 'none') return null;
     const match = value.match(/rgba?\\(([^)]+)\\)/);
-    if (!match) return null;
-    const parts = match[1].split(/[ ,/]+/).filter(Boolean).map(Number);
-    return { r: parts[0], g: parts[1], b: parts[2], a: parts[3] === undefined ? 1 : parts[3] };
+    if (match) {
+      const parts = match[1].split(/[ ,/]+/).filter(Boolean).map(Number);
+      return { r: parts[0], g: parts[1], b: parts[2], a: parts[3] === undefined ? 1 : parts[3] };
+    }
+    // color-mix() and gradient stops can compute to color(srgb ...) or
+    // oklab(...). Read those through a canvas so the audit measures the
+    // rendered colour instead of silently falling back to the parent surface.
+    if (!colorContext || !CSS.supports('color', value)) return null;
+    colorContext.clearRect(0, 0, 1, 1);
+    colorContext.fillStyle = '#010203';
+    colorContext.fillStyle = value;
+    colorContext.fillRect(0, 0, 1, 1);
+    const [r, g, b, a] = colorContext.getImageData(0, 0, 1, 1).data;
+    return { r, g, b, a: a / 255 };
   };
   const over = (top, bottom) => ({
     r: top.r * top.a + bottom.r * (1 - top.a),
@@ -45,7 +60,7 @@ const HELPERS = `
       const bg = parse(style.backgroundColor);
       if (bg) backgrounds = backgrounds.map(base => over(bg, base));
       // Test both extrema of the neutral sheen, including nested translucency.
-      const stops = (style.backgroundImage.match(/rgba?\\([^)]*\\)/g) || []).map(parse).filter(Boolean);
+      const stops = (style.backgroundImage.match(/(?:rgba?|hsla?|hwb|lab|lch|oklab|oklch|color)\\([^)]*\\)/g) || []).map(parse).filter(Boolean);
       if (stops.length) backgrounds = backgrounds.flatMap(base => stops.map(stop => over(stop, base)));
       backgrounds.sort((a, b) => luminance(a) - luminance(b));
       backgrounds = [backgrounds[0], backgrounds[backgrounds.length - 1]];
@@ -59,7 +74,7 @@ const HELPERS = `
     }
     return parts.join(' > ');
   };
-  const roots = () => Array.from(document.querySelectorAll('.study-workspace, .study-assistant, .ai-sidebar, .sidebar, .sidebar-collapsed-rail, .sidebar-context-menu, .notebook-library, .prompt-bar, .prism-navigation-menu'));
+  const roots = () => Array.from(document.querySelectorAll('.study-workspace, .study-assistant, .ai-sidebar, .sidebar, .sidebar-collapsed-rail, .sidebar-context-menu, .notebook-library, .prompt-bar, .prism-navigation-menu, .settings-page-overlay, .liquid-gloss-header, .titlebar, .toolbar'));
 `;
 
 const AUDIT = `(() => {${HELPERS}
@@ -184,6 +199,48 @@ test.describe('rendered contrast', () => {
       failures.push(...(await audit(page)));
 
       expect(report(`notebook ${theme} ${mode}`, failures)).toBe('');
+    });
+
+    test(`notebook ${theme} ${mode} dark accent pressed states`, async ({ page }) => {
+      test.setTimeout(120000);
+      await page.setViewportSize({ width: 1440, height: 960 });
+      await page.goto(`/tests/notebook/study-harness.html?theme=${theme}&mode=${mode}&library`);
+      await expect(page.getByRole('heading', { name: 'Notebooks', exact: true })).toBeVisible();
+      await page.evaluate(async () => {
+        const mod = await import(/* @vite-ignore */ '/src/utils/accentColor.ts');
+        mod.applyAccentColor('#1D4ED8');
+      });
+      // Brand tokens animate on accent changes; audit the settled palette, not
+      // the first interpolated frame.
+      await page.waitForTimeout(600);
+      const failures: Failure[] = await audit(page);
+
+      await page.getByRole('button', { name: /Open notebook/ }).first().click();
+      await expect(page.locator('.study-panel')).toHaveCount(3);
+      failures.push(...(await audit(page)));
+
+      await page.getByRole('button', { name: 'Add sources', exact: true }).click();
+      failures.push(...(await audit(page)));
+      await page.getByRole('button', { name: 'Done adding sources' }).click();
+
+      for (const material of ['Thirukkural Structure', 'Learning check', 'Learning comparison', 'Connected ideas', 'A conversation about learning']) {
+        await page.getByRole('button', { name: new RegExp(material) }).first().click();
+        await expect(page.locator('.study-artifact:visible').first()).toBeVisible();
+        failures.push(...(await audit(page)));
+        await page.getByRole('button', { name: 'Tools', exact: true }).first().click();
+      }
+
+      await page.getByRole('button', { name: 'Agent OFF' }).click();
+      await page.getByLabel('Message', { exact: true }).fill('{"tool":"edit_note","input":{"noteId":"s1","operations":[]}}');
+      await page.getByRole('button', { name: 'Send', exact: true }).click();
+      await expect(page.getByRole('button', { name: 'Approve', exact: true })).toBeVisible();
+      failures.push(...(await audit(page)));
+
+      await page.setViewportSize({ width: 700, height: 850 });
+      await expect(page.getByRole('navigation', { name: 'Notebook areas' })).toBeVisible();
+      failures.push(...(await audit(page)));
+
+      expect(report(`notebook ${theme} ${mode} dark-accent`, failures)).toBe('');
     });
 
     test(`AI sidebar ${theme} ${mode}`, async ({ page }) => {
