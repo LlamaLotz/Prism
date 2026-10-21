@@ -19,7 +19,7 @@ for (const theme of ['industrial', 'glass', 'gloss']) for (const mode of ['light
     await expect(twoD).toHaveAttribute('aria-pressed', 'true');
     await expect(threeD).toHaveAttribute('aria-pressed', 'false');
     const highContrastText = await page.locator('html').evaluate(el =>
-      getComputedStyle(el).getPropertyValue('--color-text-hi').trim()
+      getComputedStyle(el).getPropertyValue('--nb-text').trim()
     );
     const expectedInactiveColor = await page.evaluate(value => {
       const probe = document.createElement('span');
