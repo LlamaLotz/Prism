@@ -79,6 +79,7 @@
   --color-brand-400: #56C7F9;
   --color-brand-500: #38BDF8;
   --color-brand-600: #31A6DA;
+  --color-brand-600-contrast: #000000;
   --color-brand-700: #2A8EBA;
   --color-brand-800: #23759A;
   --color-brand-900: #1B5B77;
@@ -1267,6 +1268,13 @@ button.titlebar-menu-dropdown:hover {
 .mode-light .settings-page-nav {
   background: rgba(245, 246, 248, 0.92) !important;
 }
+/* Placeholder ink follows the theme ramp; the UA default is too faint on the
+   settings page's white/dark input wells. */
+.settings-page-overlay input::placeholder,
+.settings-page-overlay textarea::placeholder {
+  color: var(--color-slate-400);
+  opacity: 1;
+}
 
 /* Collapsed sidebar rail: match the floating panel language so it reads as a
    distinct glass card instead of a flush edge strip. */
@@ -1801,14 +1809,19 @@ button[role="tab"][aria-selected="true"]:not(:where(.study-workspace *, .study-a
 }
 
 /* Titlebar toggles sit on neutral / translucent fills, so they own their ink
-   instead of the accent-pill assumption above. Dark modes keep the accent;
-   light modes darken it so the active label still clears 4.5:1 on light fills. */
+   instead of the accent-pill assumption above. The pressed fill is not the
+   accent here, so --color-brand-contrast (derived from the accent) can put
+   black ink on a dark surface. Use the theme's high-contrast text token, which
+   always tracks the surface. */
 .liquid-gloss-header :is(.titlebar-toggle, .titlebar-action)[aria-pressed='true'] {
   font-weight: 600;
-  color: var(--color-brand-contrast, #ffffff) !important;
+  color: var(--color-text-hi) !important;
 }
-.mode-light .liquid-gloss-header :is(.titlebar-toggle, .titlebar-action)[aria-pressed='true'] {
-  color: var(--color-brand-contrast, #000000) !important;
+
+/* Titlebar menu labels are muted by default; on light titlebars that sits just
+   under 4.5:1. Use the body text token so Prism/File/Edit/View stay readable. */
+.mode-light .liquid-gloss-header button.titlebar-menu {
+  color: var(--color-text-body) !important;
 }
 
 /* Inactive tab / segment text in dark panels */

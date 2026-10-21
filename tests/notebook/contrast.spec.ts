@@ -19,11 +19,26 @@ import { test, expect, type Page } from '@playwright/test';
 interface Failure { kind: string; selector: string; text: string; ratio: number; required: number }
 
 const HELPERS = `
+  const colorCanvas = document.createElement('canvas');
+  colorCanvas.width = colorCanvas.height = 1;
+  const colorContext = colorCanvas.getContext('2d');
   const parse = (value) => {
+    if (!value || value === 'none') return null;
     const match = value.match(/rgba?\\(([^)]+)\\)/);
-    if (!match) return null;
-    const parts = match[1].split(/[ ,/]+/).filter(Boolean).map(Number);
-    return { r: parts[0], g: parts[1], b: parts[2], a: parts[3] === undefined ? 1 : parts[3] };
+    if (match) {
+      const parts = match[1].split(/[ ,/]+/).filter(Boolean).map(Number);
+      return { r: parts[0], g: parts[1], b: parts[2], a: parts[3] === undefined ? 1 : parts[3] };
+    }
+    // color-mix() and gradient stops can compute to color(srgb ...) or
+    // oklab(...). Read those through a canvas so the audit measures the
+    // rendered colour instead of silently falling back to the parent surface.
+    if (!colorContext || !CSS.supports('color', value)) return null;
+    colorContext.clearRect(0, 0, 1, 1);
+    colorContext.fillStyle = '#010203';
+    colorContext.fillStyle = value;
+    colorContext.fillRect(0, 0, 1, 1);
+    const [r, g, b, a] = colorContext.getImageData(0, 0, 1, 1).data;
+    return { r, g, b, a: a / 255 };
   };
   const over = (top, bottom) => ({
     r: top.r * top.a + bottom.r * (1 - top.a),
@@ -45,7 +60,7 @@ const HELPERS = `
       const bg = parse(style.backgroundColor);
       if (bg) backgrounds = backgrounds.map(base => over(bg, base));
       // Test both extrema of the neutral sheen, including nested translucency.
-      const stops = (style.backgroundImage.match(/rgba?\\([^)]*\\)/g) || []).map(parse).filter(Boolean);
+      const stops = (style.backgroundImage.match(/(?:rgba?|hsla?|hwb|lab|lch|oklab|oklch|color)\\([^)]*\\)/g) || []).map(parse).filter(Boolean);
       if (stops.length) backgrounds = backgrounds.flatMap(base => stops.map(stop => over(stop, base)));
       backgrounds.sort((a, b) => luminance(a) - luminance(b));
       backgrounds = [backgrounds[0], backgrounds[backgrounds.length - 1]];
@@ -195,6 +210,9 @@ test.describe('rendered contrast', () => {
         const mod = await import(/* @vite-ignore */ '/src/utils/accentColor.ts');
         mod.applyAccentColor('#1D4ED8');
       });
+      // Brand tokens animate on accent changes; audit the settled palette, not
+      // the first interpolated frame.
+      await page.waitForTimeout(600);
       const failures: Failure[] = await audit(page);
 
       await page.getByRole('button', { name: /Open notebook/ }).first().click();

@@ -164,16 +164,26 @@ export function applyAccentColor(hex: string, opts?: { hoverGlow?: string }): vo
   // Solid accent buttons need a foreground derived from the selected color.
   // Choosing the better of black/white guarantees at least 4.5:1 contrast.
   const rgb = hexToRgb(accent);
-  const linear = (v: number) => { const c = v / 255; return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4; };
-  const luminance = 0.2126 * linear(rgb.r) + 0.7152 * linear(rgb.g) + 0.0722 * linear(rgb.b);
-  root.setProperty('--color-brand-contrast', luminance > 0.179 ? '#000000' : '#ffffff');
+  const luminanceOf = ({ r, g, b }: { r: number; g: number; b: number }) => {
+    const linear = (v: number) => { const c = v / 255; return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4; };
+    return 0.2126 * linear(r) + 0.7152 * linear(g) + 0.0722 * linear(b);
+  };
+  const contrastInk = (color: { r: number; g: number; b: number }) => luminanceOf(color) > 0.179 ? '#000000' : '#ffffff';
+  root.setProperty('--color-brand-contrast', contrastInk(rgb));
   root.setProperty('--accent-color', accent);
   root.setProperty('--color-brand-400', `color-mix(in srgb, ${accent} 85%, white)`);
+  // Notebook primary actions fill with brand-400 (the lighter mix), not the
+  // raw accent. Derive their ink from that actual fill so a dark custom accent
+  // still gets white text instead of inheriting the default dark ink.
+  root.setProperty('--nb-accent-ink', contrastInk(hexToRgb(mixHex(accent, '#ffffff', 0.15))));
   root.setProperty('--color-brand-300', `color-mix(in srgb, ${accent} 70%, white)`);
   root.setProperty('--color-brand-200', `color-mix(in srgb, ${accent} 55%, white)`);
   root.setProperty('--color-brand-100', `color-mix(in srgb, ${accent} 40%, white)`);
   root.setProperty('--color-brand-50', `color-mix(in srgb, ${accent} 25%, white)`);
   root.setProperty('--color-brand-600', `color-mix(in srgb, ${accent} 88%, black)`);
+  // Brand-600 fills are darker than the accent; derive their ink from that
+  // actual fill so a mid-tone accent never gets black text on a too-dark button.
+  root.setProperty('--color-brand-600-contrast', contrastInk(hexToRgb(mixHex(accent, '#000000', 0.12))));
   root.setProperty('--color-brand-700', `color-mix(in srgb, ${accent} 75%, black)`);
   root.setProperty('--color-brand-800', `color-mix(in srgb, ${accent} 62%, black)`);
   root.setProperty('--color-brand-900', `color-mix(in srgb, ${accent} 48%, black)`);

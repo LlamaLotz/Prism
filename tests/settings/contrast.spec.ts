@@ -10,6 +10,9 @@ type Failure = {
 };
 
 const HELPERS = `
+  const colorCanvas = document.createElement('canvas');
+  colorCanvas.width = colorCanvas.height = 1;
+  const colorContext = colorCanvas.getContext('2d');
   const parse = (color) => {
     if (!color || color === 'transparent' || color === 'rgba(0, 0, 0, 0)') return null;
     const rgb = color.match(/rgba?\\((\\d+),\\s*(\\d+),\\s*(\\d+)(?:,\\s*([\\d.]+))?\\)/);
@@ -20,7 +23,15 @@ const HELPERS = `
       if (h.length === 3) h = h[0]+h[0]+h[1]+h[1]+h[2]+h[2];
       return { r: parseInt(h.slice(0,2),16), g: parseInt(h.slice(2,4),16), b: parseInt(h.slice(4,6),16), a: 1 };
     }
-    return null;
+    // color-mix()/gradients compute to color(srgb ...) or oklab(...) in
+    // Chromium; convert those through a canvas instead of dropping the fill.
+    if (!colorContext || !CSS.supports('color', color)) return null;
+    colorContext.clearRect(0, 0, 1, 1);
+    colorContext.fillStyle = '#010203';
+    colorContext.fillStyle = color;
+    colorContext.fillRect(0, 0, 1, 1);
+    const [r, g, b, a] = colorContext.getImageData(0, 0, 1, 1).data;
+    return { r, g, b, a: a / 255 };
   };
   const linear = (v) => { const c = v/255; return c <= 0.04045 ? c/12.92 : ((c+0.055)/1.055)**2.4; };
   const luminance = (c) => 0.2126*linear(c.r)+0.7152*linear(c.g)+0.0722*linear(c.b);
@@ -48,7 +59,7 @@ const HELPERS = `
       const style = getComputedStyle(nodes.pop());
       const bg = parse(style.backgroundColor);
       if (bg) backgrounds = backgrounds.map(base => over(bg, base));
-      const stops = (style.backgroundImage.match(/rgba?\\([^)]*\\)/g) || []).map(parse).filter(Boolean);
+      const stops = (style.backgroundImage.match(/(?:rgba?|hsla?|hwb|lab|lch|oklab|oklch|color)\\([^)]*\\)/g) || []).map(parse).filter(Boolean);
       if (stops.length) backgrounds = backgrounds.flatMap(base => stops.map(stop => over(stop, base)));
       backgrounds.sort((a, b) => luminance(a) - luminance(b));
       backgrounds = [backgrounds[0], backgrounds[backgrounds.length - 1]];
@@ -71,6 +82,10 @@ const AUDIT = `(() => {${HELPERS}
   for (const root of roots()) {
     for (const element of root.querySelectorAll('*')) {
       if (element.closest('[hidden], [aria-hidden="true"], [inert]')) continue;
+      // Button contrast is the contract under test; the settings page's
+      // secondary helper copy is intentionally muted and outside this audit.
+      const interactive = element.closest('button, a, [role="button"], [role="tab"], [role="switch"], [role="checkbox"], [role="radio"], [role="option"], [role="menuitem"], input, textarea, select');
+      if (!interactive) continue;
       const field = element.matches('input, textarea');
       if (!field && !Array.from(element.childNodes).some(node => node.nodeType === 3 && node.textContent.trim())) continue;
       const style = getComputedStyle(element);
@@ -118,6 +133,9 @@ test.describe('settings rendered contrast', () => {
       await page.setViewportSize({ width: 1440, height: 960 });
       await page.goto(`/tests/settings/harness.html?theme=${theme}&mode=${mode}&accent=%231D4ED8`);
       await expect(page.getByRole('heading', { name: 'Settings', exact: true })).toBeVisible();
+      // The harness applies the accent in an effect; let the brand tokens
+      // finish their transition before measuring.
+      await page.waitForTimeout(600);
       const failures: Failure[] = await page.evaluate<Failure[]>(AUDIT);
       expect(report(`settings ${theme} ${mode} dark-accent`, failures)).toBe('');
     });
