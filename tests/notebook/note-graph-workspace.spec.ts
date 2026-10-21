@@ -30,14 +30,52 @@ for (const theme of ['industrial', 'glass', 'gloss']) for (const mode of ['light
       return resolved;
     }, highContrastText);
     await expect.poll(() => threeD.evaluate(el => getComputedStyle(el).color)).toBe(expectedInactiveColor);
+
+    for (const accent of ['#FDE047', '#4F46E5']) {
+      await twoD.click();
+      await page.evaluate(async value => {
+        const modulePath = '/src/utils/accentColor.ts';
+        const { applyAccentColor } = await import(/* @vite-ignore */ modulePath);
+        applyAccentColor(value);
+      }, accent);
+      const expectedAccent = await page.evaluate(() => {
+        const probe = document.createElement('span');
+        probe.style.backgroundColor = 'var(--color-brand-500)';
+        document.body.append(probe);
+        const resolved = getComputedStyle(probe).backgroundColor;
+        probe.remove();
+        return resolved;
+      });
+      const assertAccentPill = async (button: typeof twoD) => {
+        await expect.poll(() => button.evaluate(el => getComputedStyle(el).backgroundColor)).toBe(expectedAccent);
+        const style = await button.evaluate(el => {
+          const parse = (color: string) => color.match(/[\d.]+/g)!.slice(0, 3).map(Number);
+          const luminance = (color: string) => {
+            const [r, g, b] = parse(color).map(channel => {
+              const value = channel / 255;
+              return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
+            });
+            return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+          };
+          const background = getComputedStyle(el).backgroundColor;
+          const foreground = getComputedStyle(el).color;
+          const [lighter, darker] = [luminance(background), luminance(foreground)].sort((a, b) => b - a);
+          return { background, contrast: (lighter + 0.05) / (darker + 0.05) };
+        });
+        expect(style.background).toBe(expectedAccent);
+        expect(style.contrast).toBeGreaterThanOrEqual(4.5);
+      };
+
+      await expect(twoD).toHaveAttribute('aria-pressed', 'true');
+      await assertAccentPill(twoD);
+      await threeD.click();
+      await expect(twoD).toHaveAttribute('aria-pressed', 'false');
+      await expect(threeD).toHaveAttribute('aria-pressed', 'true');
+      await assertAccentPill(threeD);
+    }
+
     await threeD.focus();
     await expect(threeD).toBeFocused();
-    await threeD.click();
-    await expect(twoD).toHaveAttribute('aria-pressed', 'false');
-    await expect(threeD).toHaveAttribute('aria-pressed', 'true');
-    await expect.poll(() => twoD.evaluate(el => getComputedStyle(el).color)).toBe(
-      expectedInactiveColor
-    );
   });
 
   test(`automatic split and both arrangements ${theme} ${mode}`, async ({ page }) => {
