@@ -111,6 +111,10 @@ html:is(.theme-glass, .theme-gloss) [data-workspace-pane="editor"] > .workspace-
 .graph-mode-group .seg-button:not([aria-pressed="true"]):not(:disabled) {
   color: var(--nb-text, var(--color-text-hi, #f4f6fa));
 }
+html .graph-mode-group.seg-control .seg-button[aria-pressed="true"] {
+  background: var(--color-brand-500) !important;
+  color: var(--color-brand-contrast, var(--nb-selected-ink, #0b0e13)) !important;
+}
 .graph-mode-group .seg-button {
   min-width: 68px;
 }
