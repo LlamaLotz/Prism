@@ -1,11 +1,38 @@
 # Prism — Full Application Report
 
-**Version:** `v1.1.26` (working tree on `main`, post-`v1.1.25` tag)
-**Date:** 2026-10-12
+**Version:** code baseline `v1.1.38` (`a61fa86`); the §1–18 snapshot was measured at `v1.1.26`
+**Date:** 2026-10-23 (original report 2026-10-12; addenda 2026-10-13 and 2026-10-23)
 **Scope:** high-level + in-depth technical analysis of product, architecture, frontend, backend, data, AI/privacy, build/release, testing, risks and roadmap
-**Method:** static source read of `README.md`, `PRODUCT_SCOPE.md`, `docs/v2-runtime.md`, `package.json`, `src/App.tsx`, `src/components/*`, `src/services/*`, `src/types/index.ts`, `src/defaultSettings.ts`, `src-tauri/src/*` (incl. `knowledge/*`, `engine/*`, `linker/*`, `db/*`, `study/*`), configs, tests, scripts and workflows. No runtime execution except read-only `git`/file inventory.
+**Method:** static source read of `README.md`, `PRODUCT_SCOPE.md`, `docs/v2-runtime.md`, `package.json`, `src/App.tsx`, `src/components/*`, `src/services/*`, `src/types/index.ts`, `src/defaultSettings.ts`, `src-tauri/src/*` (incl. `knowledge/*`, `engine/*`, `linker/*`, `db/*`, `study/*`), configs, tests, scripts and workflows. No runtime execution except read-only `git`/file inventory; the 2026-10-23 addendum records targeted and full-suite Playwright validation.
 
-> Version note: `package.json:2` and `src-tauri/tauri.conf.json:4` still declare `1.0.0`, `src-tauri/Cargo.toml:3` declares `0.1.0`. Release identity comes from git tags (`v1.1.25` latest, `v1.1.26` unreleased). Working tree has uncommitted changes in `src/App.tsx`, `src/components/Editor.tsx`, `GraphView.tsx`, `SettingsPage.tsx`, `TitleBar.tsx`, `ResizeHandle.tsx`, `src-tauri/src/knowledge/agent.rs`, `menu.rs`, `study/mod.rs`. Treat manifests as stale — see §17.
+> Version note: release identity comes from git tags (`v1.1.38` on `a61fa86`). `package.json:2` and `src-tauri/tauri.conf.json:4` still declare `1.0.0`, and `src-tauri/Cargo.toml:3` declares `0.1.0`; treat manifests as stale — see §17. The original §1–18 measurements remain at the `v1.1.26` baseline unless a dated update supersedes them.
+
+
+## Dialog, material and accessibility update — 2026-10-23
+
+**Status: implemented and validated on `main` (`a61fa86`, `v1.1.38`).** This update supersedes the brief dialog, theming and focus references in §3.1, §5.9, §12, §13 and §15, and refreshes §17 and Appendix A.
+
+### Dialog contract
+
+- All native-style alerts, confirmations and prompts go through `DialogProvider`; call sites do not use `window.alert/confirm/prompt`. Requests are queued FIFO and only one modal is rendered at a time.
+- The modal uses the native `<dialog>` element with `showModal()`, giving top-layer rendering, an inert background, focus containment and native Escape handling. Backdrop click and the close button cancel; Escape is intercepted so a closing dialog settles its promise exactly once.
+- Alerts and destructive confirmations use `role="alertdialog"`; ordinary confirmations and prompts use normal dialog semantics. Every dialog has `aria-modal`, an `aria-labelledby` title and an `aria-describedby` message; prompt inputs have their own accessible label.
+- Safe default focus: the prompt input for prompts, **Cancel** for destructive confirmations, and the primary action otherwise. A 120 ms exit animation runs before the request leaves the queue.
+- Dialog promises resolve only after the modal has unmounted, not inside the state update that removes it. This lets callers restore or move focus after the background is no longer inert.
+- Focus restoration is guarded: it runs only when focus is still inside the closing dialog (or on `document.body`), the previous element is connected, and that element is not `document.body`. A caller that has already moved focus keeps it, so a closing dialog cannot steal focus from a menu trigger or other continuation.
+
+### Material surfaces and motion
+
+- `MaterialSurface` declares a semantic layer (`panel`, `chrome` or `popover`) while themes own fill, border, highlight, shadow, radius, blur and saturation through `--material-*` tokens. `LiquidGlass` remains a compatibility alias; the legacy `liquid-gloss-surface` class is retained for layout and back-compat.
+- Gloss shell/panel opacity is clamped to a readable floor at load and apply time. Light and dark glass/gloss tokens are aligned, and blur is centralized behind the material tokens for WebView2 stability.
+- `usePrefersReducedMotion` is read synchronously and watched for changes. Reduced motion disables the splash video, stops 2D graph settling, and disables 3D auto-rotate and directional particles while settling the 3D layout immediately.
+- LinkHub toggle state exposes `aria-selected`; alerts and destructive confirmations expose alertdialog semantics. Playwright asserts roles, safe default focus and focus restoration after asynchronous close.
+
+### Validation
+
+- `npx tsc --noEmit` is clean.
+- Full Playwright suite: **222 passed** in 5.6 minutes with 2 workers on 2026-10-23. Targeted dialog/focus coverage passed 16/16, and the focus-restoration test passed 30/30 across 5 repeats.
+- The release workflow's frontend gate passed for `a61fa86`; the `version` job created `v1.1.38`. Platform packaging acceptance is tracked separately by the release build and is not established by this Linux frontend run.
 
 
 ## Editor and research delivery update — 2026-10-13
@@ -40,7 +67,7 @@ Limits: PDFs 256 MiB; binary reads 1 MiB; playback range responses up to 8 MiB; 
 
 ### Validation and release acceptance
 
-Validation results will be recorded here after the final regression run. The initial baseline was 162 passed / 12 failed browser tests; those failures were the existing six-theme sidebar menu assertions, which remain intact.
+Validation results recorded 2026-10-23: full Playwright suite 222 passed / 0 failed and `npx tsc --noEmit` clean; see the 2026-10-23 addendum and §15. The earlier baseline was 162 passed / 12 failed browser tests; those failures were the existing six-theme sidebar menu assertions.
 
 **Pending — packaged Windows and macOS acceptance (not performed on this Linux host).** On each platform, install a production package and verify offline PDF worker/font loading, direct and retained-source opening, local audio/video seeking through the custom protocol, annotation save/restart/recovery and hash-safe relinking, quote link navigation to page/annotation, and vault switching invalidating old handles. Browser harnesses use mocked IPC and cannot establish native file-picker, custom-protocol, WebView, or packaged persistence correctness. These checks are release gates; this work is not marked complete or ready to ship until they pass.
 
@@ -64,7 +91,7 @@ Scale of codebase (measured):
 
 - `src/`: ~129 files, ~16k+ lines in core `App/types/services` slice alone. `src/App.tsx` 1,100+ lines, `src/components/Editor.tsx` 2,868 lines, `src/components/SettingsPage.tsx` 1,991 lines.
 - `src-tauri/src/`: 55 `.rs` files, ~14,691 lines. Largest: `knowledge/agent.rs` (1,933), `knowledge/documents.rs` (1,924), `db.rs` (1,679), `lib.rs` (2,392), `knowledge/operations.rs` (1,393), `knowledge/retrieval.rs` (968), `engine/embeddings.rs` (1,293+).
-- Tests: Rust `cargo test` units in nearly every knowledge module + Playwright suite (`tests/notebook/*.spec.ts`, 16 specs) + ingest contracts.
+- Tests: Rust `cargo test` units in nearly every knowledge module + Playwright suite (23 spec files / 222 tests; see §15) + ingest contracts.
 
 ---
 
@@ -115,7 +142,7 @@ Sources: `README.md:1-18`, `PRODUCT_SCOPE.md:1-34`, `docs/v2-runtime.md:1-100`.
 | Local ML | vendored `fastembed` + `ort-sys` ONNX, `hnsw_rs` 0.3, `rayon` | `Cargo.toml:57-60` |
 | DB | `rusqlite` 0.31 (`bundled`, `backup`), FTS5, WAL | `Cargo.toml:41`, `db.rs:242-380`, `knowledge/schema.rs:48-79` |
 | FS watch | `notify` 6.1 | `Cargo.toml:46`, `watcher.rs:1-91` |
-| Dialogs | `rfd` 0.15 native file/folder pickers | `Cargo.toml:37`, `lib.rs:628-649` |
+| Dialogs | Frontend `DialogProvider` on native `<dialog>.showModal()`; `rfd` 0.15 native file/folder pickers | `src/components/DialogProvider.tsx:83`, `Cargo.toml:37`, `lib.rs:628-649` |
 | Secrets | `keyring` 3 (OS credential store) | `Cargo.toml:32`, `config.rs:437-466` |
 | Tests | Playwright 1.63, `cargo test`, `tsc` | `package.json:47`, `playwright.config.ts:1-9` |
 
@@ -256,8 +283,8 @@ Sections (`SectionId`: `general|ai|appearance|editor|linking|system`):
 ### 5.9 Chrome / system UI
 
 - `TitleBar.tsx` (302): frameless (`decorations:false`, transparent), window controls, AI/sidebar toggles.
-- `NavigationMenu.tsx` (77), `ContextMenu.tsx`, `DialogProvider.tsx` (replaces `alert/confirm/prompt`), `ErrorBoundary.tsx`, `SplashScreen.tsx` (186), `UpdateBanner.tsx` (149, updater plugin), `LiquidGlass.tsx`/`LiquidGlossDefs.tsx`/`runtime.css`, `VersionHistoryRuler.tsx`.
-- `utils/`: `accentColor`, `sidebarLayout`, `formatter`, `markdownParser`, `errors`, `keywords`, `largeText`, `splitter`, `agentIntent`.
+- `NavigationMenu.tsx` (77), `ContextMenu.tsx`, `DialogProvider.tsx` (queued themed alerts/confirms/prompts on native `<dialog>`; alerts and destructive confirms use `role="alertdialog"`), `ErrorBoundary.tsx`, `SplashScreen.tsx` (186), `UpdateBanner.tsx` (149, updater plugin), `MaterialSurface.tsx` (`panel|chrome|popover` layers; `LiquidGlass.tsx` is a compatibility alias)/`runtime.css`, `VersionHistoryRuler.tsx`.
+- `utils/`: `accentColor`, `sidebarLayout`, `formatter`, `markdownParser`, `errors`, `keywords`, `largeText`, `splitter`, `agentIntent`, `useDialogFocus`, `usePrefersReducedMotion`.
 
 ---
 
@@ -452,7 +479,9 @@ Backend `study/*` (5 files), `db/chat.rs`; frontend `study/*` + `services/study.
 ## 12. Settings, theming and persistence
 
 - Source of truth: `~/.prism/settings.json` (Rust). `localStorage` only legacy migration + lightweight caches (`prism_order_<vault>`, panel widths, collapsed, graph mode, LinkHub prefs). `deepMergeSettings` prevents undefined on old configs.
-- Appearance: `industrial|glass|gloss` × `dark|light` → `theme-*` + `mode-*` classes; CSS tokens swap instantly; accent ramp + hover glow + graph color; gloss opacity var; background pattern/environment (incl. solar-system/stars/clouds viewport canvas); custom window icon (`appIcon` data-URL, light-mode grey swap).
+- Appearance: `industrial|glass|gloss` × `dark|light` → `theme-*` + `mode-*` classes; CSS tokens swap instantly; accent ramp + hover glow + graph color; background pattern/environment (incl. solar-system/stars/clouds viewport canvas); custom window icon (`appIcon` data-URL, light-mode grey swap).
+- Material surfaces: components declare a semantic layer (`panel|chrome|popover`) through `MaterialSurface`; themes own fill, border, highlight, shadow, radius, blur and saturation via `--material-*`. Gloss shell/panel opacity is clamped to a readable floor, light/dark glass and gloss tokens are aligned, and blur is centralized for WebView2 stability. `LiquidGlass` is a compatibility alias and `liquid-gloss-surface` remains for layout/back-compat.
+- Motion/accessibility: `useDialogFocus` traps Tab/Shift+Tab and restores trigger focus in page-sized modals (Settings, unsaved guard, icon preview); CSS and `usePrefersReducedMotion` honor reduced motion for the splash, 2D graph settling, and 3D auto-rotate and particles. Dialog focus defaults and guarded restoration are described in the 2026-10-23 addendum.
 - Retention: `versionRetentionDays` (0=keep all) enforced at startup via `purge_expired_history`.
 - Hot-apply without restart: similarity threshold + embedding batch (threads need relaunch — baked into ONNX session).
 
@@ -465,6 +494,7 @@ Backend `study/*` (5 files), `db/chat.rs`; frontend `study/*` + `services/study.
 - **Logging:** `appLogger` (frontend) + `append_ingestion_log` (file) + Rust `println!` diagnostics (model cache size, load time, purge/skip reasons).
 - **Updater:** `tauri-plugin-updater` + pubkey + `latest.json` endpoint (`github.com/LlamaLotz/Prism/releases`), passive Windows install; `UpdateBanner`.
 - **Shortcuts/menus:** native menu + in-app `navigateWorkspace`; browser accelerators disabled natively (Windows COM) + JS fallback (macOS/WKWebView).
+- **Accessibility/motion:** native modal focus containment for dialogs; `useDialogFocus` for page-sized Settings modals; alertdialog semantics for alerts and destructive confirmations; guarded focus restoration after unmount; reduced-motion handling for the splash, 2D settling and 3D graph motion.
 - **Errors:** `utils/errors.ts` (`ErrorDetails {human, raw}`), `SettingsApplyError` (saved but not fully applied), sanitized embedding errors (never leak `RelativeUrlWithoutBase`/TLS internals to UI), typed provider errors.
 - **Splash:** static logo under load, video only on idle after all boot work, 15 s force-dismiss; heavy UI gated on `splashVisible`.
 - **Layout:** `sidebarLayout` + `ResizeHandle`, persisted widths, collapse rail, AI expand, narrow-window (<1000 px) adaptations, 6 themes/modes incl. narrow validated by Playwright.
@@ -485,7 +515,8 @@ Backend `study/*` (5 files), `db/chat.rs`; frontend `study/*` + `services/study.
 ## 15. Testing
 
 - **Rust:** units in `knowledge/mod` (identity reorder/bounded edit, dup retarget, FTS reuse, parallel writers), `schema` (additive/repeatable, rollback, WAL backup, v1/v2 upgrades), `search` (FTS escape, RRF agreement, vault isolation, block edges, 100k ignored), `retrieval` (isolation/folders, boosts, explicit>semantic, budget/Unicode packing), `jobs` (priority/foreground/background, deps, cancel/recover), `models` (privacy matrix), `config` (round-trip camelCase, keyring, unwritable-dir safety, engine default, appearance compat), `indexer` (empty folders, hidden/sidecar), `embeddings` (cosine, blocks, memo, caps).
-- **Frontend (Playwright):** `tests/notebook/*.spec.ts` (16): `app`, `runtime`, `vault-workflows`, `documents`, `study`, `library/actions`, `note-graph-workspace`, `large-text`, `sidebar-layout`, `theming`, `accent-updates`, `contrast`, `prompt-model`, `ui-enhancements`, `agent-durability` + harnesses (`app-harness`, `runtime-harness`, `study-harness`). `playwright.config.ts`: base `127.0.0.1:5178`, harness entry, 30 s timeout, `global-setup.ts`.
+- **Frontend (Playwright):** 23 spec files / 222 tests (`npx playwright test --list`, 2026-10-23). `tests/notebook/` contains 19 specs: `app`, `runtime`, `vault-workflows`, `documents`, `study`, `library`, `library-actions`, `editor-properties`, `editor-research`, `annotation-draft`, `note-graph-workspace`, `large-text`, `sidebar-layout`, `theming`, `accent-updates`, `contrast`, `prompt-model`, `ui-enhancements`, `agent-durability`; `tests/settings/` covers settings persistence, contrast and editor preferences, and `tests/ingest/` covers ingestion contracts. Harnesses: `app-harness`, `runtime-harness`, `study-harness`, plus `settings/harness` and `ingest/harness`. `playwright.config.ts`: base `127.0.0.1:5178`, harness entry, 30 s timeout, `global-setup.ts`.
+- **Frontend validation:** `npx tsc --noEmit` clean; full suite 222 passed in 5.6 minutes with 2 workers on 2026-10-23. Dialog coverage asserts alertdialog roles, safe default focus (Cancel for danger), post-unmount promise resolution/async close, and guarded focus restoration; the focus test passed 30/30 across 5 repeats. The full suite rewrites tracked screenshots under `output/playwright/`; restore them before committing unless the visual change is intentional.
 - **Ingest:** `cargo test --locked --manifest-path src-tauri/src/ingest/Cargo.toml`, fixtures/baseline/benchmark scripts.
 - Gaps noted: manifests stale (no version bump test), no PrismWeb contract tests in Phase 3, 100k test ignored by default.
 
@@ -514,9 +545,9 @@ Backend `study/*` (5 files), `db/chat.rs`; frontend `study/*` + `services/study.
 
 ### Risks / debt (load-bearing)
 
-1. **Version drift:** tags (`v1.1.25`) vs manifests (`1.0.0`/`0.1.0`). Release tooling relying on manifests will mislabel. Fix: sync `package.json` + `tauri.conf.json` + `Cargo.toml` on tag, or derive from `git describe`, add CI check.
+1. **Version drift:** tags (`v1.1.38`) vs manifests (`1.0.0`/`0.1.0`). Release builds set the package version from the tag, but local manifests still mislabel the source tree. Fix: sync `package.json` + `tauri.conf.json` + `Cargo.toml` on tag, or derive from `git describe`, add CI check.
 2. **Legacy resource bundle:** `tauri.conf.json:33-35` still bundles `../Extractor Final`. Post-Open-Notebook removal this is dead weight / confusion. Remove or document if still needed for legacy script path (`config.rs:215` hardcodes `/Users/Shiver/.../master_extractor.py` default — leaks dev path).
-3. **Uncommitted v1.1.26 work:** 9 files dirty (`agent.rs`, `menu.rs`, `study/mod.rs`, `App.tsx`, `Editor.tsx`, `GraphView.tsx`, `SettingsPage.tsx`, `TitleBar.tsx`, `ResizeHandle.tsx`). Report baseline is moving; freeze or commit before release gate.
+3. **Tracked visual artifacts:** the full Playwright suite rewrites the tracked `output/playwright/*.png` screenshots. Restore them before committing unless the visual delta is intentional; otherwise documentation or release commits can pick up machine-specific rendering noise.
 4. **Dual embedding caches:** `AppState.embeddings` vs `KnowledgeRuntime.embeddings` with fallback logic (`retrieval.rs:278-309` vs `search.rs:116-122`). Divergence risk (search uses legacy cache only). Unify on runtime cache.
 5. **Legacy tables dual-write:** `notes/links/backlinks` + `knowledge_*` both maintained (watcher, `write_file`, renames). Ghost risk if one path missed; consider single source + views.
 6. **ONNX platform fragility:** dynamic dylib/dll on Mac/Win, static on Linux, manual `prepare` step, vendored patches to maintain. Pin + verify in CI (scripts exist but not all wired to release).
@@ -546,6 +577,7 @@ Backend `study/*` (5 files), `db/chat.rs`; frontend `study/*` + `services/study.
 | AI | `AISidebar.tsx:1`, `services/apiProviders.ts:60`, `services/apiService.ts:1`, `services/knowledge.ts:67` |
 | Notebook/Study | `components/study/StudyWorkspace.tsx:1`, `services/study.ts:12`, `src-tauri/src/study/mod.rs:15` |
 | Settings | `components/SettingsPage.tsx:56`, `src/defaultSettings.ts:3`, `src/types/index.ts:98` |
+| UI/chrome | `components/DialogProvider.tsx:83`, `components/MaterialSurface.tsx:22`, `utils/useDialogFocus.ts:18`, `utils/usePrefersReducedMotion.ts:12`, `components/TitleBar.tsx:1` |
 | IPC types | `src/types/index.ts:159` |
 | Rust entry | `src-tauri/src/lib.rs:1`, `main.rs:1`, `menu.rs:1`, `watcher.rs:1`, `config.rs:1`, `db.rs:1` |
 | Runtime | `knowledge/mod.rs:40`, `schema.rs:6`, `search.rs:99`, `retrieval.rs:328`, `agent.rs:38`, `jobs.rs:76`, `models.rs:189`, `operations.rs:1`, `documents.rs:399`, `gateway.rs:1`, `blocks.rs:1` |
@@ -570,4 +602,4 @@ Backend `study/*` (5 files), `db/chat.rs`; frontend `study/*` + `services/study.
 
 ---
 
-*Generated for `docs/APP_REPORT.md` on approval. Baselines `v1.1.26` working tree; re-run `git describe` + manifest sync before release.*
+*Generated for `docs/APP_REPORT.md` on approval. §1–18 baseline `v1.1.26`; dialog/material addendum validated at `v1.1.38` (`a61fa86`) on 2026-10-23. Re-run `git describe` + manifest sync before release.*
