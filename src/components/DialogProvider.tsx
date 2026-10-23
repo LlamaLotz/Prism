@@ -85,16 +85,25 @@ export const DialogProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
   const current = queue[0] ?? null;
 
+  const pendingResolveRef = useRef<{
+    resolve: (value?: any) => void;
+    value?: any;
+  } | null>(null);
+
   const dismissCurrent = useCallback((resolve: (value?: any) => void, value?: any) => {
-    setQueue((q) => {
-      const [head, ...rest] = q;
-      if (!head) return q;
-      // Resolve AFTER the state update so the modal unmounts cleanly before
-      // the caller's continuation runs.
-      queueMicrotask(() => resolve(value));
-      return rest;
-    });
+    pendingResolveRef.current = { resolve, value };
+    setQueue((q) => (q.length ? q.slice(1) : q));
   }, []);
+
+  // Resolve after the modal has unmounted. Resolving inside the state updater
+  // runs before React commits the removal, so callers could try to move focus
+  // while the closing dialog is still modal (the background is inert).
+  useEffect(() => {
+    const pending = pendingResolveRef.current;
+    if (!pending) return;
+    pendingResolveRef.current = null;
+    pending.resolve(pending.value);
+  }, [queue]);
 
   const alert = useCallback(
     (message: string, opts?: AlertOptions): Promise<void> =>
@@ -219,7 +228,19 @@ const DialogModal: React.FC<{
     return () => {
       window.clearTimeout(focusTimer);
       if (dialog.isConnected && dialog.open) dialog.close();
-      if (previousFocusRef.current?.isConnected) previousFocusRef.current.focus();
+      // Restore focus only if it has not already been moved somewhere else
+      // (e.g. a menu restoring focus to its trigger after the dialog closes).
+      // Focusing document.body would blur the caller's choice, so skip it.
+      const previous = previousFocusRef.current;
+      const active = document.activeElement;
+      if (
+        previous &&
+        previous !== document.body &&
+        previous.isConnected &&
+        (!active || active === document.body || dialog.contains(active))
+      ) {
+        previous.focus();
+      }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

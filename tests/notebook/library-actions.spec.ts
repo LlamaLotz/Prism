@@ -56,11 +56,11 @@ test('duplicate names, rename, cancel/delete and reuse', async ({ page }) => {
   await expect(page.getByLabel('Options for New title')).toBeFocused();
   await options(page, 'New title');
   await page.getByRole('button', { name: 'Delete notebook', exact: true }).click();
-  await page.getByRole('dialog').getByRole('button', { name: 'Cancel', exact: true }).click();
+  await page.getByRole('alertdialog').getByRole('button', { name: 'Cancel', exact: true }).click();
   await expect(page.getByLabel('Options for New title')).toBeFocused();
   await options(page, 'New title');
   await page.getByRole('button', { name: 'Delete notebook', exact: true }).click();
-  await page.getByRole('dialog').getByRole('button', { name: 'Delete notebook', exact: true }).click();
+  await page.getByRole('alertdialog').getByRole('button', { name: 'Delete notebook', exact: true }).click();
   await expect(page.getByLabel('Options for New title')).toHaveCount(0);
   await expect(page.getByLabel('Options for Research notebook 1')).toBeFocused();
   await page.getByRole('button', { name: /^Add notebook/ }).click();

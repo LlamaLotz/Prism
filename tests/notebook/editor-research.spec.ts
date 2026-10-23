@@ -512,7 +512,9 @@ test("invalid PDF recovery remains downloadable and can be explicitly cleared", 
     .getByRole("button", { name: "OK", exact: true })
     .click();
   await expect(reader.getByRole("status")).toHaveText("Annotations saved");
-  expect(await draft(page)).toBeNull();
+  // The confirm closes after the exit animation; poll so the reload's
+  // draft cleanup lands before asserting.
+  await expect.poll(() => draft(page)).toBeNull();
 });
 
 test("PDF relinking does not leak into a later reload", async ({ page }) => {
