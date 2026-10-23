@@ -16,4 +16,4 @@ Frontend is read-only here. Every change ships through main.
 - Status: draft
 - Rust: `fn example_command(request: ExampleRequest) -> Result<ExampleResponse, String>`
 - Request: `{ "noteId": "string", "limit": 20 }`
-- Response: `{ "items": [...] }`
+- Response: `{ "items": [...] } `
