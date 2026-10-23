@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import { getSplashVideo } from '../services/appIcon';
+import { getAppIcon, getSplashVideo } from '../services/appIcon';
+import { usePrefersReducedMotion } from '../utils/usePrefersReducedMotion';
 
 interface SplashScreenProps {
   /** True while the app + vault are still booting; flips false when ready. */
@@ -20,8 +21,8 @@ interface SplashScreenProps {
  * `onFinish`.
  *
  * The loader uses the bundled H.264 MP4 (hardware-decoded, so it plays off
- * the main thread and stays smooth). If decoding fails, no alternate loader is
- * shown.
+ * the main thread and stays smooth). Reduced-motion users and machines that
+ * cannot decode the MP4 get the static app mark instead.
  */
 export function SplashScreen({ isLoading, playVideo, onFinish, logo, accentColor = '#38BDF8' }: SplashScreenProps) {
   const [fade, setFade] = useState(false);
@@ -29,6 +30,9 @@ export function SplashScreen({ isLoading, playVideo, onFinish, logo, accentColor
   const [videoFailed, setVideoFailed] = useState(false);
   const [videoReady, setVideoReady] = useState(false);
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const prefersReducedMotion = usePrefersReducedMotion();
+  const onFinishRef = useRef(onFinish);
+  useEffect(() => { onFinishRef.current = onFinish; }, [onFinish]);
 
   // Wait for the Instrument Serif + Inter fonts to finish loading before
   // showing the gradient-clipped title text, so the glyphs render correctly
@@ -52,7 +56,9 @@ export function SplashScreen({ isLoading, playVideo, onFinish, logo, accentColor
   }, []);
 
   const loaderVideo = getSplashVideo();
-  const useVideo = !videoFailed;
+  // The video is decorative. Reduced-motion users (and machines where the
+  // MP4 cannot decode) get the static mark instead of a blank splash.
+  const useVideo = !videoFailed && !prefersReducedMotion;
   const mediaReady = useVideo ? videoReady : true;
 
   useEffect(() => {
@@ -60,15 +66,15 @@ export function SplashScreen({ isLoading, playVideo, onFinish, logo, accentColor
     // This matters for the large 3D MP4, which can outlast App's boot timer.
     if (!isLoading && mediaReady) {
       setFade(true);
-      const timer = setTimeout(onFinish, 400);
+      const timer = setTimeout(() => onFinishRef.current(), 300);
       return () => clearTimeout(timer);
     }
-  }, [isLoading, mediaReady, onFinish]);
+  }, [isLoading, mediaReady]);
 
   // Detect when the 3D MP4 can render. Use several readiness events because
   // WebView2 can emit `loadedmetadata` before a React effect attaches listeners.
   useEffect(() => {
-    if (!loaderVideo || videoFailed) return;
+    if (!loaderVideo || videoFailed || prefersReducedMotion) return;
     const video = videoRef.current;
     if (!video) return;
 
@@ -96,12 +102,24 @@ export function SplashScreen({ isLoading, playVideo, onFinish, logo, accentColor
       video.removeEventListener('canplaythrough', markReady);
       video.removeEventListener('error', onError);
     };
-  }, [loaderVideo, videoFailed]);
+  }, [loaderVideo, videoFailed, prefersReducedMotion]);
+
+  // The loader is decorative: if the MP4 is slow to decode, switch to the
+  // static mark instead of keeping the app behind the splash indefinitely.
+  useEffect(() => {
+    if (!playVideo || !useVideo || videoReady || videoFailed) return;
+    const timer = setTimeout(() => {
+      setVideoFailed(true);
+      setVideoReady(true);
+    }, 800);
+    return () => clearTimeout(timer);
+  }, [playVideo, useVideo, videoReady, videoFailed]);
 
   // React renders `muted` as an attribute but doesn't always set the DOM
   // property on mount, which can silently block muted-autoplay in WKWebView.
   // Set it imperatively and retry after metadata arrives so the MP4 starts
-  // buffering/playing even when autoplay was evaluated before the property was  // applied.
+  // buffering/playing even when autoplay was evaluated before the property was
+  // applied.
   useEffect(() => {
     if (!useVideo) return;
     const video = videoRef.current;
@@ -136,13 +154,13 @@ export function SplashScreen({ isLoading, playVideo, onFinish, logo, accentColor
 
   return (
     <div
-      className={`splash-screen-container fixed inset-0 z-[100] flex flex-col items-center justify-center bg-[#35383e] rounded-none transition-opacity duration-[400ms] ease-out ${
+      className={`splash-screen-container fixed inset-0 z-[100] flex flex-col items-center justify-center bg-[#35383e] rounded-none transition-opacity duration-300 ease-out ${
         fade ? 'opacity-0 pointer-events-none' : 'opacity-100'
       }`}
     >
       <div className="splash-in flex flex-col items-center justify-center gap-7 px-8 rounded-none">
         <div className="relative w-[min(90vw,48rem)] aspect-video splash-logo mx-auto rounded-none">
-          {useVideo && (
+          {useVideo ? (
             <video
               ref={videoRef}
               src={loaderVideo}
@@ -151,10 +169,16 @@ export function SplashScreen({ isLoading, playVideo, onFinish, logo, accentColor
               playsInline
               autoPlay
               preload="auto"
-              aria-label="Prism Logo"
+              aria-hidden="true"
               className={`absolute inset-0 w-full h-full object-contain transition-opacity duration-300 ${
                 showMedia ? 'opacity-100' : 'opacity-0'
               }`}
+            />
+          ) : (
+            <img
+              src={getAppIcon(logo)}
+              alt=""
+              className="absolute inset-0 m-auto w-40 h-40 object-contain splash-static-mark"
             />
           )}
         </div>

@@ -384,18 +384,18 @@ html .ai-sidebar {
   border-radius: calc(var(--nb-radius-sm) * 0.75);
   cursor: pointer;
 }
-.seg-control .seg-button:hover:not(:disabled):not([aria-pressed="true"]) {
+.seg-control .seg-button:hover:not(:disabled):not([aria-pressed="true"]):not([aria-selected="true"]) {
   background: var(--nb-hover-bg);
   border-color: var(--nb-hover-border);
   color: var(--nb-text);
 }
-.seg-control .seg-button[aria-pressed="true"] {
+.seg-control .seg-button:is([aria-pressed="true"], [aria-selected="true"]) {
   background: var(--nb-selected-bg);
   color: var(--nb-selected-ink);
   border-color: var(--nb-selected-border);
   font-weight: 650;
 }
-.seg-control .seg-button[aria-pressed="true"] svg {
+.seg-control .seg-button:is([aria-pressed="true"], [aria-selected="true"]) svg {
   color: inherit;
 }
 .seg-control .seg-button:disabled {

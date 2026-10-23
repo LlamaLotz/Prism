@@ -6,7 +6,11 @@ import { StudyWorkspace } from './components/study/StudyWorkspace';
 import { AssistantWorkspace } from './components/study/AssistantWorkspace';
 import { sharedStudy, study } from './services/study';
 import { ModelServiceRecovery } from './components/ModelServiceRecovery';
-import { DEFAULT_SETTINGS } from './defaultSettings';
+import {
+  DEFAULT_SETTINGS,
+  MIN_LIQUID_GLASS_OPACITY,
+  MIN_LIQUID_GLASS_PANEL_OPACITY,
+} from './defaultSettings';
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { APP_PAGES, type AppPage } from './types';
 import { Sidebar } from './components/Sidebar';
@@ -36,8 +40,9 @@ import './components/sidebar-panels.css';
 import { ContextMenu } from './components/ContextMenu';
 import { useDialog } from './components/DialogProvider';
 import { TitleBar } from './components/TitleBar';
-import { LiquidGlass } from './components/LiquidGlass';
+import { MaterialSurface } from './components/MaterialSurface';
 import { createErrorDetails, createRawErrorDetails, errorDialogMessage, ErrorDetails } from './utils/errors';
+import { usePrefersReducedMotion } from './utils/usePrefersReducedMotion';
 
 import { documents } from './services/documents';
 import { DocumentImports } from './components/DocumentImports';
@@ -138,8 +143,18 @@ export default function App() {
     const style = settings.appearance.themeStyle;
     const mode = settings.appearance.themeMode;
     root.classList.add(`theme-${style}`, `mode-${mode}`);
-    // Liquid Gloss surface opacity (CSS variable consumed by gloss backgrounds).
-    root.style.setProperty('--liquid-glass-opacity', String(settings.appearance.liquidGlassOpacity));
+    // Liquid Gloss surface opacity (CSS variables consumed by gloss backgrounds).
+    // Clamp here as well as at load time so a stale persisted value can never
+    // push text contrast below the readable floor.
+    const glassOpacity = Math.min(
+      1,
+      Math.max(MIN_LIQUID_GLASS_OPACITY, settings.appearance.liquidGlassOpacity),
+    );
+    root.style.setProperty('--liquid-glass-opacity', String(glassOpacity));
+    root.style.setProperty(
+      '--liquid-glass-panel-opacity',
+      String(Math.max(MIN_LIQUID_GLASS_PANEL_OPACITY, glassOpacity)),
+    );
   }, [settings.appearance.themeStyle, settings.appearance.themeMode, settings.appearance.liquidGlassOpacity]);
 
   useEffect(() => {setSelectedFolder('');setMoveTarget(null);setFolderReveal(null);return()=>sharedStudy.cancelAgents(settings.vaultPath);}, [settings.vaultPath]);
@@ -162,20 +177,18 @@ export default function App() {
   const vaultReadyRef = useRef(false);
   const backfillDoneRef = useRef(false);
   const playVideoStartedRef = useRef(false);
+  const prefersReducedMotion = usePrefersReducedMotion();
 
   const tryPlayVideo = () => {
     if (playVideoStartedRef.current) return;
     if (!settingsReadyRef.current || !vaultReadyRef.current || !backfillDoneRef.current) return;
     playVideoStartedRef.current = true;
     setPlayVideo(true);
-    // Every piece of boot work (settings, vault index, H1 sync, watcher,
-    // first-run semantic backfill) is done by now, so the CPU/GPU are idle
-    // and the animated logo can play back without stutter. Play it 400 ms
-    // short of a full loop (7360 ms) before fading the splash away, so the
-    // fade begins just before the loop would restart. The heavy UI is gated
-    // on `splashVisible`, so it only mounts after the splash is gone and
-    // never competes with the loader.
-    setTimeout(() => setIsBooting(false), 6960);
+    // Boot work is done, so the loader can have the CPU/GPU to itself. A short
+    // branded beat is enough: the old code waited almost a full 7.36 s video
+    // loop before mounting the app. Reduced-motion users skip the intro and
+    // get the static mark.
+    setTimeout(() => setIsBooting(false), prefersReducedMotion ? 120 : 1100);
   };
 
   // Hard safety timeout: if the splash hasn't dismissed after 15 seconds
@@ -654,8 +667,16 @@ export default function App() {
       // Migrate the former built-in amber defaults without overwriting any
       // custom color the user has explicitly chosen.
       const legacyDefault = '#feb05d';
+      const safeGlassOpacity = Math.min(
+        1,
+        Math.max(
+          MIN_LIQUID_GLASS_OPACITY,
+          merged.appearance.liquidGlassOpacity ?? DEFAULT_SETTINGS.appearance.liquidGlassOpacity,
+        ),
+      );
       const migratedAppearance = {
         ...merged.appearance,
+        liquidGlassOpacity: safeGlassOpacity,
         accentColor: merged.appearance.accentColor?.toLowerCase() === legacyDefault
           ? '#38BDF8'
           : merged.appearance.accentColor,
@@ -670,11 +691,13 @@ export default function App() {
         merged.appearance.accentColor?.toLowerCase() === legacyDefault ||
         merged.appearance.hoverGlowColor?.toLowerCase() === legacyDefault ||
         merged.appearance.graphNodeColor?.toLowerCase() === legacyDefault;
+      const hadUnsafeGlassOpacity =
+        safeGlassOpacity !== merged.appearance.liquidGlassOpacity;
       merged = { ...merged, appearance: migratedAppearance };
-      if (hadLegacyDefault) {
+      if (hadLegacyDefault || hadUnsafeGlassOpacity) {
         tauriAPI.saveRuntimeConfig(merged).catch((e) => {
-          console.error('Failed to persist accent migration:', e);
-          appLogger.error('Failed to persist accent migration', e);
+          console.error('Failed to persist appearance migration:', e);
+          appLogger.error('Failed to persist appearance migration', e);
         });
       }
       setSettings(merged);
@@ -1537,7 +1560,7 @@ export default function App() {
           className={`prism-bg-environment prism-bg-${settings.appearance.backgroundEnvironment === 'solar-system' ? 'solar' : settings.appearance.backgroundEnvironment}`}
         />
       )}
-    <div className="liquid-gloss-app flex flex-col h-screen w-screen bg-base text-slate-100 font-sans overflow-hidden select-none">
+    <div className="liquid-gloss-app flex flex-col h-screen w-screen bg-base text-slate-100 font-sans overflow-hidden">
       {/* Everything except the splash is gated until the splash is fully gone
           (splashVisible false): the heavy UI (graph force simulation, editor,
           sidebar) only mounts after the loader animation has finished and the
@@ -1586,7 +1609,7 @@ export default function App() {
         </div>
       </div>
         <div className="vault-expanded" inert={panels.rail} aria-hidden={panels.rail} style={{ visibility: panels.rail ? 'hidden' : undefined }}>
-          <LiquidGlass className="liquid-gloss-sidebar sidebar-content h-full">
+          <MaterialSurface className="liquid-gloss-sidebar sidebar-content h-full">
           <Sidebar
             notes={notes}
             folders={folders}
@@ -1614,7 +1637,7 @@ export default function App() {
             appIcon={settings.appearance.appIcon}
             themeMode={settings.appearance.themeMode}
           />
-          </LiquidGlass>
+          </MaterialSurface>
         </div>
         {!panels.rail && <ResizeHandle direction="horizontal" label="Resize Vault sidebar" value={panels.vaultWidth} min={180} max={panels.vaultMax}
           onResize={() => {}} onValueChange={w => changePanelWidth('vault', w)}
@@ -1623,7 +1646,7 @@ export default function App() {
 
       {/* Primary Workspace Panel */}
       <div className="workspace-shell" inert={expandedAI} aria-hidden={expandedAI} style={{ width: panels.workspaceWidth, marginLeft: expandedAI ? 0 : layoutSize.gap }}>
-      <LiquidGlass className="min-w-0 flex flex-col h-full overflow-hidden" as="div">
+      <MaterialSurface className="min-w-0 flex flex-col h-full overflow-hidden" as="div">
       <div data-region="workspace" className="flex-1 min-w-0 flex flex-col h-full overflow-hidden">
 
 
@@ -1694,7 +1717,7 @@ export default function App() {
 
         </div>
       </div>
-      </LiquidGlass>
+      </MaterialSurface>
 
       </div>
       {/* AI Co-Pilot chat bar right sidebar (separate floating card) */}
@@ -1704,11 +1727,11 @@ export default function App() {
             onResize={() => {}} onValueChange={w => changePanelWidth('ai', w)}
             onResizeStart={() => { setPanelDragging(true); setPanelAnimating(false); }} onResizeEnd={(w, changed) => finishPanelResize('ai', w, changed)} className="sidebar-resizer-left" />}
           <div className="ai-panel-clip">
-          <LiquidGlass className="h-full ai-panel sidebar-content">
+          <MaterialSurface className="h-full ai-panel sidebar-content">
           <AssistantWorkspace expanded={expandedAI} autoExpanded={windowWidth < 1000} onExpand={toggleAIExpansion} onCollapse={closeAI} config={settings.omniRoute} modelPicker={chatModelPicker} onVaultChanged={handleAgentVaultChanged} key={settings.vaultPath} vaultPath={settings.vaultPath} openRequest={copilotOpenRequest}
             onConsumed={() => setCopilotOpenRequest(null)} onNotebook={() => setLayout('notebook')}
             onOpenSettings={() => openSettings('ai')} />
-        </LiquidGlass>
+        </MaterialSurface>
         </div>
         </div>
       )}
@@ -1793,7 +1816,7 @@ export default function App() {
             <div className="mt-1 break-words text-slate-500">{embeddingError.human}</div>
             <details className="mt-2 text-slate-500">
               <summary className="cursor-pointer hover:text-slate-300">Raw error</summary>
-              <pre className="mt-1 max-h-28 overflow-auto whitespace-pre-wrap break-words font-mono text-[10px]">{embeddingError.raw}</pre>
+              <pre className="mt-1 max-h-28 overflow-auto whitespace-pre-wrap break-words font-mono text-xs">{embeddingError.raw}</pre>
             </details>
             <p className="mt-2 text-slate-500">Related notes and block matching will work once the embedding model is available. This is a one-time cost on first launch.</p>
           </div>

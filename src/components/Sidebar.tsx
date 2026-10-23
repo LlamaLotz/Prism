@@ -420,6 +420,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       <div key={folder.relativePath} data-folder-drop-target={folder.relativePath}>
         <div
           tabIndex={0}
+          aria-expanded={!isCollapsed}
           onKeyDown={e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();onSelectFolder?.(folder.relativePath);toggleFolder(folder.relativePath);}}}
           data-folder-path={folder.relativePath}
           className={`group flex items-center justify-between text-xs px-3 py-2 rounded-lg transition-all ${
@@ -453,7 +454,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
               <FolderOpen className="w-4 h-4 shrink-0 text-[var(--nb-focus)]" />
             )}
             <span className="truncate font-medium">{folder.name}</span>
-            <span className="sidebar-secondary-label text-[10px] text-[var(--nb-secondary)] shrink-0 tabular-nums">
+            <span className="sidebar-secondary-label text-xs text-[var(--nb-secondary)] shrink-0 tabular-nums">
               {total} {total === 1 ? 'note' : 'notes'}
             </span>
           </div>
@@ -502,7 +503,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             className="w-[38px] h-[38px] shrink-0 object-contain"
           />
           {statusLine && (
-            <p className="sidebar-status-copy text-[10px] text-[var(--nb-secondary)] leading-tight line-clamp-2">{statusLine}</p>
+            <p className="sidebar-status-copy text-xs text-[var(--nb-secondary)] leading-tight line-clamp-2">{statusLine}</p>
           )}
         </div>
         <div className="flex items-center gap-1 shrink-0">
@@ -527,11 +528,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
       {/* Note Folder Info & Actions */}
       <div className="p-3 bg-[var(--nb-card)] border-b border-[var(--nb-border)] space-y-2">
         <div className="flex items-center justify-between">
-          <span className="text-[10px] font-semibold text-[var(--nb-secondary)] uppercase tracking-wider"><span className="sidebar-secondary-label">Prism </span>Location</span>
+          <span className="text-xs font-semibold text-[var(--nb-secondary)] uppercase tracking-wider"><span className="sidebar-secondary-label">Prism </span>Location</span>
           <button 
             onClick={onSelectVault}
             aria-label="Change vault folder"
-            className="sidebar-pill-button gloss-text-button text-[10px] font-semibold text-[var(--nb-focus)] hover:text-[var(--nb-focus)] transition-colors flex items-center gap-1"
+            className="sidebar-pill-button gloss-text-button text-xs font-semibold text-[var(--nb-focus)] hover:text-[var(--nb-focus)] transition-colors flex items-center gap-1"
           >
             <FolderOpen className="w-3 h-3" /> <span className="sidebar-secondary-label">Change</span>
           </button>

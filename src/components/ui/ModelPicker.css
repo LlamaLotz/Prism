@@ -34,7 +34,7 @@
   background: transparent;
   color: var(--nb-secondary, var(--color-text-body));
   font: inherit;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 500;
   cursor: pointer;
 }
@@ -139,14 +139,14 @@
 .model-picker__desc {
   overflow: hidden;
   color: var(--nb-secondary, var(--color-text-body));
-  font-size: 10px;
+  font-size: 12px;
   white-space: nowrap;
   text-overflow: ellipsis;
 }
 .model-picker__tag {
   flex: none;
   color: var(--nb-secondary, var(--color-text-body));
-  font-size: 10px;
+  font-size: 12px;
   text-transform: capitalize;
 }
 

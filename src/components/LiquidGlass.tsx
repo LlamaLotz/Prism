@@ -1,20 +1,6 @@
-import React, { type ElementType } from 'react';
-
-interface LiquidGlassProps {
-  children: React.ReactNode;
-  className?: string;
-  style?: React.CSSProperties;
-  as?: ElementType;
-}
-
-/** Shared panel wrapper for Liquid Gloss surfaces. */
-export const LiquidGlass: React.FC<LiquidGlassProps> = ({
-  children,
-  className = '',
-  style,
-  as: Component = 'div',
-}) => (
-  <Component className={`liquid-gloss-surface ${className}`.trim()} style={style}>
-    {children}
-  </Component>
-);
+/**
+ * Backwards-compatible alias. New code should import MaterialSurface and
+ * declare a semantic layer (`panel`, `chrome`, `popover`).
+ */
+export { MaterialSurface as LiquidGlass } from './MaterialSurface';
+export type { MaterialLayer } from './MaterialSurface';

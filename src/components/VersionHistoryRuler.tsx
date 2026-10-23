@@ -25,7 +25,7 @@ const PREVIEW_MAX_CHARS = 50000;
 // content (e.g. the same version re-scrolled) skips rebuilding it entirely.
 const VersionPreview = React.memo(function VersionPreview({ content }: { content: string }) {
   return (
-    <pre className="whitespace-pre-wrap break-words font-mono text-[11px] leading-relaxed text-slate-300">
+    <pre className="whitespace-pre-wrap break-words font-mono text-xs leading-relaxed text-slate-300">
       {content.length > PREVIEW_MAX_CHARS
         ? content.slice(0, PREVIEW_MAX_CHARS) + '\n… (preview truncated)'
         : content}
@@ -444,11 +444,11 @@ export const VersionHistoryRuler: React.FC<VersionHistoryRulerProps> = ({
                 {restoring ? 'Restoring…' : 'Restore Version'}
               </button>
               <div className="flex items-center gap-2 min-w-0 justify-end">
-                <span className="text-[10px] text-slate-500 shrink-0">
+                <span className="text-xs text-slate-500 shrink-0">
                   {isBase ? 'Original snapshot' : `Version ${versions.length - selIdx} of ${versions.length}`}
                 </span>
                 {!isBase && (
-                  <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-800/80 text-slate-300 tabular-nums shrink-0">
+                  <span className="text-xs font-bold px-1.5 py-0.5 rounded bg-slate-800/80 text-slate-300 tabular-nums shrink-0">
                     <span className="text-emerald-400">+{diff.added}</span> / <span className="text-red-400">-{diff.removed}</span>
                   </span>
                 )}

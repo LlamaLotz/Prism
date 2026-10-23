@@ -4,6 +4,7 @@ import * as THREE from 'three';
 import { GraphNode, GraphLink, NoteFile } from '../types';
 import { Network, Home, Orbit } from 'lucide-react';
 import { mixHex, hexToRgba } from '../utils/accentColor';
+import { usePrefersReducedMotion } from '../utils/usePrefersReducedMotion';
 
 interface GraphView3DProps {
   graphData: { nodes: GraphNode[]; links: GraphLink[] };
@@ -68,6 +69,9 @@ export const GraphView3D: React.FC<GraphView3DProps> = ({
   const graphRef = useRef<any>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [size, setSize] = useState({ width: 800, height: 600 });
+  const prefersReducedMotion = usePrefersReducedMotion();
+  const reduceMotionRef = useRef(prefersReducedMotion);
+  reduceMotionRef.current = prefersReducedMotion;
 
   const sphereGeoRef = useRef<THREE.SphereGeometry | null>(null);
   if (!sphereGeoRef.current) sphereGeoRef.current = new THREE.SphereGeometry(1, 24, 24);
@@ -77,12 +81,13 @@ export const GraphView3D: React.FC<GraphView3DProps> = ({
   const labelCacheRef = useRef<Map<string, THREE.Sprite>>(new Map());
   const nodeGroupsRef = useRef<Set<THREE.Group>>(new Set());
 
-  const [autoRotate, setAutoRotate] = useState(autoRotateOnLoad);
+  const [autoRotate, setAutoRotate] = useState(autoRotateOnLoad && !prefersReducedMotion);
   // Keep the runtime control synchronized when the saved preference changes
-  // while this graph instance is already mounted.
+  // while this graph instance is already mounted. Reduce Motion suppresses
+  // the automatic orbit; a manual toggle remains available.
   useEffect(() => {
-    setAutoRotate(autoRotateOnLoad);
-  }, [autoRotateOnLoad]);
+    setAutoRotate(autoRotateOnLoad && !prefersReducedMotion);
+  }, [autoRotateOnLoad, prefersReducedMotion]);
   const [tooltip, setTooltip] = useState<TooltipState | null>(null);
   const tooltipTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const activeTitle = activeNote?.title?.toLowerCase();
@@ -462,7 +467,7 @@ export const GraphView3D: React.FC<GraphView3DProps> = ({
     if (!pendingFrameRef.current) return;
     pendingFrameRef.current = false;
     updateBackground();
-    frameCamera(400);
+    frameCamera(reduceMotionRef.current ? 0 : 400);
   }, []);
 
   const frameCamera = (duration: number) => {
@@ -561,7 +566,8 @@ export const GraphView3D: React.FC<GraphView3DProps> = ({
 
   const handleResetCamera = () => {
     const g = graphRef.current; if (!g) return;
-    try { g.zoomToFit?.(600, 40); } catch { frameCamera(600); }
+    const duration = reduceMotionRef.current ? 0 : 600;
+    try { g.zoomToFit?.(duration, 40); } catch { frameCamera(duration); }
   };
 
   useEffect(() => {
@@ -581,7 +587,7 @@ export const GraphView3D: React.FC<GraphView3DProps> = ({
           <Network className="w-4 h-4 text-brand-400 shrink-0" />
           <h2 className="text-sm font-semibold text-slate-100">Knowledge Network</h2>
         </div>
-        <div className="graph-header-controls text-[10px] text-slate-500 font-medium flex items-center gap-2">
+        <div className="graph-header-controls text-xs text-slate-500 font-medium flex items-center gap-2">
           {toolbarExtra}
           <span className="graph-hint">Drag to rotate • Scroll to zoom • Right-drag to pan</span>
           <button onClick={() => setAutoRotate((v) => !v)} title="Slowly rotate the camera around the graph" aria-pressed={autoRotate}
@@ -606,16 +612,19 @@ export const GraphView3D: React.FC<GraphView3DProps> = ({
                 : (isDarkMode ? '#0D0E12' : '#EDEDF0')
           }
           nodeThreeObject={nodeThreeObject} linkColor={linkColor}
-          linkWidth={0.8} linkDirectionalParticles={2} linkDirectionalParticleSpeed={0.005}
+          linkWidth={0.8} linkDirectionalParticles={prefersReducedMotion ? 0 : 2} linkDirectionalParticleSpeed={0.005}
           linkDirectionalParticleWidth={1.5} linkDirectionalParticleColor={particleColor}
           onNodeClick={handleNodeClick} onNodeHover={handleNodeHover}
-          onEngineStop={handleEngineStop} cooldownTime={1200}
+          onEngineStop={handleEngineStop}
+          warmupTicks={prefersReducedMotion ? 160 : 0}
+          cooldownTicks={prefersReducedMotion ? 1 : undefined}
+          cooldownTime={prefersReducedMotion ? 0 : 1200}
         />
         {tooltip && (
           <div className="absolute z-10 pointer-events-none bg-slate-900/95 border border-slate-700/80 rounded-lg px-3 py-2 shadow-2xl backdrop-blur-sm"
             style={{ left: tooltip.x + 14, top: tooltip.y - 8, transform: 'translateY(-100%)' }}>
-            <div className="text-[11px] font-semibold text-slate-100 max-w-[220px] truncate">{tooltip.title}</div>
-            <div className="text-[10px] text-slate-400 mt-0.5 flex items-center gap-1.5">
+            <div className="text-xs font-semibold text-slate-100 max-w-[220px] truncate">{tooltip.title}</div>
+            <div className="text-xs text-slate-400 mt-0.5 flex items-center gap-1.5">
               <span className={`w-1.5 h-1.5 rounded-full ${tooltip.exists ? (tooltip.title.toLowerCase() === activeTitle ? 'bg-brand-500' : 'bg-brand-400') : 'bg-slate-600'}`} />
               {tooltip.linksCount} connection{tooltip.linksCount === 1 ? '' : 's'}{!tooltip.exists && ' \u2022 uncreated'}
             </div>

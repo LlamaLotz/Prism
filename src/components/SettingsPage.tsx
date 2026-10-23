@@ -1,4 +1,5 @@
 import { AIRoutingSettings } from './AIRoutingSettings';
+import { MIN_LIQUID_GLASS_OPACITY } from '../defaultSettings';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   hexToHsl,
@@ -43,6 +44,7 @@ import {
 } from '../services/apiProviders';
 import { APP_ICON_GROUPS, getAppIcon } from '../services/appIcon';
 import { createErrorDetails } from '../utils/errors';
+import { useDialogFocus } from '../utils/useDialogFocus';
 
 interface SettingsPageProps {
   isOpen: boolean;
@@ -97,7 +99,7 @@ const Field: React.FC<{ label: string; hint?: string; children: React.ReactNode 
     <div className="flex items-center justify-between gap-6">
       <div className="min-w-0">
         <div className="text-[13px] font-medium text-slate-300">{label}</div>
-        {hint && <div className="text-[11px] text-slate-500 mt-0.5 leading-relaxed">{hint}</div>}
+        {hint && <div className="text-xs text-slate-500 mt-0.5 leading-relaxed">{hint}</div>}
       </div>
       <div className="shrink-0">{children}</div>
     </div>
@@ -215,7 +217,7 @@ const ChannelField: React.FC<{
 
   return (
     <div className="flex flex-col items-center gap-1">
-      <span className="text-[9px] uppercase text-slate-500 font-semibold">{label}</span>
+      <span className="text-xs uppercase text-slate-500 font-semibold">{label}</span>
       <input
         value={text}
         onFocus={() => setFocused(true)}
@@ -289,7 +291,7 @@ const AccentPicker: React.FC<{ value: string; onChange: (hex: string) => void }>
           className="w-5 h-5 rounded-full border border-black/40 shrink-0"
           style={{ backgroundColor: value }}
         />
-        <span className="text-[11px] text-slate-400 font-mono">{value}</span>
+        <span className="text-xs text-slate-400 font-mono">{value}</span>
       </button>
 
       {open && (
@@ -299,7 +301,7 @@ const AccentPicker: React.FC<{ value: string; onChange: (hex: string) => void }>
           <div className="gloss-dropdown-surface absolute left-0 bottom-full mb-2 z-50 w-72 p-3 space-y-3">
             {/* Format tabs */}
             <div className="flex items-center justify-between">
-              <span className="text-[10px] uppercase text-slate-500 font-semibold">Format</span>
+              <span className="text-xs uppercase text-slate-500 font-semibold">Format</span>
               <div className="flex bg-[var(--color-surface)] border border-[var(--color-border)] rounded p-0.5">
                 {(['hex', 'rgb', 'hsl'] as ColorFormat[]).map((f) => (
                   <button
@@ -307,7 +309,7 @@ const AccentPicker: React.FC<{ value: string; onChange: (hex: string) => void }>
                     type="button"
                     onMouseDown={(e) => e.preventDefault()}
                     onClick={() => setMode(f)}
-                    className={`px-2 py-0.5 text-[10px] uppercase rounded transition-colors ${
+                    className={`px-2 py-0.5 text-xs uppercase rounded transition-colors ${
                       mode === f
                         ? 'bg-brand-500 text-[color:var(--color-brand-contrast)] font-semibold'
                         : 'text-slate-400 hover:text-slate-200'
@@ -383,7 +385,7 @@ const AccentPicker: React.FC<{ value: string; onChange: (hex: string) => void }>
                   onChange={(h, s) => onChange(hslToHex(h, s, hsl.l))}
                 />
                 <div className="flex items-center gap-2">
-                  <span className="text-[9px] uppercase text-slate-500 font-semibold w-8">L</span>
+                  <span className="text-xs uppercase text-slate-500 font-semibold w-8">L</span>
                   <input
                     type="range"
                     min={0}
@@ -394,7 +396,7 @@ const AccentPicker: React.FC<{ value: string; onChange: (hex: string) => void }>
                     className="flex-1 accent-brand-500 cursor-pointer"
                     aria-label="Lightness"
                   />
-                  <span className="text-[10px] text-slate-400 font-mono tabular-nums w-8 text-right">
+                  <span className="text-xs text-slate-400 font-mono tabular-nums w-8 text-right">
                     {Math.round(hsl.l)}%
                   </span>
                 </div>
@@ -707,12 +709,21 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
   const [isDirty, setIsDirty] = useState(false);
   const [showUnsaved, setShowUnsaved] = useState(false);
   const [justSaved, setJustSaved] = useState(false);
+  const [isClosing, setIsClosing] = useState(false);
+  const [unsavedClosing, setUnsavedClosing] = useState(false);
   const savedTimer = useRef<number | null>(null);
+  const closeTimer = useRef<number | null>(null);
+  const unsavedCloseTimer = useRef<number | null>(null);
+  const unsavedTriggerRef = useRef<HTMLElement | null>(null);
+  const closingRef = useRef(false);
+  const unsavedClosingRef = useRef(false);
   const savingRef = useRef(false);
   const [isSaving, setIsSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   useEffect(() => () => {
     if (savedTimer.current) window.clearTimeout(savedTimer.current);
+    if (closeTimer.current) window.clearTimeout(closeTimer.current);
+    if (unsavedCloseTimer.current) window.clearTimeout(unsavedCloseTimer.current);
   }, []);
   const [showIconPreview, setShowIconPreview] = useState(false);
   // Manual update-check state (Settings → System), driven by the same
@@ -740,16 +751,58 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
     setJustSaved(false);
     setSaveError(null);
     setUpdateStatus({ state: 'idle' });
+    setIsClosing(false);
+    closingRef.current = false;
+    setUnsavedClosing(false);
+    unsavedClosingRef.current = false;
   } else if (!isOpen && lastOpen) {
     setLastOpen(false);
   }
 
+  const overlayRef = useDialogFocus<HTMLFieldSetElement>(isOpen);
+  // The unsaved guard is nested inside Settings, so the page-level trap stays
+  // active. Restore focus explicitly when the guard closes; letting both hooks
+  // restore would race when Settings itself closes with the guard open.
+  const unsavedDialogRef = useDialogFocus<HTMLDivElement>(isOpen && showUnsaved, false);
+  const iconPreviewRef = useDialogFocus<HTMLDivElement>(isOpen && showIconPreview);
+  const restoreUnsavedFocus = () => {
+    if (unsavedTriggerRef.current?.isConnected) unsavedTriggerRef.current.focus();
+  };
+
+  const beginClose = () => {
+    if (closingRef.current) return;
+    closingRef.current = true;
+    setIsClosing(true);
+    closeTimer.current = window.setTimeout(() => {
+      closingRef.current = false;
+      setIsClosing(false);
+      onClose();
+    }, 120);
+  };
+
+  const closeUnsaved = () => {
+    if (unsavedClosingRef.current) return;
+    unsavedClosingRef.current = true;
+    setUnsavedClosing(true);
+    unsavedCloseTimer.current = window.setTimeout(() => {
+      unsavedClosingRef.current = false;
+      setUnsavedClosing(false);
+      setShowUnsaved(false);
+      restoreUnsavedFocus();
+    }, 100);
+  };
+
   // Closing (X, Cancel, Esc) with unsaved changes asks first. Defined before
   // the early return so the Esc effect below can reference it.
   const requestClose = () => {
-    if (savingRef.current) return;
-    if (isDirty) setShowUnsaved(true);
-    else onClose();
+    if (savingRef.current || closingRef.current) return;
+    if (isDirty) {
+      unsavedTriggerRef.current =
+        document.activeElement instanceof HTMLElement ? document.activeElement : null;
+      setUnsavedClosing(false);
+      unsavedClosingRef.current = false;
+      setShowUnsaved(true);
+    } else beginClose();
   };
 
   // Esc closes settings — but goes through the unsaved-changes guard.
@@ -758,12 +811,24 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
   useEffect(() => {
     if (!isOpen) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') requestClose();
+      if (e.key !== 'Escape') return;
+      // A native modal dialog is above Settings; let its own cancel handler
+      // dismiss it instead of closing the page behind the overlay.
+      if (document.querySelector('dialog[open]')) return;
+      if (showIconPreview) {
+        setShowIconPreview(false);
+        return;
+      }
+      if (showUnsaved) {
+        closeUnsaved();
+        return;
+      }
+      requestClose();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOpen, isDirty]);
+  }, [isOpen, isDirty, showUnsaved, showIconPreview]);
 
   if (!isOpen) return null;
 
@@ -810,14 +875,17 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
     setIsSaving(true);
     setJustSaved(false);
     setSaveError(null);
-    setShowUnsaved(false);
+    if (showUnsaved) {
+      setShowUnsaved(false);
+      restoreUnsavedFocus();
+    }
     if (savedTimer.current) window.clearTimeout(savedTimer.current);
     try {
       const saved = await onSave(normalizeDraft(draft));
       setDraft(saved);
       setIsDirty(false);
       setJustSaved(true);
-      if (closeAfterSave) onClose();
+      if (closeAfterSave) beginClose();
       else savedTimer.current = window.setTimeout(() => setJustSaved(false), 1600);
     } catch (error) {
       if (error instanceof SettingsApplyError) {
@@ -907,18 +975,30 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
       : 0;
 
   return (
-    <fieldset disabled={isSaving} aria-busy={isSaving} className="settings-page-overlay fixed inset-0 z-50 m-0 min-w-0 border-0 p-0 flex bg-neutral-950 text-neutral-100 select-none">
+    <fieldset
+      ref={overlayRef}
+      disabled={isSaving}
+      aria-busy={isSaving}
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="settings-title"
+      data-closing={isClosing}
+      tabIndex={-1}
+      className="settings-page-overlay fixed inset-0 z-50 m-0 min-w-0 border-0 p-0 flex bg-neutral-950 text-neutral-100"
+    >
       {/* Left section nav */}
       <aside className="settings-page-nav w-60 shrink-0 border-r border-slate-900 bg-slate-950/60 flex flex-col">
         <div className="flex items-center justify-between px-5 h-14 border-b border-slate-900 shrink-0">
           <div className="flex items-center gap-2">
             <SlidersHorizontal className="w-4 h-4 text-brand-400" />
-            <h2 className="text-sm font-semibold text-slate-100">Settings</h2>
+            <h2 id="settings-title" tabIndex={-1} data-autofocus className="text-sm font-semibold text-slate-100">Settings</h2>
           </div>
           <button
+            type="button"
             onClick={requestClose}
             className="text-slate-400 hover:text-slate-200 hover:bg-slate-800 p-1.5 rounded-lg transition-colors"
             title="Close settings (Esc)"
+            aria-label="Close settings"
           >
             <X className="w-4 h-4" />
           </button>
@@ -927,6 +1007,8 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
           {SECTIONS.map((s) => (
             <button
               key={s.id}
+              type="button"
+              aria-current={section === s.id ? 'true' : undefined}
               onClick={() => setSection(s.id)}
               className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-[13px] font-medium transition-colors text-left relative ${
                 section === s.id
@@ -1014,14 +1096,14 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                       <option value="rust">Rust (experimental)</option>
                     </select>
                   </div>
-                  <div className="text-[11px] text-slate-500 mb-3 leading-relaxed">
+                  <div className="text-xs text-slate-500 mb-3 leading-relaxed">
                     {(draft.ingestionEngine ?? 'python') === 'python'
                       ? 'Stable default. Rust is not used.'
                       : engineStatus && !engineStatus.rustAvailable
                         ? `Rust runtime unavailable${engineStatus.reason ? ` — ${engineStatus.reason}` : ''} Ingestion will retry once with Python.`
                         : 'Experimental native worker. Failures retry once with Python; cancellation never falls back.'}
                   </div>
-                  <div className="flex items-center gap-1.5 text-[11px] text-slate-500 mb-1.5">
+                  <div className="flex items-center gap-1.5 text-xs text-slate-500 mb-1.5">
                     <Lock className="w-3 h-3 shrink-0" /> Read-only — the extractor & installer
                     engine is managed by Prism and can't be edited.
                   </div>
@@ -1087,9 +1169,9 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                       ))}
                     </select>
                     {aiProvider ? (
-                      <p className="text-[11px] text-slate-500 leading-relaxed">{aiProvider.note}</p>
+                      <p className="text-xs text-slate-500 leading-relaxed">{aiProvider.note}</p>
                     ) : (
-                      <p className="text-[11px] text-amber-500/90 leading-relaxed">
+                      <p className="text-xs text-amber-500/90 leading-relaxed">
                         Choose a provider above to configure the AI assistant — the fields below
                         unlock once one is selected.
                       </p>
@@ -1113,7 +1195,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                         disabled={!aiProvider}
                       />
                       {field.hint && (
-                        <p className="text-[11px] text-slate-500 leading-relaxed">{field.hint}</p>
+                        <p className="text-xs text-slate-500 leading-relaxed">{field.hint}</p>
                       )}
                     </div>
                   ))}
@@ -1131,7 +1213,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                       />
                       {draft.omniRoute.apiKey.trim() &&
                         !isValidKeyForProvider(aiProvider, draft.omniRoute.apiKey) && (
-                          <p className="text-[11px] text-amber-500/90 leading-relaxed">
+                          <p className="text-xs text-amber-500/90 leading-relaxed">
                             This doesn't look like a {aiProvider.name} API key — expected{' '}
                             {describeKeyFormat(aiProvider)}. Double-check it before saving.
                           </p>
@@ -1156,7 +1238,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                             }
                             placeholder={aiProvider.baseUrl}
                           />
-                          <p className="text-[11px] text-slate-500 leading-relaxed">
+                          <p className="text-xs text-slate-500 leading-relaxed">
                             Defaults to <code className="font-mono">{aiProvider.baseUrl}</code> —
                             change it only if your endpoint differs.
                           </p>
@@ -1166,7 +1248,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                           <div className="bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-slate-500 font-mono cursor-not-allowed truncate">
                             &nbsp;
                           </div>
-                          <p className="text-[11px] text-slate-500 leading-relaxed">
+                          <p className="text-xs text-slate-500 leading-relaxed">
                             Fixed endpoint — {aiProvider.name} always uses its default base URL
                             automatically.
                           </p>
@@ -1191,7 +1273,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                         mono
                         disabled={!aiProvider}
                       />
-                      <p className="text-[11px] text-amber-500/90 leading-relaxed">
+                      <p className="text-xs text-amber-500/90 leading-relaxed">
                         Model name must be 100% accurate — it is sent to the provider exactly as
                         typed. Check your provider's docs for the exact model ID.
                       </p>
@@ -1258,7 +1340,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                     <div className="flex items-start justify-between gap-6">
                       <div className="min-w-0">
                         <div className="text-[13px] font-medium text-slate-300">Style Archetype</div>
-                        <div className="text-[11px] text-slate-500 mt-0.5 leading-relaxed">
+                        <div className="text-xs text-slate-500 mt-0.5 leading-relaxed">
                           Choose the visual design language for every surface in the app.
                         </div>
                       </div>
@@ -1301,7 +1383,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                                 <div className="text-[13px] font-medium text-slate-200">
                                   {opt.label}
                                 </div>
-                                <div className="text-[10px] text-slate-500">{opt.sub}</div>
+                                <div className="text-xs text-slate-500">{opt.sub}</div>
                               </div>
                             </button>
                           );
@@ -1315,7 +1397,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                     <div className="flex items-center justify-between gap-6">
                       <div className="min-w-0">
                         <div className="text-[13px] font-medium text-slate-300">Color Scheme</div>
-                        <div className="text-[11px] text-slate-500 mt-0.5 leading-relaxed">
+                        <div className="text-xs text-slate-500 mt-0.5 leading-relaxed">
                           Dark or light mode applied on top of the chosen style archetype.
                         </div>
                       </div>
@@ -1507,7 +1589,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                   {draft.appearance.themeStyle === 'gloss' && (
                     <Field
                       label="Glass opaqueness"
-                      hint="How translucent the Liquid Gloss frosted surfaces are. Lower = more transparent, higher = more opaque."
+                      hint="How opaque the Liquid Gloss shell is. Text surfaces stay at 70% or higher for readability."
                     >
                       <RangeField
                         label="opacity"
@@ -1515,7 +1597,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                         onChange={(v) =>
                           patchNested('appearance', { ...draft.appearance, liquidGlassOpacity: v })
                         }
-                        min={0.3}
+                        min={MIN_LIQUID_GLASS_OPACITY}
                         max={1}
                         step={0.01}
                         format={(v) => `${Math.round(v * 100)}%`}
@@ -1547,7 +1629,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                     <div className="space-y-4">
                       {APP_ICON_GROUPS.map((group) => (
                         <div key={group.id}>
-                          <div className="text-[10px] uppercase font-semibold tracking-wider text-slate-500 mb-1.5">
+                          <div className="text-xs uppercase font-semibold tracking-wider text-slate-500 mb-1.5">
                             {group.label}
                           </div>
                           <div className="grid grid-cols-4 gap-2">
@@ -1834,7 +1916,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                       )}
 
                       {updateStatus.state === 'error' && (
-                        <div className="max-w-[260px] text-right text-[11px] leading-relaxed text-rose-400 break-words whitespace-pre-wrap">
+                        <div className="max-w-[260px] text-right text-xs leading-relaxed text-rose-400 break-words whitespace-pre-wrap">
                           {updateStatus.message}
                         </div>
                       )}
@@ -1848,7 +1930,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                           >
                             <RotateCw className="w-3.5 h-3.5" /> Install and restart
                           </button>
-                          <div className="max-w-[260px] text-right text-[11px] leading-relaxed text-slate-500 whitespace-pre-wrap">
+                          <div className="max-w-[260px] text-right text-xs leading-relaxed text-slate-500 whitespace-pre-wrap">
                             {updateNotes(updateStatus.update)}
                           </div>
                         </div>
@@ -1856,7 +1938,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
 
                       {updateStatus.state === 'downloading' && (
                         <div className="w-52">
-                          <div className="mb-1 flex justify-between text-[11px] text-slate-500">
+                          <div className="mb-1 flex justify-between text-xs text-slate-500">
                             <span>Downloading update</span>
                             <span>{updateStatus.total ? `${updatePercent}%` : 'Preparing...'}</span>
                           </div>
@@ -1886,7 +1968,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
         {saveError && <div role="alert" className="shrink-0 px-8 py-3 text-sm text-amber-300 bg-slate-950">{saveError}</div>}
         {/* Footer */}
         <div className="shrink-0 px-8 py-4 border-t border-slate-900 bg-slate-950/60 flex items-center justify-between">
-          <div className="text-[11px] text-slate-600 flex items-center gap-1.5">
+          <div className="text-xs text-slate-600 flex items-center gap-1.5">
             <RotateCw className="w-3 h-3" />
             Some changes (embedding threads) apply on the next launch.
           </div>
@@ -1933,6 +2015,11 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
           onClick={() => setShowIconPreview(false)}
         >
           <div
+            ref={iconPreviewRef}
+            role="dialog"
+            aria-modal="true"
+            aria-label="App icon preview"
+            tabIndex={-1}
             className="relative bg-panel border border-slate-800 rounded-2xl shadow-2xl flex items-center justify-center p-6"
             style={{ height: 'min(94vh, 94vw)', width: 'min(94vh, 94vw)' }}
             onClick={(e) => e.stopPropagation()}
@@ -1942,6 +2029,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
               onClick={() => setShowIconPreview(false)}
               className="absolute top-3 right-3 text-slate-400 hover:text-slate-200 hover:bg-slate-800 p-1.5 rounded-lg transition-colors"
               title="Close preview"
+              aria-label="Close app icon preview"
             >
               <X className="w-4 h-4" />
             </button>
@@ -1957,27 +2045,49 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
 
       {/* Unsaved-changes guard: blurred backdrop + discard/apply choice */}
       {showUnsaved && (
-        <div className="settings-unsaved-backdrop fixed inset-0 z-[70] flex items-center justify-center backdrop-blur-sm">
-          <div className="settings-unsaved-dialog w-80 border rounded-xl p-5 shadow-2xl">
-            <h3 className="settings-unsaved-title text-sm font-semibold mb-1.5">Unsaved changes</h3>
-            <p className="settings-unsaved-message text-xs leading-relaxed mb-4">
+        <div
+          className="settings-unsaved-backdrop fixed inset-0 z-[70] flex items-center justify-center backdrop-blur-sm"
+          data-closing={unsavedClosing}
+          onMouseDown={(event) => {
+            if (event.button === 0 && event.target === event.currentTarget) closeUnsaved();
+          }}
+        >
+          <div
+            ref={unsavedDialogRef}
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="settings-unsaved-title"
+            aria-describedby="settings-unsaved-message"
+            data-closing={unsavedClosing}
+            className="settings-unsaved-dialog w-80 border rounded-xl p-5 shadow-2xl"
+          >
+            <h3 id="settings-unsaved-title" className="settings-unsaved-title text-sm font-semibold mb-1.5">Unsaved changes</h3>
+            <p id="settings-unsaved-message" className="settings-unsaved-message text-xs leading-relaxed mb-4">
               You have unsaved changes in Settings. What would you like to do?
             </p>
             <div className="flex flex-col gap-2">
               <button
+                type="button"
                 onClick={handleApplyAndClose}
                 className="settings-unsaved-apply w-full text-xs font-semibold px-3 py-2 rounded-lg transition-colors cursor-pointer"
               >
                 Apply changes & close
               </button>
               <button
-                onClick={onClose}
+                type="button"
+                onClick={() => {
+                  setShowUnsaved(false);
+                  restoreUnsavedFocus();
+                  beginClose();
+                }}
                 className="settings-unsaved-discard w-full text-xs px-3 py-2 rounded-lg transition-colors cursor-pointer"
               >
                 Discard changes
               </button>
               <button
-                onClick={() => setShowUnsaved(false)}
+                type="button"
+                data-autofocus
+                onClick={closeUnsaved}
                 className="settings-unsaved-keep w-full text-xs px-3 py-2 transition-colors cursor-pointer"
               >
                 Keep editing

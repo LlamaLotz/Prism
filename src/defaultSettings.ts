@@ -1,5 +1,10 @@
 import type { AppSettings } from './types';
 
+/** Minimum shell opacity that still keeps body text readable over bright wallpapers. */
+export const MIN_LIQUID_GLASS_OPACITY = 0.5;
+/** The text-bearing Gloss surfaces never go below this alpha (keeps muted text >= 4.5:1). */
+export const MIN_LIQUID_GLASS_PANEL_OPACITY = 0.7;
+
 export const DEFAULT_SETTINGS: AppSettings = {
   vaultPath: '',
   ingestionScript: 'python "/Users/Shiver/Documents/Prism/Extractor Final/master_extractor.py" --vault {vault_path}',

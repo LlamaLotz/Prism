@@ -3,6 +3,7 @@ import * as d3 from 'd3';
 import { NoteFile, GraphNode, GraphLink } from '../types';
 import { Network, Home, RotateCw } from 'lucide-react';
 import { mixHex, hexToRgba } from '../utils/accentColor';
+import { usePrefersReducedMotion } from '../utils/usePrefersReducedMotion';
 
 // Path normalization: link endpoints come from raw [[wiki-link]] text and
 // note paths (Windows `\` separators, `.md` suffixes, mixed casing) while D3
@@ -72,6 +73,10 @@ export const GraphView: React.FC<GraphViewProps> = ({
   const containerRef = useRef<HTMLDivElement | null>(null);
   const zoomBehaviorRef = useRef<d3.ZoomBehavior<SVGSVGElement, unknown> | null>(null);
   const simulationRef = useRef<d3.Simulation<any, any> | null>(null);
+  const prefersReducedMotion = usePrefersReducedMotion();
+  const reduceMotionRef = useRef(prefersReducedMotion);
+  reduceMotionRef.current = prefersReducedMotion;
+  const motionDuration = (duration: number) => (reduceMotionRef.current ? 0 : duration);
   // Latest fit-all-nodes function, exposed for the header reset button so it
   // can refit once its re-animation settles.
   const fitAllNodesRef = useRef<() => void>(() => {});
@@ -317,11 +322,17 @@ export const GraphView: React.FC<GraphViewProps> = ({
       .force('y', d3.forceY(height / 2).strength(0.02));
 
     simulationRef.current = simulation;
+    const reduceMotionAtMount = reduceMotionRef.current;
 
-    // Pre-warm physics for 40 ticks so layout spreads before initial paint
-    for (let i = 0; i < 40; ++i) {
+    // Stop the async timer while we pre-warm so the first paint never races the
+    // physics loop. With reduced motion, run the layout to rest synchronously
+    // and leave the graph static instead of animating nodes into place.
+    simulation.stop();
+    const prewarmTicks = reduceMotionAtMount ? 180 : 40;
+    for (let i = 0; i < prewarmTicks; ++i) {
       simulation.tick();
     }
+    if (!reduceMotionAtMount) simulation.restart();
 
     // 4. Draw Link Edges with crisp slate-400 visibility
     const linkElements = gContainer.append('g')
@@ -462,20 +473,20 @@ export const GraphView: React.FC<GraphViewProps> = ({
     nodeElements.on('mouseover', function (this: SVGGElement, _event: any, d: any) {
       d3.select(this).select('circle')
         .transition()
-        .duration(150)
+        .duration(motionDuration(150))
         .attr('r', Math.max(10, Math.min(24, (d.linksCount || 1) * 1.8 + 10)))
         .attr('fill', COLOR_HOVER);
 
       d3.select(this).select('text')
         .transition()
-        .duration(150)
+        .duration(motionDuration(150))
         .attr('font-size', '10px')
         .attr('fill', isLight ? '#0f172a' : '#ffffff');
 
       // Brighten pill background on hover
       d3.select(this).select('rect.node-label-bg')
         .transition()
-        .duration(150)
+        .duration(motionDuration(150))
         .attr('fill', isLight ? 'rgba(255, 255, 255, 0.96)' : 'rgba(45, 45, 55, 0.92)')
         .attr('stroke', isLight ? 'rgba(148, 163, 184, 0.5)' : 'rgba(255, 255, 255, 0.25)');
     })
@@ -484,20 +495,20 @@ export const GraphView: React.FC<GraphViewProps> = ({
       
       d3.select(this).select('circle')
         .transition()
-        .duration(150)
+        .duration(motionDuration(150))
         .attr('r', Math.max(7, Math.min(20, (d.linksCount || 1) * 1.8 + 6)))
         .attr('fill', d.kind==='folder' ? '#a78bfa' : isCurrent ? COLOR_ACTIVE : (d.exists !== false ? COLOR_EXISTS : COLOR_MISSING));
 
       d3.select(this).select('text')
         .transition()
-        .duration(150)
+        .duration(motionDuration(150))
         .attr('font-size', '10px')
         .attr('fill', isCurrent ? textActive : textColor);
 
       // Restore pill background
       d3.select(this).select('rect.node-label-bg')
         .transition()
-        .duration(150)
+        .duration(motionDuration(150))
         .attr('fill', isLight ? 'rgba(241, 245, 249, 0.92)' : 'rgba(30, 30, 36, 0.88)')
         .attr('stroke', isLight ? 'rgba(148, 163, 184, 0.35)' : 'rgba(185, 182, 179, 0.2)');
     });
@@ -567,17 +578,22 @@ export const GraphView: React.FC<GraphViewProps> = ({
         .translate(width / 2 - (minX + bw / 2) * scale, height / 2 - (minY + bh / 2) * scale)
         .scale(scale);
 
-      svg.transition()
-        .duration(600)
-        .ease(d3.easeCubicOut)
-        .call(zoom.transform, transform);
+      const duration = motionDuration(600);
+      if (duration === 0) {
+        svg.call(zoom.transform, transform);
+      } else {
+        svg.transition()
+          .duration(duration)
+          .ease(d3.easeCubicOut)
+          .call(zoom.transform, transform);
+      }
     };
     fitAllNodesRef.current = fitAllNodes;
 
     // Fit immediately once the layout is roughly in place, then again when the
     // simulation settles so the final spread always fits the pane (nodes keep
     // drifting while the physics animate past the first fit).
-    const fitTimer = setTimeout(fitAllNodes, 120);
+    const fitTimer = setTimeout(fitAllNodes, reduceMotionAtMount ? 0 : 120);
     simulation.on('end.fitInitial', () => {
       simulation.on('end.fitInitial', null);
       fitAllNodes();
@@ -655,6 +671,12 @@ export const GraphView: React.FC<GraphViewProps> = ({
   }, [nodeColor, themeMode, activeNote]);
 
   // Header Manual Reset Button
+  // If the OS preference is switched on while a layout is still settling,
+  // freeze it rather than making the user wait out the animation.
+  useEffect(() => {
+    if (prefersReducedMotion) simulationRef.current?.stop();
+  }, [prefersReducedMotion]);
+
   const handleResetGraph = () => {
     localStorage.removeItem(POSITIONS_KEY);
     localStorage.removeItem('prism_graph_zoom');
@@ -664,14 +686,24 @@ export const GraphView: React.FC<GraphViewProps> = ({
     // the middle instead of covering every node.
     fitAllNodesRef.current();
 
-    if (simulationRef.current) {
-      simulationRef.current.alpha(1).restart();
-      // Nodes drift while the re-animation runs — refit once it settles so
-      // the final spread still covers the whole pane.
-      simulationRef.current.on('end.resetFit', () => {
-        simulationRef.current?.on('end.resetFit', null);
+    const simulation = simulationRef.current;
+    if (simulation) {
+      if (reduceMotionRef.current) {
+        // Reduced motion: settle the layout synchronously and keep it still.
+        simulation.stop();
+        simulation.on('end.resetFit', null);
+        simulation.alpha(1);
+        for (let i = 0; i < 180; ++i) simulation.tick();
         fitAllNodesRef.current();
-      });
+      } else {
+        simulation.alpha(1).restart();
+        // Nodes drift while the re-animation runs — refit once it settles so
+        // the final spread still covers the whole pane.
+        simulation.on('end.resetFit', () => {
+          simulationRef.current?.on('end.resetFit', null);
+          fitAllNodesRef.current();
+        });
+      }
     }
   };
 
@@ -686,7 +718,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
           <Network className="w-4 h-4 text-brand-400 shrink-0" />
           <h2 className="text-sm font-semibold text-slate-100">Knowledge Network</h2>
         </div>
-        <div className="graph-header-controls text-[10px] text-slate-500 font-medium flex items-center gap-2">
+        <div className="graph-header-controls text-xs text-slate-500 font-medium flex items-center gap-2">
           {toolbarExtra}
           <span className="graph-hint">Drag to arrange • Scroll to zoom</span>
           <button
@@ -711,7 +743,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
         <svg ref={svgRef} className="w-full h-full block" />
 
         {/* Legend */}
-        <div className="absolute bottom-4 left-4 bg-slate-900/90 border border-slate-800/80 px-3.5 py-2.5 rounded-xl shadow-lg text-[10px] space-y-1.5 backdrop-blur-md z-10">
+        <div className="absolute bottom-4 left-4 bg-slate-900/90 border border-slate-800/80 px-3.5 py-2.5 rounded-xl shadow-lg text-xs space-y-1.5 backdrop-blur-md z-10">
           <span className="font-semibold text-slate-400 block mb-1">GRAPH LEGEND</span>
           <div className="flex items-center gap-2">
             <div className="w-2.5 h-2.5 rounded-full bg-brand-500 border border-white" />

@@ -1,5 +1,5 @@
 import { FolderPicker } from './FolderPicker';
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useId, useRef, useState } from 'react';
 import { X, File, Play, HelpCircle, AlertCircle } from 'lucide-react';
 import { tauriAPI } from '../types';
 import { useDialog } from './DialogProvider';
@@ -26,6 +26,51 @@ export const IngestModal: React.FC<IngestModalProps> = ({
 
   const [folder,setFolder]=useState(initialFolder);
   useEffect(()=>{if(isOpen)setFolder(initialFolder);},[isOpen,initialFolder]);
+
+  const [closing, setClosing] = useState(false);
+  const dialogRef = useRef<HTMLDialogElement | null>(null);
+  const urlInputRef = useRef<HTMLInputElement | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const closeTimerRef = useRef<number | null>(null);
+  const closingRef = useRef(false);
+  const previousFocusRef = useRef<HTMLElement | null>(null);
+  const titleId = useId();
+  const descriptionId = useId();
+
+  const requestClose = () => {
+    if (closingRef.current) return;
+    closingRef.current = true;
+    setClosing(true);
+    closeTimerRef.current = window.setTimeout(() => {
+      closingRef.current = false;
+      setClosing(false);
+      onClose();
+    }, 120);
+  };
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const dialog = dialogRef.current;
+    if (!dialog) return;
+    previousFocusRef.current =
+      document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    if (!dialog.open) dialog.showModal();
+    const focusTimer = window.setTimeout(() => {
+      if (ingestType === 'url') urlInputRef.current?.focus();
+      else fileInputRef.current?.focus();
+    }, 30);
+    return () => {
+      window.clearTimeout(focusTimer);
+      if (dialog.isConnected && dialog.open) dialog.close();
+      if (previousFocusRef.current?.isConnected) previousFocusRef.current.focus();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen]);
+
+  useEffect(() => () => {
+    if (closeTimerRef.current) window.clearTimeout(closeTimerRef.current);
+  }, []);
+
   if (!isOpen) return null;
 
   const handleBrowseFile = async () => {
@@ -54,23 +99,39 @@ export const IngestModal: React.FC<IngestModalProps> = ({
     // Clean fields on successful launch
     setUrlValue('');
     setFilePathValue('');
-    onClose();
+    requestClose();
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
-      <div 
-        className="ingest-modal w-full max-w-lg bg-neutral-900 border border-neutral-800 rounded-xl shadow-2xl flex flex-col animate-in fade-in duration-200"
-        onClick={(e) => e.stopPropagation()}
-      >
+    <dialog
+      ref={dialogRef}
+      className="dialog-root backdrop-blur-sm"
+      aria-modal="true"
+      aria-labelledby={titleId}
+      aria-describedby={descriptionId}
+      data-closing={closing}
+      onCancel={(event) => {
+        event.preventDefault();
+        requestClose();
+      }}
+      onMouseDown={(event) => {
+        if (event.button === 0 && event.target === event.currentTarget) requestClose();
+      }}
+    >
+      <p id={descriptionId} className="sr-only">
+        Import content from a web link or a local document or media file.
+      </p>
+      <div className="dialog-panel ingest-modal w-full max-w-lg bg-neutral-900 border border-neutral-800 rounded-xl shadow-2xl flex flex-col">
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-neutral-800">
-          <h2 className="text-base font-bold text-neutral-100 flex items-center gap-2">
+          <h2 id={titleId} className="text-base font-bold text-neutral-100 flex items-center gap-2">
             <Play className="w-4.5 h-4.5 text-brand-400 fill-current" /> Import content
           </h2>
-          <button 
-            onClick={onClose}
+          <button
+            type="button"
+            onClick={requestClose}
             className="text-neutral-400 hover:text-neutral-200 hover:bg-neutral-800 p-1.5 rounded-lg transition-colors"
+            aria-label="Close import dialog"
           >
             <X className="w-5 h-5" />
           </button>
@@ -111,7 +172,7 @@ export const IngestModal: React.FC<IngestModalProps> = ({
                  <div className="flex bg-neutral-950 border border-neutral-800 rounded-lg p-1 gap-1">
                    <button
                      onClick={() => setYtMethod('yt-dlp')}
-                     className={`px-2 py-1 text-[10px] font-bold rounded transition-all ${
+                     className={`px-2 py-1 text-xs font-bold rounded transition-all ${
                        ytMethod === 'yt-dlp' ? 'bg-neutral-800 text-brand-400' : 'text-neutral-500 hover:text-neutral-300'
                      }`}
                    >
@@ -119,7 +180,7 @@ export const IngestModal: React.FC<IngestModalProps> = ({
                    </button>
                    <button
                      onClick={() => setYtMethod('whisper')}
-                     className={`px-2 py-1 text-[10px] font-bold rounded transition-all ${
+                     className={`px-2 py-1 text-xs font-bold rounded transition-all ${
                        ytMethod === 'whisper' ? 'bg-neutral-800 text-brand-400' : 'text-neutral-500 hover:text-neutral-300'
                      }`}
                    >
@@ -127,11 +188,13 @@ export const IngestModal: React.FC<IngestModalProps> = ({
                    </button>
                  </div>
                </div>
-               <div className="text-[10px] text-neutral-500 mb-1">
+               <div className="text-xs text-neutral-500 mb-1">
                  Enter a YouTube link. Multiple URLs can be entered, separated by commas.
                </div>
                <input
+                 ref={urlInputRef}
                  type="text"
+                 aria-label="YouTube URL(s)"
                  value={urlValue}
                  onChange={(e) => setUrlValue(e.target.value)}
                  placeholder="https://www.youtube.com/watch?v=..."
@@ -142,13 +205,15 @@ export const IngestModal: React.FC<IngestModalProps> = ({
 
             <div className="space-y-4">
               <label className="text-xs font-medium text-slate-400">Select File to Extract</label>
-              <div className="text-[10px] text-slate-500 mb-1">
+              <div className="text-xs text-slate-500 mb-1">
                 Supported formats: PDFs, DOCX, XLSX, PPTX, MP3, WAV, MP4, MOV, PNG, JPG. Documents are layout-parsed via Docling; media is transcribed via Faster-Whisper.
               </div>
               
               <div className="flex gap-2">
                 <input
+                  ref={fileInputRef}
                   type="text"
+                  aria-label="File to extract"
                   value={filePathValue}
                   onChange={(e) => setFilePathValue(e.target.value)}
                   placeholder="Click Browse to select file..."
@@ -174,7 +239,7 @@ export const IngestModal: React.FC<IngestModalProps> = ({
                      <button
                        key={mode.value}
                        onClick={() => setOcrMode(mode.value as 'A' | 'O' | 'N')}
-                       className={`px-2 py-1 text-[10px] font-bold rounded transition-all ${
+                       className={`px-2 py-1 text-xs font-bold rounded transition-all ${
                          ocrMode === mode.value ? 'bg-neutral-800 text-brand-400' : 'text-neutral-500 hover:text-neutral-300'
                        }`}
                      >
@@ -190,7 +255,7 @@ export const IngestModal: React.FC<IngestModalProps> = ({
           {/* Info Badge */}
            <div className="p-3 bg-neutral-950/50 border border-neutral-800 rounded-xl flex gap-2.5">
              <AlertCircle className="w-4 h-4 text-brand-400 shrink-0 mt-0.5" />
-             <div className="text-[10px] text-neutral-400 leading-relaxed">
+             <div className="text-xs text-neutral-400 leading-relaxed">
                <span className="font-semibold text-neutral-300 block mb-0.5">FOLDER SEGREGATION NOTICE:</span>
                Clean markdown notes will be output directly into your selected Prism notes vault. All intermediate metadata, raw transcribing tracks, and downloaded assets are safely kept in your isolated <code className="bg-neutral-900 text-brand-300 px-1 py-0.2 rounded font-mono">raw_service_files</code> directory.
              </div>
@@ -200,12 +265,14 @@ export const IngestModal: React.FC<IngestModalProps> = ({
          {/* Footer */}
          <div className="ingest-modal-footer px-6 py-4 border-t border-neutral-800 bg-neutral-950/30 flex justify-end gap-3 shrink-0">
            <button
-             onClick={onClose}
+             type="button"
+             onClick={requestClose}
              className="px-4 py-2 text-xs font-semibold text-neutral-400 hover:text-neutral-200 hover:bg-neutral-800 rounded-lg transition-colors"
            >
              Cancel
            </button>
            <button
+             type="button"
              onClick={handleStartIngest}
              className="px-4 py-2 bg-gradient-to-r from-brand-500 to-brand-600 hover:from-brand-400 hover:to-brand-500 text-white text-xs font-bold rounded-lg flex items-center gap-1.5 shadow-md shadow-brand-500/10 hover:shadow-brand-500/20 transition-all border border-brand-400/20"
            >
@@ -213,6 +280,6 @@ export const IngestModal: React.FC<IngestModalProps> = ({
            </button>
          </div>
        </div>
-     </div>
+    </dialog>
   );
 };

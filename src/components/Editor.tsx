@@ -2435,7 +2435,7 @@ const sidecarPath = (notePath: string): string => {
             aria-pressed={searchCaseSensitive}
           >
             Aa
-          </button>          <span className="editor-find-count text-[10px] whitespace-nowrap text-center min-w-12 tabular-nums" title={searchTruncated ? 'Showing the first 20,000 matches.' : undefined}>
+          </button>          <span className="editor-find-count text-xs whitespace-nowrap text-center min-w-12 tabular-nums" title={searchTruncated ? 'Showing the first 20,000 matches.' : undefined}>
 
             {searchQuery
               ? `${matches.length ? activeMatchIndex + 1 : 0}/${searchTruncated ? '20,000+' : matches.length}`
@@ -2467,14 +2467,14 @@ const sidecarPath = (notePath: string): string => {
 
       {/* Jump status badge (debug aid for block-link navigation) */}
       {jumpStatus && (
-        <div className="absolute top-16 left-6 z-20 flex items-center gap-1.5 bg-slate-950/95 border border-brand-500/30 rounded-lg shadow-xl px-3 py-1.5 text-[11px] text-brand-300">
+        <div className="absolute top-16 left-6 z-20 flex items-center gap-1.5 bg-slate-950/95 border border-brand-500/30 rounded-lg shadow-xl px-3 py-1.5 text-xs text-brand-300">
           {jumpStatus}
         </div>
       )}
 
       {/* Duplicate local-keyword error */}
       {keywordError && (
-        <div className="absolute top-28 left-6 z-20 flex items-center gap-1.5 bg-red-950/95 border border-red-500/40 rounded-lg shadow-xl px-3 py-1.5 text-[11px] text-red-300">
+        <div className="absolute top-28 left-6 z-20 flex items-center gap-1.5 bg-red-950/95 border border-red-500/40 rounded-lg shadow-xl px-3 py-1.5 text-xs text-red-300">
           <X className="w-3 h-3" /> {keywordError}
         </div>
       )}
@@ -2726,7 +2726,7 @@ const sidecarPath = (notePath: string): string => {
       ) : (
         <button
           onClick={() => toggleLinkHub(true)}
-          className="shrink-0 w-full flex items-center justify-center gap-2 py-1.5 border-t border-slate-900/80 bg-slate-950/30 text-[10px] font-semibold text-slate-500 hover:text-brand-400 transition-colors"
+          className="shrink-0 w-full flex items-center justify-center gap-2 py-1.5 border-t border-slate-900/80 bg-slate-950/30 text-xs font-semibold text-slate-500 hover:text-brand-400 transition-colors"
           title="Show links panel"
         >
           <Link2 className="w-3.5 h-3.5" />
@@ -2790,7 +2790,7 @@ const sidecarPath = (notePath: string): string => {
                 return rows;
               })().map((row) => (
                 <div key={row.label} className="flex items-start justify-between gap-4">
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 shrink-0 pt-0.5">
+                  <span className="text-xs font-bold uppercase tracking-wider text-slate-500 shrink-0 pt-0.5">
                     {row.label}
                   </span>
                   <span className="text-slate-200 text-right break-all min-w-0">
@@ -2813,10 +2813,10 @@ const sidecarPath = (notePath: string): string => {
 
               {/* Full path with copy button */}
               <div className="flex items-center gap-2 pt-1.5 border-t border-slate-800/60">
-                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 shrink-0">
+                <span className="text-xs font-bold uppercase tracking-wider text-slate-500 shrink-0">
                   Full path
                 </span>
-                <span className="text-slate-200 text-right break-all font-mono text-[10px] leading-relaxed min-w-0 flex-1">
+                <span className="text-slate-200 text-right break-all font-mono text-xs leading-relaxed min-w-0 flex-1">
                   {note.path}
                 </span>
                 <button

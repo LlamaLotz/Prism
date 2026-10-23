@@ -113,6 +113,33 @@
   --radius-full: 9999px !important;
 }
 
+/* ========================================================================== */
+/* MATERIAL SYSTEM                                                            */
+/* Components declare a semantic layer (panel / chrome / popover); themes     */
+/* own the fill, edge, blur, specular highlight and shadow. This keeps the    */
+/* shell from accumulating per-component colours, and lets Industrial, Glass  */
+/* and Gloss share one vocabulary.                                            */
+/* ========================================================================== */
+:root {
+  --material-panel-bg: transparent;
+  --material-panel-border: 0 solid transparent;
+  --material-panel-highlight: none;
+  --material-panel-shadow: none;
+  --material-panel-radius: 0px;
+  --material-chrome-bg: transparent;
+  --material-chrome-border: 0 solid transparent;
+  --material-chrome-highlight: none;
+  --material-chrome-shadow: none;
+  --material-chrome-radius: 0px;
+  --material-popover-bg: rgba(255, 255, 255, 0.65);
+  --material-popover-border: 1px solid rgba(255, 255, 255, 0.2);
+  --material-popover-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.45);
+  --material-popover-shadow: 0 20px 40px rgba(0, 0, 0, 0.16);
+  --material-popover-radius: 14px;
+  --material-blur: blur(20px) saturate(160%);
+  --material-saturation: 100%;
+}
+
 /* Base Body Styles */
 html,
 body,
@@ -217,7 +244,13 @@ pre {
 
   button, input, textarea, select {
     border: 1px solid var(--color-border);
-    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    transition:
+      color 140ms cubic-bezier(0.23, 1, 0.32, 1),
+      background-color 140ms cubic-bezier(0.23, 1, 0.32, 1),
+      border-color 140ms cubic-bezier(0.23, 1, 0.32, 1),
+      box-shadow 140ms cubic-bezier(0.23, 1, 0.32, 1),
+      transform 140ms cubic-bezier(0.23, 1, 0.32, 1),
+      opacity 140ms cubic-bezier(0.23, 1, 0.32, 1);
   }
   button:not(:disabled):not(.titlebar-menu):not(.titlebar-menu-dropdown):not(.titlebar-window-control):hover {
     border-color: var(--color-brand-500) !important;
@@ -302,13 +335,13 @@ pre {
 /* Menu dropdowns: shared frosted-glass popover surface. Menu items remain
    borderless and rectangular; only the outer panel carries the curvature. */
 .titlebar-menu-popover {
-  background: rgba(255, 255, 255, 0.65);
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  border-radius: 14px;
+  background: var(--material-popover-bg);
+  border: var(--material-popover-border);
+  border-radius: var(--material-popover-radius);
   overflow: hidden;
-  backdrop-filter: blur(20px) saturate(160%);
-  -webkit-backdrop-filter: blur(20px) saturate(160%);
-  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.16), inset 0 1px 0 rgba(255, 255, 255, 0.45);
+  backdrop-filter: var(--material-blur);
+  -webkit-backdrop-filter: var(--material-blur);
+  box-shadow: var(--material-popover-highlight), var(--material-popover-shadow);
 }
 .titlebar-menu-popover .titlebar-menu-dropdown,
 .titlebar-menu-popover .titlebar-menu-dropdown:hover,
@@ -317,24 +350,22 @@ pre {
   border-radius: 0 !important;
   box-shadow: none !important;
 }
-.theme-industrial .titlebar-menu-popover,
-.theme-glass.mode-dark .titlebar-menu-popover,
-.theme-gloss.mode-dark .titlebar-menu-popover {
-  background: rgba(15, 23, 42, 0.75);
-  border-color: rgba(255, 255, 255, 0.2);
-  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.12);
+.theme-industrial,
+.theme-glass.mode-dark {
+  --material-popover-bg: rgba(15, 23, 42, 0.75);
+  --material-popover-border: 1px solid rgba(255, 255, 255, 0.2);
+  --material-popover-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.12);
+  --material-popover-shadow: 0 20px 40px rgba(0, 0, 0, 0.4);
 }
-.theme-glass .titlebar-menu-popover,
-.theme-gloss .titlebar-menu-popover {
-  border-radius: 14px;
-  overflow: hidden;
-  backdrop-filter: blur(20px) saturate(160%);
-  -webkit-backdrop-filter: blur(20px) saturate(160%);
-}
-.theme-gloss .titlebar-menu-popover {
-  background: var(--color-panel);
-  border-color: rgba(255, 255, 255, 0.12);
-  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.16), inset 0 1px 0 rgba(255, 255, 255, 0.2);
+/* Any component can opt into the shared popover material without knowing the
+   active theme. The titlebar menus use the same tokens through their class. */
+[data-material="popover"] {
+  background: var(--material-popover-bg);
+  border: var(--material-popover-border);
+  border-radius: var(--material-popover-radius);
+  box-shadow: var(--material-popover-highlight), var(--material-popover-shadow);
+  backdrop-filter: var(--material-blur);
+  -webkit-backdrop-filter: var(--material-blur);
 }
 
 
@@ -413,7 +444,7 @@ input[type='range'].hue-slider::-moz-range-thumb {
   border-bottom: 1px solid color-mix(in srgb, var(--color-brand-500) 35%, transparent);
   padding: 1px 4px;
   border-radius: 0;
-  transition: all 0.15s ease;
+  transition: background-color 150ms ease, border-bottom-color 150ms ease;
 }
 .wiki-link:hover {
   background: color-mix(in srgb, var(--color-brand-500) 20%, transparent);
@@ -551,11 +582,18 @@ input[type='range'].hue-slider::-moz-range-thumb {
   -webkit-filter: drop-shadow(0 2px 8px rgba(112, 200, 255, 0.3));
 }
 
-@keyframes logo-float {
-  0%, 100% { transform: translateY(0); }
-  50%      { transform: translateY(-5px); }
+@keyframes splash-logo-in {
+  from { opacity: 0; transform: scale(0.98); }
+  to   { opacity: 1; transform: scale(1); }
 }
-.splash-logo { animation: logo-float 3.2s ease-in-out infinite; }
+.splash-logo {
+  animation: splash-logo-in 240ms cubic-bezier(0.23, 1, 0.32, 1) both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .splash-logo,
+  .splash-in { animation: none; }
+  .splash-screen-container { transition-duration: 150ms; }
+}
 
 
 /* ========================================================================== */
@@ -737,7 +775,7 @@ input[type='range'].hue-slider::-moz-range-thumb {
 /* === 5. LIQUID GLOSS DARK (Pure Neutral Glass) ============================= */
 .theme-gloss.mode-dark {
   --color-base: #121212;
-  --color-panel: rgba(15, 15, 15, 0.35);
+  --color-panel: rgba(15, 15, 15, var(--liquid-glass-panel-opacity, 0.7));
   --color-surface: rgba(255, 255, 255, 0.03);
   --color-surface-hover: rgba(255, 255, 255, 0.08);
   --color-border: rgba(255, 255, 255, 0.32);
@@ -775,19 +813,38 @@ input[type='range'].hue-slider::-moz-range-thumb {
   --backdrop-blur: blur(24px) saturate(140%);
   --glass-border: 1px solid rgba(255, 255, 255, 0.12);
 
+  /* Material layers: static translucent surfaces (no per-panel blur). */
+  --material-panel-bg: var(--color-panel);
+  --material-panel-border: 1px solid rgba(255, 255, 255, 0.12);
+  --material-panel-highlight: inset 0 1px 1px rgba(255, 255, 255, 0.2);
+  --material-panel-shadow: 0 10px 24px rgba(0, 0, 0, 0.2);
+  --material-panel-radius: var(--gloss-panel-radius, 24px);
+  --material-chrome-bg: var(--color-panel);
+  --material-chrome-border: 1px solid rgba(255, 255, 255, 0.12);
+  --material-chrome-highlight: inset 0 1px 1px rgba(255, 255, 255, 0.22);
+  --material-chrome-shadow: 0 8px 18px rgba(0, 0, 0, 0.12);
+  --material-chrome-radius: 9999px;
+  --material-popover-bg: var(--color-panel);
+  --material-popover-border: 1px solid rgba(255, 255, 255, 0.12);
+  --material-popover-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.2);
+  --material-popover-shadow: 0 20px 40px rgba(0, 0, 0, 0.16);
+  --material-popover-radius: 14px;
+  --material-blur: none;
+  --material-saturation: 100%;
+
   color-scheme: dark;
 }
 
 /* === 6. LIQUID GLOSS LIGHT (Pure Neutral Glass) ============================ */
 .theme-gloss.mode-light {
-  --color-base: #eeeeee;
-  --color-panel: rgba(255, 255, 255, 0.08);
+  --color-base: #e7e8eb;
+  --color-panel: rgba(255, 255, 255, 0.62);
   --color-surface: rgba(255, 255, 255, 0.04);
   --color-surface-hover: rgba(255, 255, 255, 0.08);
-  --color-border: rgba(15, 23, 42, 0.2);
+  --color-border: rgba(15, 23, 42, 0.28);
   --color-text-hi: #0f172a;
   --color-text-body: #1e293b;
-  --color-text-muted: #64748b;
+  --color-text-muted: #475569;
 
   --color-slate-50: #171717;
   --color-slate-100: #262626;
@@ -818,6 +875,26 @@ input[type='range'].hue-slider::-moz-range-thumb {
   --glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.08);
   --backdrop-blur: blur(24px) saturate(140%);
   --glass-border: 1px solid rgba(255, 255, 255, 0.12);
+
+  /* Light material edges must be dark enough to survive on a near-white
+     canvas; a white hairline here would disappear. */
+  --material-panel-bg: var(--color-panel);
+  --material-panel-border: 1px solid rgba(15, 23, 42, 0.22);
+  --material-panel-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.9);
+  --material-panel-shadow: 0 1px 2px rgba(15, 23, 42, 0.08), 0 12px 32px rgba(15, 23, 42, 0.1);
+  --material-panel-radius: var(--gloss-panel-radius, 24px);
+  --material-chrome-bg: var(--color-panel);
+  --material-chrome-border: 1px solid rgba(15, 23, 42, 0.22);
+  --material-chrome-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.9);
+  --material-chrome-shadow: 0 1px 2px rgba(15, 23, 42, 0.08), 0 8px 18px rgba(15, 23, 42, 0.08);
+  --material-chrome-radius: 9999px;
+  --material-popover-bg: var(--color-panel);
+  --material-popover-border: 1px solid rgba(15, 23, 42, 0.22);
+  --material-popover-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.9);
+  --material-popover-shadow: 0 20px 40px rgba(15, 23, 42, 0.12);
+  --material-popover-radius: 14px;
+  --material-blur: none;
+  --material-saturation: 100%;
 
   color-scheme: light;
 }
@@ -1026,10 +1103,11 @@ button.titlebar-menu-dropdown:hover {
   box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.08);
 }
 
-/* Glass theme: focus ring — static 1.5px accent border + faint glow */
-.theme-glass *:focus-visible {
-  outline: none;
-  box-shadow: 0 0 0 3px var(--color-hover-glow);
+/* Glass + Gloss: high-contrast focus ring (>=3:1 in both appearances).
+   Focus appearance must be instant; never transition the outline. */
+:is(.theme-glass, .theme-gloss) *:focus-visible {
+  outline: 2px solid var(--color-text-hi) !important;
+  outline-offset: 2px;
 }
 
 /* Glass theme: hairline translucent separators */
@@ -1176,13 +1254,20 @@ button.titlebar-menu-dropdown:hover {
   border-radius: inherit !important;
 }
 .theme-gloss .titlebar-window-control:hover,
-.theme-gloss .titlebar-action:hover,
-.theme-gloss .titlebar-window-control:focus-visible,
-.theme-gloss .titlebar-action:focus-visible {
+.theme-gloss .titlebar-action:hover {
   border: none !important;
   background: rgba(255, 255, 255, 0.08) !important;
   box-shadow: none !important;
   outline: none !important;
+}
+.theme-gloss .titlebar-window-control:focus-visible,
+.theme-gloss .titlebar-action:focus-visible {
+  border: none !important;
+  background: rgba(255, 255, 255, 0.08) !important;
+  outline: none !important;
+  box-shadow:
+    inset 0 0 0 2px var(--color-text-hi),
+    inset 0 0 0 4px rgba(0, 0, 0, 0.55) !important;
 }
 .theme-gloss .titlebar-close-control:hover {
   background: rgba(255, 255, 255, 0.08) !important;
@@ -1192,11 +1277,6 @@ button.titlebar-menu-dropdown:hover {
   border-color: transparent !important;
   box-shadow: none !important;
 }
-.theme-gloss .titlebar-menu-popover {
-  border-radius: 14px !important;
-  overflow: hidden !important;
-}
-
 /* Gloss toggle geometry is finalized in the authoritative switch block at
    the end of this stylesheet. */
 
@@ -1262,6 +1342,77 @@ button.titlebar-menu-dropdown:hover {
 .mode-light .settings-page-overlay {
   background: rgba(246, 247, 249, 0.97);
 }
+
+/* Native modal dialogs: top-layer scrim, focus containment via showModal(),
+   and a short enter/exit that never scales from zero or bounces. */
+dialog.dialog-root {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  width: 100%;
+  max-width: none;
+  height: 100%;
+  max-height: none;
+  margin: 0;
+  padding: 1rem;
+  border: 0;
+  box-sizing: border-box;
+  background: rgba(0, 0, 0, 0.7);
+  color: inherit;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+dialog.dialog-root[open] {
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+}
+.dialog-root .dialog-panel {
+  /* Auto cross-axis margins center the panel when it fits, then collapse to
+     zero so tall dialogs start at the top and remain fully scrollable. */
+  margin-block: auto;
+}
+dialog.dialog-root::backdrop {
+  background: transparent;
+}
+.dialog-root {
+  animation: dialog-scrim-in 150ms cubic-bezier(0.23, 1, 0.32, 1) both;
+}
+.dialog-root[data-closing="true"] {
+  animation: dialog-scrim-out 120ms cubic-bezier(0.4, 0, 1, 1) both;
+  pointer-events: none;
+}
+.dialog-panel {
+  animation: dialog-panel-in 180ms cubic-bezier(0.23, 1, 0.32, 1) both;
+}
+.dialog-root[data-closing="true"] .dialog-panel {
+  animation: dialog-panel-out 120ms cubic-bezier(0.4, 0, 1, 1) both;
+}
+.settings-page-overlay {
+  animation: dialog-scrim-in 140ms cubic-bezier(0.23, 1, 0.32, 1) both;
+}
+.settings-page-overlay[data-closing="true"] {
+  animation: dialog-scrim-out 120ms cubic-bezier(0.4, 0, 1, 1) both;
+}
+@keyframes dialog-scrim-in { from { opacity: 0; } }
+@keyframes dialog-scrim-out { to { opacity: 0; } }
+@keyframes dialog-panel-in {
+  from { opacity: 0; transform: translateY(6px) scale(0.97); }
+}
+@keyframes dialog-panel-out {
+  to { opacity: 0; transform: translateY(4px) scale(0.98); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .dialog-root,
+  .settings-page-overlay { animation: dialog-fade-in 100ms linear both; }
+  .dialog-root[data-closing="true"],
+  .settings-page-overlay[data-closing="true"] { animation: dialog-fade-out 100ms linear both; }
+  .dialog-panel { animation: dialog-fade-in 100ms linear both; }
+  .dialog-root[data-closing="true"] .dialog-panel { animation: dialog-fade-out 100ms linear both; }
+}
+@keyframes dialog-fade-in { from { opacity: 0; } }
+@keyframes dialog-fade-out { to { opacity: 0; } }
+
 .settings-page-nav {
   background: rgba(17, 19, 23, 0.92) !important;
 }
@@ -1306,12 +1457,29 @@ button.titlebar-menu-dropdown:hover {
    dark surfaces so the confirmation guard remains readable in both modes. */
 .settings-unsaved-backdrop {
   background: color-mix(in srgb, var(--color-base) 72%, transparent) !important;
+  animation: dialog-scrim-in 140ms cubic-bezier(0.23, 1, 0.32, 1) both;
+}
+.settings-unsaved-backdrop[data-closing="true"] {
+  animation: dialog-scrim-out 100ms cubic-bezier(0.4, 0, 1, 1) both;
 }
 .settings-unsaved-dialog {
   background: var(--nb-overlay) !important;
   border-color: var(--color-border) !important;
   color: var(--color-text-body);
   border-radius: var(--radius-xl, 20px) !important;
+  animation: dialog-panel-in 160ms cubic-bezier(0.23, 1, 0.32, 1) both;
+}
+.settings-unsaved-backdrop[data-closing="true"] .settings-unsaved-dialog {
+  animation: dialog-panel-out 100ms cubic-bezier(0.4, 0, 1, 1) both;
+  pointer-events: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .settings-unsaved-backdrop { animation: dialog-fade-in 100ms linear both; }
+  .settings-unsaved-backdrop[data-closing="true"] { animation: dialog-fade-out 100ms linear both; }
+  .settings-unsaved-dialog { animation: dialog-fade-in 100ms linear both; }
+  .settings-unsaved-backdrop[data-closing="true"] .settings-unsaved-dialog {
+    animation: dialog-fade-out 100ms linear both;
+  }
 }
 .settings-unsaved-title {
   color: var(--color-text-hi) !important;
@@ -1351,14 +1519,15 @@ button.titlebar-menu-dropdown:hover {
    at the end of this stylesheet. */
 
 /* Gloss: titlebar is a floating frosted header */
-.theme-gloss .liquid-gloss-header {
+.theme-gloss .liquid-gloss-header,
+.theme-gloss [data-material="chrome"] {
   position: relative;
   z-index: 2;
   margin: 8px 8px 0;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 9999px !important;
-  background: var(--color-panel);
-  box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.22), 0 8px 18px rgba(0, 0, 0, 0.12);
+  border: var(--material-chrome-border);
+  border-radius: var(--material-chrome-radius) !important;
+  background: var(--material-chrome-bg);
+  box-shadow: var(--material-chrome-highlight), var(--material-chrome-shadow);
 }
 .theme-gloss .liquid-gloss-header button.titlebar-menu,
 .theme-gloss .liquid-gloss-header [class*="titlebar"] button {
@@ -1407,11 +1576,6 @@ button.titlebar-menu-dropdown:hover {
 .theme-gloss button:not(:disabled):active:not(:where(.study-workspace *, .study-assistant *, .prism-navigation-menu *, .pdf-reader *)) {
   box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.06);
 }
-.theme-gloss *:focus-visible {
-  outline: none;
-  box-shadow: 0 0 0 3px var(--accent-glow);
-}
-
 /* Gloss: hairline separators */
 .theme-gloss .border-slate-900\/60,
 .theme-gloss .border-slate-800\/60,
@@ -1482,20 +1646,16 @@ html.theme-gloss {
   display: none !important;
 }
 
-/* Gloss surfaces use the reusable SVG displacement/specular pipeline. The
-   editor scroll tree is excluded below so note scrolling stays compositor-fast. */
-.theme-gloss .liquid-gloss-surface {
+/* Gloss surfaces use static translucent fills. The editor scroll tree is
+   excluded below so note scrolling stays compositor-fast. */
+.theme-gloss .liquid-gloss-surface,
+.theme-gloss [data-material="panel"] {
   position: relative;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  background: var(--color-panel);
-  box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.22), 0 10px 24px rgba(0, 0, 0, 0.12);
-  border-radius: var(--gloss-panel-radius, 24px);
+  border: var(--material-panel-border);
+  background: var(--material-panel-bg);
+  box-shadow: var(--material-panel-highlight), var(--material-panel-shadow);
+  border-radius: var(--material-panel-radius);
   overflow: hidden;
-}
-.theme-gloss.mode-dark .liquid-gloss-surface {
-  border-color: rgba(255, 255, 255, 0.12);
-  background: rgba(15, 15, 15, var(--liquid-glass-opacity, 0.62));
-  box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.2), 0 10px 24px rgba(0, 0, 0, 0.2);
 }
 .theme-gloss .liquid-gloss-surface::before,
 .theme-gloss .liquid-gloss-surface::after {
@@ -1824,6 +1984,57 @@ button[role="tab"][aria-selected="true"]:not(:where(.study-workspace *, .study-a
   color: var(--color-text-body) !important;
 }
 
+/* macOS-style traffic lights. These are in-app controls (the frameless Tauri
+   window does not expose native traffic lights), but they follow the macOS
+   position, order, colours and hover-reveal affordance. The 12px visual dot
+   has a 24px hit target so it still meets the target-size minimum. */
+.mac-window-controls {
+  -webkit-app-region: no-drag;
+}
+.mac-window-control {
+  position: relative;
+  width: 12px !important;
+  height: 12px !important;
+  min-width: 12px !important;
+  min-height: 12px !important;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 9999px !important;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: inset 0 0 0 0.5px rgba(0, 0, 0, 0.18) !important;
+}
+.mac-window-control::before {
+  content: '';
+  position: absolute;
+  inset: -6px;
+  border-radius: 9999px;
+}
+.mac-window-control > span {
+  opacity: 0;
+  font-size: 12px;
+  line-height: 1;
+  font-weight: 700;
+  color: rgba(0, 0, 0, 0.62);
+  transform: translateY(-0.5px);
+  transition: opacity 100ms ease-out;
+}
+.mac-window-controls:hover .mac-window-control > span,
+.mac-window-control:focus-visible > span {
+  opacity: 1;
+}
+.mac-window-control:focus-visible {
+  outline: 2px solid var(--color-brand-500);
+  outline-offset: 2px;
+}
+.mac-window-close { background: #ff5f57 !important; }
+.mac-window-minimize { background: #febc2e !important; }
+.mac-window-maximize { background: #28c840 !important; }
+@media (prefers-reduced-motion: reduce) {
+  .mac-window-control > span { transition: none; }
+}
+
 /* Inactive tab / segment text in dark panels */
 .tab-inactive,
 .btn-inactive {
@@ -2059,8 +2270,8 @@ button[role="tab"][aria-selected="true"]:not(:where(.study-workspace *, .study-a
 .theme-industrial .status-indicator-dot { border-radius: 50% !important; }
 
 /* Window controls (minimize / maximize / close): flat, square hit targets.
-   Their state is expressed purely as a background colour fill on hover/focus —
-   never a border box, a rounded corner, or the brand glow. */
+   Hover is a background fill; focus gets an inset ring because an outer
+   outline would clip against the window edge or the adjacent titlebar. */
 .titlebar-window-control,
 .theme-glass .titlebar-window-control,
 .theme-gloss .titlebar-window-control,
@@ -2071,13 +2282,19 @@ button[role="tab"][aria-selected="true"]:not(:where(.study-workspace *, .study-a
 }
 .titlebar-window-control:not(:disabled):hover,
 .titlebar-window-control:not(:disabled):active,
-.titlebar-window-control:not(:disabled):focus-visible,
 .theme-glass .titlebar-window-control:hover,
 .theme-gloss .titlebar-window-control:hover,
 .theme-industrial .titlebar-window-control:hover {
   border: 0 !important;
   border-radius: 0 !important;
   box-shadow: none !important;
+}
+.titlebar-window-control:not(:disabled):focus-visible,
+.titlebar-action:not(:disabled):focus-visible {
+  outline: none !important;
+  box-shadow:
+    inset 0 0 0 2px var(--color-text-hi),
+    inset 0 0 0 4px rgba(0, 0, 0, 0.55) !important;
 }
 :is(.theme-glass,.theme-gloss) .liquid-gloss-app { border-radius: var(--app-radius) !important; overflow: hidden; isolation: isolate; clip-path: inset(0 round var(--app-radius)); }
 .window-edge-to-edge { --app-radius: 0px; }
@@ -2095,7 +2312,7 @@ button[role="tab"][aria-selected="true"]:not(:where(.study-workspace *, .study-a
   font-weight: 650;
 }
 button:focus-visible, [role="button"]:focus-visible { outline: 2px solid var(--color-text-hi); outline-offset: 2px; }
-.agent-mode-hint { padding: 6px 12px; color: var(--color-text-body); font-size: 11px; }
+.agent-mode-hint { padding: 6px 12px; color: var(--color-text-body); font-size: 12px; }
 
 /* Navigation is a popover surface, not a themed pill-button group. Portaled so
    workspace overflow and glass stacking contexts cannot clip it. */
@@ -2120,3 +2337,17 @@ html body .prism-navigation-menu .prism-navigation-item:focus {
 }
 html.theme-industrial body .prism-navigation-menu,
 html.theme-industrial body .prism-navigation-item { border-radius: 0 !important; }
+
+/* Ambient CSS motion (selected background environments, drawer entrances)
+   should not loop or slide when the OS asks for reduced motion. */
+@media (prefers-reduced-motion: reduce) {
+  .ingestion-drawer,
+  .prism-bg-solar::before,
+  .prism-bg-clouds::before,
+  .prism-bg-clouds::after {
+    animation: none;
+  }
+  .wiki-link {
+    transition: none;
+  }
+}

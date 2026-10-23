@@ -109,7 +109,7 @@ export const UpdateBanner: React.FC = () => {
           </p>
           {status.state === 'downloading' && (
             <div className="mt-3">
-              <div className="mb-1 flex justify-between text-[11px] text-slate-500">
+              <div className="mb-1 flex justify-between text-xs text-slate-500">
                 <span>Downloading update</span>
                 <span>{status.total ? `${percent}%` : 'Preparing...'}</span>
               </div>

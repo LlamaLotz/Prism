@@ -74,7 +74,7 @@ const AssistantMessage: React.FC<{ content: string }> = ({ content }) => {
         type="button"
         onClick={() => setExpanded((v) => !v)}
         aria-expanded={expanded}
-        className="mt-1.5 inline-flex items-center gap-1 text-[10px] font-semibold text-[var(--nb-focus)] hover:text-[var(--nb-focus)] transition-colors cursor-pointer"
+        className="mt-1.5 inline-flex items-center gap-1 text-xs font-semibold text-[var(--nb-focus)] hover:text-[var(--nb-focus)] transition-colors cursor-pointer"
       >
         {expanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
         {expanded ? 'Show less' : `View response (${content.length} chars)`}
@@ -143,7 +143,7 @@ const ChatLibraryPanel: React.FC<{
           type="button"
           onClick={onNew}
           title="Start a new chat"
-          className="shrink-0 inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-1.5 rounded-lg bg-[var(--nb-card)] border border-[var(--nb-border)] text-[var(--nb-secondary)] hover:bg-[var(--nb-card)] transition-colors cursor-pointer"
+          className="shrink-0 inline-flex items-center gap-1 text-xs font-semibold px-2 py-1.5 rounded-lg bg-[var(--nb-card)] border border-[var(--nb-border)] text-[var(--nb-secondary)] hover:bg-[var(--nb-card)] transition-colors cursor-pointer"
         >
           <Plus className="w-3 h-3" /> New
         </button>
@@ -157,17 +157,17 @@ const ChatLibraryPanel: React.FC<{
               type="button"
               onClick={() => library.setOriginFilter(key === 'all' ? null : key)}
               aria-pressed={active}
-              className={`text-[10px] font-semibold px-2 py-1 rounded-full border transition-colors cursor-pointer ${active ? 'bg-brand-500/10 text-[var(--nb-focus)] border-brand-500/40' : 'text-[var(--nb-secondary)] border-[var(--nb-border)] hover:text-[var(--nb-secondary)]'}`}
+              className={`text-xs font-semibold px-2 py-1 rounded-full border transition-colors cursor-pointer ${active ? 'bg-brand-500/10 text-[var(--nb-focus)] border-brand-500/40' : 'text-[var(--nb-secondary)] border-[var(--nb-border)] hover:text-[var(--nb-secondary)]'}`}
             >
               {label}
             </button>
           );
         })}
-        {library.loading && <span className="text-[10px] text-[var(--nb-secondary)] ml-auto">Loading…</span>}
+        {library.loading && <span className="text-xs text-[var(--nb-secondary)] ml-auto">Loading…</span>}
       </div>
       <div className="flex flex-col gap-1.5 overflow-y-auto min-h-0">
         {!library.sessions.length && !library.loading && (
-          <p className="text-[11px] text-[var(--nb-secondary)] text-center py-6">
+          <p className="text-xs text-[var(--nb-secondary)] text-center py-6">
             {library.search ? 'No chats match your search.' : 'No chats yet. New conversations appear here automatically.'}
           </p>
         )}
@@ -180,7 +180,7 @@ const ChatLibraryPanel: React.FC<{
             >
               <button type="button" onClick={() => onOpen(s)} className="flex-1 min-w-0 text-left cursor-pointer" title={`Open "${s.title}"`}>
                 <div className="text-xs font-medium text-[var(--nb-secondary)] truncate">{s.title}</div>
-                <div className="flex items-center gap-1.5 mt-0.5 text-[9px] text-[var(--nb-secondary)]">
+                <div className="flex items-center gap-1.5 mt-0.5 text-xs text-[var(--nb-secondary)]">
                   <span className={`font-bold uppercase tracking-wide ${s.origin === 'notebook' ? 'text-violet-300/90' : 'text-[var(--nb-focus)]'}`}>
                     {s.origin === 'notebook' ? 'Notebook' : 'AI assistant'}
                   </span>
@@ -638,7 +638,7 @@ export const AISidebar: React.FC<AISidebarProps> = ({
 
           <button
             onClick={startNewChat}
-            className="gloss-text-button ai-reset-button text-[10px] font-semibold text-[var(--nb-secondary)] hover:text-[var(--nb-secondary)] transition-colors"
+            className="gloss-text-button ai-reset-button text-xs font-semibold text-[var(--nb-secondary)] hover:text-[var(--nb-secondary)] transition-colors"
             title="Start a new chat (history is kept in the Library)"
           >
             <Plus className="w-3 h-3" /> New
@@ -661,13 +661,13 @@ export const AISidebar: React.FC<AISidebarProps> = ({
         <div className="ai-integration-warning m-3 p-3 bg-brand-950/20 border border-brand-900/50 rounded-xl flex items-start gap-2.5">
           <AlertTriangle className="w-4 h-4 text-[var(--nb-focus)] shrink-0 mt-0.5" />
           <div className="space-y-1.5">
-            <h4 className="ai-integration-title text-[11px] font-semibold text-[var(--nb-focus)] leading-none">AI Integration Offline</h4>
-            <p className="ai-integration-copy text-[10px] text-[var(--nb-secondary)] leading-relaxed">
+            <h4 className="ai-integration-title text-xs font-semibold text-[var(--nb-focus)] leading-none">AI Integration Offline</h4>
+            <p className="ai-integration-copy text-xs text-[var(--nb-secondary)] leading-relaxed">
               API keys or endpoints are missing. Paste your credentials to enable chat & note analysis.
             </p>
             <button
               onClick={onOpenSettings}
-              className="ai-integration-action text-[10px] font-bold text-[var(--nb-focus)] hover:text-[var(--nb-focus)] flex items-center gap-0.5"
+              className="ai-integration-action text-xs font-bold text-[var(--nb-focus)] hover:text-[var(--nb-focus)] flex items-center gap-0.5"
             >
               Configure Now →
             </button>
@@ -692,7 +692,7 @@ export const AISidebar: React.FC<AISidebarProps> = ({
             </div>
             <div className="space-y-1 max-w-xs mx-auto">
               <h3 className="text-xs font-semibold text-[var(--nb-secondary)]">Ask Prism AI assistant</h3>
-              <p className="text-[10px] text-[var(--nb-secondary)] leading-relaxed">
+              <p className="text-xs text-[var(--nb-secondary)] leading-relaxed">
                 Connect ideas, find links, generate summaries, or chat recursively with your note's context using AI routing.
               </p>
             </div>
@@ -700,38 +700,38 @@ export const AISidebar: React.FC<AISidebarProps> = ({
             {/* Quick Actions drawer if a note is selected */}
             {note && isConfigured && (
               <div className="pt-4 max-w-xs mx-auto space-y-2">
-                <span className="text-[9px] font-bold text-[var(--nb-secondary)] tracking-wider uppercase block text-left">QUICK NOTE ACTIONS</span>
+                <span className="text-xs font-bold text-[var(--nb-secondary)] tracking-wider uppercase block text-left">QUICK NOTE ACTIONS</span>
                 
                 <button
                   onClick={() => runQuickAction('summarize')}
-                  className="w-full bg-[var(--nb-card)] hover:bg-[var(--nb-card)] border border-border text-[11px] text-[var(--nb-secondary)] rounded-lg p-2 flex items-center gap-2 transition-all text-left"
+                  className="w-full bg-[var(--nb-card)] hover:bg-[var(--nb-card)] border border-border text-xs text-[var(--nb-secondary)] rounded-lg p-2 flex items-center gap-2 transition-all text-left"
                 >
                   <BookOpen className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
                   <div>
                     <div className="font-semibold text-[var(--nb-secondary)]">Summarize Note</div>
-                    <div className="text-[9px] text-[var(--nb-secondary)]">Create beautiful summary blocks</div>
+                    <div className="text-xs text-[var(--nb-secondary)]">Create beautiful summary blocks</div>
                   </div>
                 </button>
 
                 <button
                   onClick={() => runQuickAction('connect')}
-                  className="w-full bg-[var(--nb-card)] hover:bg-[var(--nb-card)] border border-border text-[11px] text-[var(--nb-secondary)] rounded-lg p-2 flex items-center gap-2 transition-all text-left"
+                  className="w-full bg-[var(--nb-card)] hover:bg-[var(--nb-card)] border border-border text-xs text-[var(--nb-secondary)] rounded-lg p-2 flex items-center gap-2 transition-all text-left"
                 >
                   <Link2 className="w-3.5 h-3.5 text-[var(--nb-focus)] shrink-0" />
                   <div>
                     <div className="font-semibold text-[var(--nb-secondary)]">Suggest Connections</div>
-                    <div className="text-[9px] text-[var(--nb-secondary)]">Find files to link via [[WikiLinks]]</div>
+                    <div className="text-xs text-[var(--nb-secondary)]">Find files to link via [[WikiLinks]]</div>
                   </div>
                 </button>
 
                 <button
                   onClick={() => runQuickAction('metadata')}
-                  className="w-full bg-[var(--nb-card)] hover:bg-[var(--nb-card)] border border-border text-[11px] text-[var(--nb-secondary)] rounded-lg p-2 flex items-center gap-2 transition-all text-left"
+                  className="w-full bg-[var(--nb-card)] hover:bg-[var(--nb-card)] border border-border text-xs text-[var(--nb-secondary)] rounded-lg p-2 flex items-center gap-2 transition-all text-left"
                 >
                   <Hash className="w-3.5 h-3.5 text-[var(--nb-focus)] shrink-0" />
                   <div>
                     <div className="font-semibold text-[var(--nb-secondary)]">Generate Frontmatter</div>
-                    <div className="text-[9px] text-[var(--nb-secondary)]">Paste tags & YAML headers at top</div>
+                    <div className="text-xs text-[var(--nb-secondary)]">Paste tags & YAML headers at top</div>
                   </div>
                 </button>
               </div>
@@ -745,7 +745,7 @@ export const AISidebar: React.FC<AISidebarProps> = ({
                 key={index} 
                 className={`flex flex-col max-w-[85%] ${isUser ? 'ml-auto items-end' : 'mr-auto items-start'}`}
               >
-                <span className="text-[9px] font-bold text-[var(--nb-secondary)] mb-0.5">
+                <span className="text-xs font-bold text-[var(--nb-secondary)] mb-0.5">
                   {isUser ? 'YOU' : 'PRISM AI'}
                 </span>
 <div 
@@ -759,7 +759,7 @@ export const AISidebar: React.FC<AISidebarProps> = ({
                     {isUser && msg.content}
                  </div>
                  {!isUser && msg.degraded && (
-                   <div className="mt-1 text-[10px] text-amber-400/80 bg-amber-950/20 border border-amber-900/40 rounded-lg px-2 py-1 max-w-full">{msg.degraded}</div>
+                   <div className="mt-1 text-xs text-amber-400/80 bg-amber-950/20 border border-amber-900/40 rounded-lg px-2 py-1 max-w-full">{msg.degraded}</div>
                  )}
                  {!isUser && msg.citations && msg.citations.length > 0 && (
                    <div className="mt-1.5 flex flex-wrap gap-1 max-w-full" aria-label="Retrieved sources">
@@ -768,7 +768,7 @@ export const AISidebar: React.FC<AISidebarProps> = ({
                        const label = c.blockId ? `${c.title}#${c.blockId.slice(0, 6)}` : c.title || c.path.split('/').pop() || c.path;
                        const hover = c.anchor ? `${c.path}#^${c.anchor}` : c.blockId ? `${c.path}#${c.blockId}` : c.path;
                        return (
-                         <span key={ci} className="inline-flex max-w-full gap-1"><button type="button" title={hover} onClick={() => void onOpenSource?.(c).catch(e => showError(e, 'Source is no longer available.'))} className="inline-flex items-center gap-1 text-[10px] font-medium px-2 py-0.5 rounded-full bg-[var(--nb-card)] border border-[var(--nb-border)] text-[var(--nb-secondary)] hover:bg-[var(--nb-card)] cursor-pointer transition-colors">
+                         <span key={ci} className="inline-flex max-w-full gap-1"><button type="button" title={hover} onClick={() => void onOpenSource?.(c).catch(e => showError(e, 'Source is no longer available.'))} className="inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full bg-[var(--nb-card)] border border-[var(--nb-border)] text-[var(--nb-secondary)] hover:bg-[var(--nb-card)] cursor-pointer transition-colors">
                            <FileText className="w-3 h-3 shrink-0" />
                            <span className="truncate max-w-[18ch]">{label}</span>
                          </button>{c.blockId && <button className="runtime-button" aria-label={`Source details: ${c.title}`} onClick={() => documentImports.source(c.blockId!)}>Source</button>}</span>
@@ -784,7 +784,7 @@ export const AISidebar: React.FC<AISidebarProps> = ({
         {/* Thinking / processing status — high-level phases only */}
         {activity && (
           <div className="flex flex-col items-start max-w-[85%] mr-auto">
-            <span className="text-[9px] font-bold text-[var(--nb-secondary)] mb-0.5">PRISM AI</span>
+            <span className="text-xs font-bold text-[var(--nb-secondary)] mb-0.5">PRISM AI</span>
             <div className="bg-[var(--nb-card)] border border-border p-3.5 rounded-2xl rounded-tl-none flex items-center gap-2.5">
               <AiStatusLine phase={phase} activity={activity} />
             </div>
@@ -793,12 +793,12 @@ export const AISidebar: React.FC<AISidebarProps> = ({
 
         {/* Errors display */}
         {error && (
-          <div className="p-3 bg-rose-950/20 border border-rose-900/50 rounded-xl flex items-start gap-2.5 text-rose-300 text-[11px]">
+          <div className="p-3 bg-rose-950/20 border border-rose-900/50 rounded-xl flex items-start gap-2.5 text-rose-300 text-xs">
             <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
             <div className="space-y-1">
               <span className="font-bold leading-none block">Error</span>
               <span>{error.human}</span>
-              <details className="pt-1 text-[10px] text-rose-400/70">
+              <details className="pt-1 text-xs text-rose-400/70">
                 <summary className="cursor-pointer hover:text-rose-300">Raw error</summary>
                 <pre className="mt-1 max-h-28 overflow-auto whitespace-pre-wrap break-words font-mono">{error.raw}</pre>
               </details>
@@ -812,7 +812,7 @@ export const AISidebar: React.FC<AISidebarProps> = ({
             <button
               type="button"
               onClick={() => setStickToBottom(true)}
-              className="inline-flex items-center gap-1 text-[10px] font-semibold px-2.5 py-1 rounded-full bg-[var(--nb-card)] border border-[var(--nb-border)] text-[var(--nb-secondary)] hover:bg-[var(--nb-card)] transition-colors cursor-pointer"
+              className="inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-full bg-[var(--nb-card)] border border-[var(--nb-border)] text-[var(--nb-secondary)] hover:bg-[var(--nb-card)] transition-colors cursor-pointer"
             >
               <ChevronDown className="w-3 h-3" /> Latest
             </button>

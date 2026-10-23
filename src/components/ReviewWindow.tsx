@@ -101,12 +101,12 @@ export const ReviewWindow: React.FC = () => {
           </div>
           <div>
             <h2 className="text-sm font-semibold text-neutral-100">Review Suggested Links</h2>
-            <p className="text-[10px] text-neutral-500 truncate max-w-md">
+            <p className="text-xs text-neutral-500 truncate max-w-md">
               {state.filePath}
             </p>
           </div>
         </div>
-        <span className="text-[11px] font-medium text-neutral-400 bg-neutral-900 border border-neutral-800 px-2 py-1 rounded-lg">
+        <span className="text-xs font-medium text-neutral-400 bg-neutral-900 border border-neutral-800 px-2 py-1 rounded-lg">
           {pendingCount} / {state.mentions.length} selected
         </span>
       </div>
@@ -127,7 +127,7 @@ export const ReviewWindow: React.FC = () => {
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2 mb-1.5">
-                    <span className="text-[10px] font-bold uppercase tracking-wider text-brand-400 bg-brand-500/10 border border-brand-500/20 px-1.5 py-0.5 rounded">
+                    <span className="text-xs font-bold uppercase tracking-wider text-brand-400 bg-brand-500/10 border border-brand-500/20 px-1.5 py-0.5 rounded">
                       {mention.targetNoteId}
                     </span>
                   </div>
@@ -142,8 +142,10 @@ export const ReviewWindow: React.FC = () => {
                   </p>
                 </div>
                 <button
+                  type="button"
+                  aria-pressed={isApproved}
                   onClick={() => setApproved((prev) => ({ ...prev, [i]: !prev[i] }))}
-                  className={`shrink-0 flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-semibold rounded-md border transition-all ${
+                  className={`shrink-0 flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold rounded-md border transition-all ${
                     isApproved
                       ? 'bg-emerald-500/10 border-emerald-500/40 text-emerald-400'
                       : 'bg-neutral-900 border-neutral-800 text-neutral-500 hover:text-neutral-300'

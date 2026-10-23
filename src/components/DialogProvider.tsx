@@ -3,6 +3,7 @@ import React, {
   useCallback,
   useContext,
   useEffect,
+  useId,
   useRef,
   useState,
 } from 'react';
@@ -148,18 +149,6 @@ export const DialogProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
   const value: DialogContextValue = { alert, confirm, prompt };
 
-  // Esc dismisses the active dialog (cancels confirms/prompts).
-  useEffect(() => {
-    if (!current) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape') return;
-      if (current.kind === 'alert') dismissCurrent(current.resolve);
-      else dismissCurrent(current.resolve, current.kind === 'confirm' ? false : null);
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [current, dismissCurrent]);
-
   return (
     <DialogContext.Provider value={value}>
       {children}
@@ -173,29 +162,16 @@ const DialogModal: React.FC<{
   dismiss: (resolve: (value?: any) => void, value?: any) => void;
 }> = ({ request, dismiss }) => {
   const [promptValue, setPromptValue] = useState(request.kind === 'prompt' ? (request.initialValue ?? '') : '');
+  const [closing, setClosing] = useState(false);
+  const dialogRef = useRef<HTMLDialogElement | null>(null);
   const confirmBtnRef = useRef<HTMLButtonElement | null>(null);
+  const cancelBtnRef = useRef<HTMLButtonElement | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
-
-  // Focus the primary control when the modal mounts.
-  useEffect(() => {
-    const t = setTimeout(() => {
-      if (request.kind === 'prompt') inputRef.current?.focus();
-      else confirmBtnRef.current?.focus();
-    }, 30);
-    return () => clearTimeout(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  const handleConfirm = () => {
-    if (request.kind === 'alert') dismiss(request.resolve);
-    else if (request.kind === 'confirm') dismiss(request.resolve, true);
-    else dismiss(request.resolve, promptValue);
-  };
-
-  const handleCancel = () => {
-    if (request.kind === 'alert') dismiss(request.resolve);
-    else dismiss(request.resolve, request.kind === 'confirm' ? false : null);
-  };
+  const closeTimerRef = useRef<number | null>(null);
+  const closingRef = useRef(false);
+  const previousFocusRef = useRef<HTMLElement | null>(null);
+  const titleId = useId();
+  const descriptionId = useId();
 
   const isDanger = request.kind === 'confirm' && !!request.danger;
   const title =
@@ -206,21 +182,73 @@ const DialogModal: React.FC<{
       ? request.confirmLabel
       : 'OK';
 
+  const beginClose = (value?: any) => {
+    if (closingRef.current) return;
+    closingRef.current = true;
+    setClosing(true);
+    closeTimerRef.current = window.setTimeout(() => {
+      dismiss(request.resolve, value);
+    }, 120);
+  };
+
+  const handleConfirm = () => {
+    if (request.kind === 'alert') beginClose();
+    else if (request.kind === 'confirm') beginClose(true);
+    else beginClose(promptValue);
+  };
+
+  const handleCancel = () => {
+    if (request.kind === 'alert') beginClose();
+    else beginClose(request.kind === 'confirm' ? false : null);
+  };
+
+  // showModal() gives us top-layer rendering, background inertness, focus
+  // containment, and native Escape handling. Focus the safe primary control
+  // explicitly; destructive confirms default to Cancel.
+  useEffect(() => {
+    const dialog = dialogRef.current;
+    if (!dialog) return;
+    previousFocusRef.current =
+      document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    if (!dialog.open) dialog.showModal();
+    const focusTimer = window.setTimeout(() => {
+      if (request.kind === 'prompt') inputRef.current?.focus();
+      else if (isDanger) cancelBtnRef.current?.focus();
+      else confirmBtnRef.current?.focus();
+    }, 30);
+    return () => {
+      window.clearTimeout(focusTimer);
+      if (dialog.isConnected && dialog.open) dialog.close();
+      if (previousFocusRef.current?.isConnected) previousFocusRef.current.focus();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => () => {
+    if (closeTimerRef.current) window.clearTimeout(closeTimerRef.current);
+  }, []);
+
   const Icon = request.kind === 'alert' ? AlertCircle : request.kind === 'confirm' ? AlertTriangle : Type;
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4"
-      onMouseDown={(e) => {
+    <dialog
+      ref={dialogRef}
+      className="dialog-root backdrop-blur-sm"
+      role={request.kind === 'alert' || isDanger ? 'alertdialog' : undefined}
+      aria-modal="true"
+      aria-labelledby={titleId}
+      aria-describedby={descriptionId}
+      data-closing={closing}
+      onCancel={(event) => {
+        event.preventDefault();
+        handleCancel();
+      }}
+      onMouseDown={(event) => {
         // Backdrop click = cancel (safe default for destructive actions).
-        if (e.target === e.currentTarget) handleCancel();
+        if (event.button === 0 && event.target === event.currentTarget) handleCancel();
       }}
     >
-      <div
-        className="w-full max-w-md bg-neutral-900 border border-neutral-800 rounded-xl shadow-2xl overflow-hidden select-none"
-        role="dialog"
-        aria-modal="true"
-      >
+      <div className="dialog-panel w-full max-w-md bg-neutral-900 border border-neutral-800 rounded-xl shadow-2xl overflow-hidden">
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-3.5 border-b border-neutral-800">
           <div className="flex items-center gap-2.5 min-w-0">
@@ -235,12 +263,14 @@ const DialogModal: React.FC<{
             >
               <Icon className="w-4 h-4" />
             </div>
-            <h3 className="text-sm font-semibold text-neutral-100 truncate">{title}</h3>
+            <h3 id={titleId} className="text-sm font-semibold text-neutral-100 truncate">{title}</h3>
           </div>
           <button
+            type="button"
             onClick={handleCancel}
             className="p-1 text-neutral-500 hover:text-red-400 hover:bg-neutral-800 rounded-md transition-colors shrink-0"
             title="Dismiss (Esc)"
+            aria-label="Dismiss dialog"
           >
             <X className="w-4 h-4" />
           </button>
@@ -248,12 +278,13 @@ const DialogModal: React.FC<{
 
         {/* Body */}
         <div className="px-5 py-4">
-          <p className="text-[13px] leading-relaxed text-neutral-300 whitespace-pre-wrap break-words">
+          <p id={descriptionId} className="text-[13px] leading-relaxed text-neutral-300 whitespace-pre-wrap break-words">
             {request.message}
           </p>
           {request.kind === 'prompt' && (
             <input
               ref={inputRef}
+              aria-label={title}
               value={promptValue}
               onChange={(e) => setPromptValue(e.target.value)}
               onKeyDown={(e) => {
@@ -268,6 +299,8 @@ const DialogModal: React.FC<{
         {/* Footer */}
         <div className="px-5 py-3.5 border-t border-neutral-800 flex items-center justify-end gap-2 bg-neutral-950/40">
           <button
+            ref={cancelBtnRef}
+            type="button"
             onClick={handleCancel}
             className="px-3 py-1.5 text-xs font-medium rounded-lg border border-neutral-800 text-neutral-400 hover:text-neutral-200 transition-colors"
           >
@@ -275,6 +308,7 @@ const DialogModal: React.FC<{
           </button>
           <button
             ref={request.kind !== 'prompt' ? confirmBtnRef : undefined}
+            type="button"
             onClick={handleConfirm}
             className={`px-3.5 py-1.5 text-xs font-semibold rounded-lg transition-colors ${
               isDanger
@@ -286,6 +320,6 @@ const DialogModal: React.FC<{
           </button>
         </div>
       </div>
-    </div>
+    </dialog>
   );
 };

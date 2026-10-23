@@ -368,7 +368,7 @@ for (const theme of ["industrial", "glass", "gloss"])
       const editor = page.locator('[data-region="editor"]');
       const radius = theme === "industrial" ? 0 : theme === "glass" ? 10 : 12;
       // Selected ink must always accompany its intended accent fill.
-      for (const selector of ['.editor-mode-group button[aria-pressed="true"]', '.linkhub-tabs button[aria-pressed="true"]']) {
+      for (const selector of ['.editor-mode-group button[aria-pressed="true"]', '.linkhub-tabs button[aria-selected="true"]']) {
         const selected = editor.locator(selector);
         if (await selected.count()) {
           expect(await selected.evaluate(el => {

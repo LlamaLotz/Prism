@@ -1,5 +1,5 @@
 import { NoteLink } from './editor/NoteLink';
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import { Sparkles, Zap, Link2, RefreshCw, Info, Check, X, ExternalLink, EyeOff, Eye, ChevronDown, Anchor, Unlink } from 'lucide-react';
 import { NoteFile, WikiLink } from '../types';
 import { LinkMention, BacklinkInfo, DeniedLink } from '../services/linkerService';
@@ -71,10 +71,10 @@ const CARD_CLS =
   'flex items-center gap-2.5 bg-surface border border-border hover:border-brand-500/30 hover:bg-surface-hover p-2 rounded-lg cursor-pointer transition-all';
 
 const APPROVE_CLS =
-  'flex items-center gap-1 px-2 py-1 text-[10px] font-bold rounded-md border transition-all bg-emerald-500/10 border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/20';
+  'flex items-center gap-1 px-2 py-1 text-xs font-bold rounded-md border transition-all bg-emerald-500/10 border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/20';
 
 const DENY_CLS =
-  'flex items-center gap-1 px-2 py-1 text-[10px] font-bold rounded-md border transition-all bg-slate-800/50 border-slate-700 text-slate-400 hover:bg-red-500/10 hover:border-red-500/40 hover:text-red-400';
+  'flex items-center gap-1 px-2 py-1 text-xs font-bold rounded-md border transition-all bg-slate-800/50 border-slate-700 text-slate-400 hover:bg-red-500/10 hover:border-red-500/40 hover:text-red-400';
 
 /** One unified section for every kind of connection to the current note,
  *  differentiated by tag pills and driven by Approve / Deny / Refresh actions.
@@ -113,6 +113,26 @@ export const LinkHub: React.FC<LinkHubProps> = ({
   const [activeTab, setActiveTab] = useState<'active' | 'denied' | 'hidden'>('active');
   // Manual local-keyword entry (hidden from the note, managed here).
   const [keywordInput, setKeywordInput] = useState('');
+  const tabsRef = useRef<HTMLDivElement>(null);
+
+  // Arrow keys move between tabs (WAI-ARIA tabs pattern); the active tab is
+  // the only one in the page tab order, so Tab exits the tablist entirely.
+  const handleTabKeyDown = (event: React.KeyboardEvent<HTMLButtonElement>) => {
+    const order: Array<'active' | 'denied' | 'hidden'> = ['active', 'denied', 'hidden'];
+    const index = order.indexOf(activeTab);
+    let nextIndex: number | null = null;
+    if (event.key === 'ArrowRight') nextIndex = (index + 1) % order.length;
+    else if (event.key === 'ArrowLeft') nextIndex = (index - 1 + order.length) % order.length;
+    else if (event.key === 'Home') nextIndex = 0;
+    else if (event.key === 'End') nextIndex = order.length - 1;
+    if (nextIndex === null) return;
+    event.preventDefault();
+    const next = order[nextIndex];
+    setActiveTab(next);
+    tabsRef.current
+      ?.querySelector<HTMLButtonElement>(`[role="tab"][data-tab="${next}"]`)
+      ?.focus();
+  };
 
   const submitKeyword = () => {
     const kw = keywordInput.trim();
@@ -227,7 +247,7 @@ export const LinkHub: React.FC<LinkHubProps> = ({
     const t = TAG_STYLES[kind];
     return (
       <span
-        className={`shrink-0 inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md border text-[9px] font-bold uppercase tracking-wide ${t.cls}`}
+        className={`shrink-0 inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md border text-xs font-bold uppercase tracking-wide ${t.cls}`}
       >
         {t.icon}
         {t.label}
@@ -263,15 +283,19 @@ export const LinkHub: React.FC<LinkHubProps> = ({
     <div className="linkhub-panel relative h-full flex flex-col overflow-hidden bg-panel rounded-t-2xl">
       <div className="linkhub-header px-6 py-2 border-b border-slate-900/40 flex items-center justify-between shrink-0">
         <div className="linkhub-header-left flex items-center gap-3 min-w-0">
-          <h3 className="text-[11px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5 shrink-0">
+          <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5 shrink-0">
             <Link2 className="w-3.5 h-3.5 text-brand-400" /> Links
           </h3>
-          <div className="seg-control linkhub-tabs flex items-center gap-1" role="tablist" aria-label="Link filters">
+          <div ref={tabsRef} className="seg-control linkhub-tabs flex items-center gap-1" role="tablist" aria-label="Link filters">
             <button
+              type="button"
               role="tab"
+              id="linkhub-tab-active"
+              data-tab="active"
               aria-selected={activeTab === 'active'}
-              aria-pressed={activeTab === 'active'}
+              tabIndex={activeTab === 'active' ? 0 : -1}
               onClick={() => setActiveTab('active')}
+              onKeyDown={handleTabKeyDown}
               className="seg-button"
             >
               Active
@@ -282,10 +306,14 @@ export const LinkHub: React.FC<LinkHubProps> = ({
               </span>
             </button>
             <button
+              type="button"
               role="tab"
+              id="linkhub-tab-denied"
+              data-tab="denied"
               aria-selected={activeTab === 'denied'}
-              aria-pressed={activeTab === 'denied'}
+              tabIndex={activeTab === 'denied' ? 0 : -1}
               onClick={() => setActiveTab('denied')}
+              onKeyDown={handleTabKeyDown}
               className="seg-button"
             >
               Denied
@@ -296,10 +324,14 @@ export const LinkHub: React.FC<LinkHubProps> = ({
               </span>
             </button>
             <button
+              type="button"
               role="tab"
+              id="linkhub-tab-hidden"
+              data-tab="hidden"
               aria-selected={activeTab === 'hidden'}
-              aria-pressed={activeTab === 'hidden'}
+              tabIndex={activeTab === 'hidden' ? 0 : -1}
               onClick={() => setActiveTab('hidden')}
+              onKeyDown={handleTabKeyDown}
               className="seg-button"
             >
               Hidden
@@ -312,11 +344,11 @@ export const LinkHub: React.FC<LinkHubProps> = ({
           </div>
         </div>
         <div className="linkhub-header-actions flex items-center gap-2 shrink-0">
-          {isLoading && <span className="text-[10px] text-slate-500 italic whitespace-nowrap">Scanning…</span>}
+          {isLoading && <span className="text-xs text-slate-500 italic whitespace-nowrap">Scanning…</span>}
           <button
             onClick={onCollapse}
             title="Collapse links panel"
-            className="text-[10px] text-slate-600 hover:text-brand-400 transition-colors shrink-0"
+            className="text-xs text-slate-600 hover:text-brand-400 transition-colors shrink-0"
           >
             <ChevronDown className="w-3.5 h-3.5" />
           </button>
@@ -324,7 +356,7 @@ export const LinkHub: React.FC<LinkHubProps> = ({
             onClick={handleRefresh}
             disabled={isLoading}
             title="Refresh all link types"
-            className="linkhub-refresh inline-flex items-center gap-1.5 px-4 py-1 text-[10px] text-slate-500 hover:text-brand-400 transition-colors disabled:opacity-50 whitespace-nowrap shrink-0"
+            className="linkhub-refresh inline-flex items-center gap-1.5 px-4 py-1 text-xs text-slate-500 hover:text-brand-400 transition-colors disabled:opacity-50 whitespace-nowrap shrink-0"
           >
             <RefreshCw className={`w-3 h-3 ${isLoading ? 'animate-spin' : ''}`} /> Refresh
           </button>
@@ -333,22 +365,27 @@ export const LinkHub: React.FC<LinkHubProps> = ({
 
       {/* Denied tab: dismissed suggestions (keyword/semantic/block), restore */}
       {activeTab === 'denied' && (
-        <div className="px-6 py-3 flex-1 overflow-y-auto">
+        <div
+          role="tabpanel"
+          id="linkhub-panel-denied"
+          aria-labelledby="linkhub-tab-denied"
+          className="px-6 py-3 flex-1 overflow-y-auto"
+        >
           <div className="flex items-center justify-between mb-2 gap-2">
-            <p className="text-[11px] text-slate-500">
+            <p className="text-xs text-slate-500">
               Dismissed suggestions for this note. Restore to bring them back.
             </p>
             {deniedSuggestions.length > 0 && (
               <button
                 onClick={() => deniedSuggestions.forEach((d) => onRestore(d))}
-                className="text-[10px] text-violet-400 hover:text-violet-300 font-semibold shrink-0"
+                className="text-xs text-violet-400 hover:text-violet-300 font-semibold shrink-0"
               >
                 Restore all
               </button>
             )}
           </div>
           {deniedSuggestions.length === 0 ? (
-            <div className="text-[11px] text-slate-500 flex items-center gap-1.5 py-1">
+            <div className="text-xs text-slate-500 flex items-center gap-1.5 py-1">
               <EyeOff className="w-3.5 h-3.5 text-slate-600 shrink-0" />
               <span>
                 {!deniedLoaded ? 'Loading denied links…' : 'No denied suggestions for this note.'}
@@ -367,14 +404,14 @@ export const LinkHub: React.FC<LinkHubProps> = ({
                     <TagPill kind={pillKind} />
                     <span className="flex-1 min-w-0">
                       <span className="block text-xs text-slate-300 truncate">{labelForEntry(d)}</span>
-                      <span className="block text-[9px] text-slate-600 uppercase tracking-wide mt-0.5">
+                      <span className="block text-xs text-slate-600 uppercase tracking-wide mt-0.5">
                         {kind}
                       </span>
                     </span>
                     <button
                       onClick={() => onRestore(d)}
                       title="Restore this suggestion"
-                      className="flex items-center gap-1 px-2 py-1 text-[10px] font-bold rounded-md border transition-all bg-emerald-500/10 border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/20"
+                      className="flex items-center gap-1 px-2 py-1 text-xs font-bold rounded-md border transition-all bg-emerald-500/10 border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/20"
                     >
                       <Eye className="w-3 h-3" /> Restore
                     </button>
@@ -388,22 +425,27 @@ export const LinkHub: React.FC<LinkHubProps> = ({
 
       {/* Hidden tab: hidden applied links (outbound/backlink), restore */}
       {activeTab === 'hidden' && (
-        <div className="px-6 py-3 flex-1 overflow-y-auto">
+        <div
+          role="tabpanel"
+          id="linkhub-panel-hidden"
+          aria-labelledby="linkhub-tab-hidden"
+          className="px-6 py-3 flex-1 overflow-y-auto"
+        >
           <div className="flex items-center justify-between mb-2 gap-2">
-            <p className="text-[11px] text-slate-500">
+            <p className="text-xs text-slate-500">
               Applied links hidden from this list. Restore to show them again.
             </p>
             {hiddenLinks.length > 0 && (
               <button
                 onClick={() => hiddenLinks.forEach((d) => onRestore(d))}
-                className="text-[10px] text-sky-400 hover:text-sky-300 font-semibold shrink-0"
+                className="text-xs text-sky-400 hover:text-sky-300 font-semibold shrink-0"
               >
                 Restore all
               </button>
             )}
           </div>
           {hiddenLinks.length === 0 ? (
-            <div className="text-[11px] text-slate-500 flex items-center gap-1.5 py-1">
+            <div className="text-xs text-slate-500 flex items-center gap-1.5 py-1">
               <EyeOff className="w-3.5 h-3.5 text-slate-600 shrink-0" />
               <span>
                 {!deniedLoaded ? 'Loading hidden links…' : 'No hidden links for this note.'}
@@ -422,14 +464,14 @@ export const LinkHub: React.FC<LinkHubProps> = ({
                     <TagPill kind={pillKind} />
                     <span className="flex-1 min-w-0">
                       <span className="block text-xs text-slate-300 truncate">{labelForEntry(d)}</span>
-                      <span className="block text-[9px] text-slate-600 uppercase tracking-wide mt-0.5">
+                      <span className="block text-xs text-slate-600 uppercase tracking-wide mt-0.5">
                         {kind}
                       </span>
                     </span>
                     <button
                       onClick={() => onRestore(d)}
                       title="Restore this link"
-                      className="flex items-center gap-1 px-2 py-1 text-[10px] font-bold rounded-md border transition-all bg-emerald-500/10 border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/20"
+                      className="flex items-center gap-1 px-2 py-1 text-xs font-bold rounded-md border transition-all bg-emerald-500/10 border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/20"
                     >
                       <Eye className="w-3 h-3" /> Restore
                     </button>
@@ -444,22 +486,27 @@ export const LinkHub: React.FC<LinkHubProps> = ({
       {/* Topics tab removed — topic groups moved to the main Topics view (toolbar) */}
 
       {activeTab === 'active' && (
-        <div className="px-6 py-3 flex-1 overflow-y-auto">
+        <div
+          role="tabpanel"
+          id="linkhub-panel-active"
+          aria-labelledby="linkhub-tab-active"
+          className="px-6 py-3 flex-1 overflow-y-auto"
+        >
         {/* Hidden local keywords: declared as `---keyword---` in the note body,
             hidden from the rendered note, and managed exclusively here. */}
         <div className="mb-4 pb-3 border-b border-slate-900/60">
           <div className="flex items-center justify-between mb-1.5">
-            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
+            <span className="text-xs font-bold uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
               <Zap className="w-3 h-3 text-amber-400" /> Keywords
             </span>
-            <span className="text-[9px] text-slate-600 italic">hidden from the note</span>
+            <span className="text-xs text-slate-600 italic">hidden from the note</span>
           </div>
           {keywords.length > 0 ? (
             <div className="flex flex-wrap gap-1.5">
               {keywords.map((kw) => (
                 <span
                   key={kw.toLowerCase()}
-                  className="keyword-pill inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border bg-amber-500/10 border-amber-500/30 text-amber-300 text-[10px] font-semibold overflow-hidden"
+                  className="keyword-pill inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border bg-amber-500/10 border-amber-500/30 text-amber-300 text-xs font-semibold overflow-hidden"
                 >
                   {kw}
                   <button
@@ -473,7 +520,7 @@ export const LinkHub: React.FC<LinkHubProps> = ({
               ))}
             </div>
           ) : (
-            <p className="text-[10px] text-slate-600">
+            <p className="text-xs text-slate-600">
               No keywords yet. Add one below to tag this note locally.
             </p>
           )}
@@ -485,12 +532,12 @@ export const LinkHub: React.FC<LinkHubProps> = ({
                 if (e.key === 'Enter') submitKeyword();
               }}
               placeholder="Add keyword… (e.g. productivity)"
-              className="linkhub-keyword-input flex-1 min-w-0 bg-slate-950/70 border border-slate-800 rounded-md px-2 py-1 text-[11px] text-slate-200 placeholder:text-slate-600 outline-none focus:border-amber-500/40 transition-colors"
+              className="linkhub-keyword-input flex-1 min-w-0 bg-slate-950/70 border border-slate-800 rounded-md px-2 py-1 text-xs text-slate-200 placeholder:text-slate-600 outline-none focus:border-amber-500/40 transition-colors"
             />
             <button
               onClick={submitKeyword}
               title="Add a hidden local keyword to this note"
-              className="linkhub-add flex items-center gap-1 px-2.5 py-1 text-[10px] font-bold rounded-md border transition-all"
+              className="linkhub-add flex items-center gap-1 px-2.5 py-1 text-xs font-bold rounded-md border transition-all"
             >
               <Check className="w-3 h-3" /> Add
             </button>
@@ -498,18 +545,18 @@ export const LinkHub: React.FC<LinkHubProps> = ({
         </div>
 
         {error ? (
-          <div className="text-[11px] text-slate-500 flex items-start gap-1.5 py-1">
+          <div className="text-xs text-slate-500 flex items-start gap-1.5 py-1">
             <Info className="w-3.5 h-3.5 text-slate-600 shrink-0 mt-0.5" />
             <div className="min-w-0">
               <div>{error.human}</div>
-              <details className="mt-1 text-[10px] text-slate-600">
+              <details className="mt-1 text-xs text-slate-600">
                 <summary className="cursor-pointer hover:text-slate-400">Raw error</summary>
                 <pre className="mt-1 max-h-24 overflow-auto whitespace-pre-wrap break-words font-mono">{error.raw}</pre>
               </details>
             </div>
           </div>
         ) : total === 0 ? (
-          <div className="text-[11px] text-slate-500 flex items-center gap-1.5 py-1">
+          <div className="text-xs text-slate-500 flex items-center gap-1.5 py-1">
             <Link2 className="w-3.5 h-3.5 text-slate-600 shrink-0" />
             <span>
               {deniedEntries.length > 0
@@ -534,7 +581,7 @@ export const LinkHub: React.FC<LinkHubProps> = ({
                   <div className="text-xs font-semibold text-slate-200 truncate">
                     <NoteLink raw={`${l.targetTitle}${l.blockId ? `#${l.blockId}` : ''}`} context={previewContext} />
                   </div>
-                  <div className="text-[10px] text-slate-500 truncate">
+                  <div className="text-xs text-slate-500 truncate">
                     {l.alias
                       ? `Linked via \u201c${l.alias}\u201d`
                       : l.blockId
@@ -548,7 +595,7 @@ export const LinkHub: React.FC<LinkHubProps> = ({
                     onUnlinkLink(l);
                   }}
                   title="Unlink: remove the [[wikilink]] syntax, keep the text"
-                  className="flex items-center gap-1 px-2 py-1 text-[10px] font-bold rounded-md border transition-all bg-slate-800/50 border-slate-700 text-slate-400 hover:bg-amber-500/10 hover:border-amber-500/40 hover:text-amber-400"
+                  className="flex items-center gap-1 px-2 py-1 text-xs font-bold rounded-md border transition-all bg-slate-800/50 border-slate-700 text-slate-400 hover:bg-amber-500/10 hover:border-amber-500/40 hover:text-amber-400"
                 >
                   <Unlink className="w-3 h-3" /> Unlink
                 </button>
@@ -574,7 +621,7 @@ export const LinkHub: React.FC<LinkHubProps> = ({
                     <div className="text-xs font-semibold text-slate-200 truncate">
                       &ldquo;@{m.matchedText}&rdquo;
                     </div>
-                    <div className="text-[10px] text-slate-500 truncate">→ <NoteLink raw={title} context={previewContext}/></div>
+                    <div className="text-xs text-slate-500 truncate">→ <NoteLink raw={title} context={previewContext}/></div>
                   </div>
                   <ActionButtons
                     onApprove={() => onApproveMention(m)}
@@ -591,12 +638,12 @@ export const LinkHub: React.FC<LinkHubProps> = ({
                   <TagPill kind="semantic" />
                   <div className="flex-1 min-w-0">
                     <div className="text-xs font-semibold text-slate-200 truncate"><NoteLink raw={title} context={previewContext}/></div>
-                    <div className="text-[10px] text-slate-500 truncate">
+                    <div className="text-xs text-slate-500 truncate">
                       {Math.round(m.score * 100)}% similar
                     </div>
                     {m.matched_text && (
                       <div
-                        className="mt-1 text-[10px] text-brand-300/80 line-clamp-2 whitespace-normal border-l-2 border-brand-500/40 pl-2 cursor-pointer"
+                        className="mt-1 text-xs text-brand-300/80 line-clamp-2 whitespace-normal border-l-2 border-brand-500/40 pl-2 cursor-pointer"
                         title={
                           m.matched_block_id
                             ? 'Jump to the passage in this note that matched'
@@ -631,10 +678,10 @@ export const LinkHub: React.FC<LinkHubProps> = ({
                   <TagPill kind="block" />
                   <div className="flex-1 min-w-0">
                     <div className="text-xs font-semibold text-slate-200 truncate"><NoteLink raw={title} context={previewContext}/></div>
-                    <div className="text-[10px] text-slate-500 line-clamp-2 whitespace-normal">
+                    <div className="text-xs text-slate-500 line-clamp-2 whitespace-normal">
                       {m.text.split('\n').join(' ')}
                     </div>
-                    <div className="text-[9px] text-indigo-400/70 truncate">
+                    <div className="text-xs text-indigo-400/70 truncate">
                       {Math.round(m.score * 100)}% · #{m.block_id}
                     </div>
                   </div>
@@ -658,7 +705,7 @@ export const LinkHub: React.FC<LinkHubProps> = ({
                 <TagPill kind="backlink" />
                 <div className="flex-1 min-w-0">
                   <div className="text-xs font-semibold text-slate-200 truncate"><NoteLink raw={b.source_title} context={previewContext}/></div>
-                  <div className="text-[10px] text-slate-500 truncate">
+                  <div className="text-xs text-slate-500 truncate">
                     {b.matched_text
                       ? `Mentioned via \u201c${b.matched_text}\u201d \u2014 not linked`
                       : 'Links to this note'}
@@ -672,7 +719,7 @@ export const LinkHub: React.FC<LinkHubProps> = ({
                       onUnlinkLink(mutual);
                     }}
                     title="Unlink: remove the [[wikilink]] syntax, keep the text"
-                    className="flex items-center gap-1 px-2 py-1 text-[10px] font-bold rounded-md border transition-all bg-slate-800/50 border-slate-700 text-slate-400 hover:bg-amber-500/10 hover:border-amber-500/40 hover:text-amber-400"
+                    className="flex items-center gap-1 px-2 py-1 text-xs font-bold rounded-md border transition-all bg-slate-800/50 border-slate-700 text-slate-400 hover:bg-amber-500/10 hover:border-amber-500/40 hover:text-amber-400"
                   >
                     <Unlink className="w-3 h-3" /> Unlink
                   </button>

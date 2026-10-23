@@ -114,7 +114,7 @@ html .study-assistant textarea {
 .study-assistant svg { flex-shrink: 0; }
 
 .study-eyebrow {
-  font-size: 10px;
+  font-size: 12px;
   letter-spacing: 0.12em;
   color: var(--nb-secondary);
 }
@@ -317,7 +317,7 @@ html.theme-industrial .study-divider:is(:hover, :focus-visible)::after {
 .study-reset-layout {
   align-self: flex-end;
   padding: 3px 6px !important;
-  font-size: 10px !important;
+  font-size: 12px !important;
   color: var(--nb-secondary);
   background: transparent !important;
   border: 0 !important;
@@ -348,7 +348,7 @@ html.theme-industrial .study-divider:is(:hover, :focus-visible)::after {
 }
 .study-source small {
   display: block;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--nb-secondary);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -356,7 +356,7 @@ html.theme-industrial .study-divider:is(:hover, :focus-visible)::after {
 }
 .study-source strong {
   display: block;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--nb-text);
 }
 html .study-workspace .study-source-title {
@@ -441,7 +441,7 @@ html .study-workspace .study-material-row:hover:not(:disabled) {
 .study-task-status small {
   display: block;
   margin-top: 3px;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--nb-secondary);
 }
 .study-material-row svg { color: var(--color-brand-400); }
@@ -485,7 +485,7 @@ html .study-workspace .study-material-row:hover:not(:disabled) {
 }
 .study-task-actions button {
   padding: 3px 8px !important;
-  font-size: 11px !important;
+  font-size: 12px !important;
 }
 .study-notice {
   display: flex;
@@ -533,7 +533,7 @@ html .study-workspace .study-material-row:hover:not(:disabled) {
   color: var(--nb-text);
 }
 .study-messages article > strong {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--nb-secondary);
 }
 .study-messages article[data-role='user'] {
@@ -553,7 +553,7 @@ html .study-workspace .study-material-row:hover:not(:disabled) {
   flex-shrink: 0;
   margin: 0 !important;
   padding: 0 14px;
-  font-size: 10px !important;
+  font-size: 12px !important;
   color: var(--nb-secondary);
 }
 
@@ -645,7 +645,7 @@ html .study-menu-body > button:hover:not(:disabled) {
   flex-shrink: 0;
   max-height: 28%;
   padding: 0 0 10px;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--nb-secondary);
   overflow: auto;
 }
@@ -692,7 +692,7 @@ html .study-menu-body > button:hover:not(:disabled) {
   justify-content: space-between;
   gap: 8px;
   padding: 8px 0;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--nb-secondary);
 }
 
@@ -733,7 +733,7 @@ html .study-workspace .study-flashcard {
 }
 .study-card-hint {
   flex-shrink: 0;
-  font-size: 11px;
+  font-size: 12px;
   text-align: center;
   color: var(--nb-secondary);
 }
@@ -793,11 +793,11 @@ html .study-workspace .study-flashcard {
   flex-shrink: 0;
   flex-wrap: wrap;
   gap: 4px;
-  font-size: 10px;
+  font-size: 12px;
 }
 .study-citations button {
   padding: 3px 6px !important;
-  font-size: 10px !important;
+  font-size: 12px !important;
 }
 
 /* --- Slides -------------------------------------------------------------- */
@@ -911,7 +911,7 @@ html .study-workspace .study-flashcard {
 .study-agent-review small { display: block; overflow-wrap: anywhere; }
 .study-agent-review pre {
   max-height: 220px;
-  font-size: 11px;
+  font-size: 12px;
   overflow: auto;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
@@ -946,7 +946,7 @@ html .agent-history-toggle {
   margin: 0;
   padding: 8px 10px !important;
   font: inherit !important;
-  font-size: 11px !important;
+  font-size: 12px !important;
   line-height: 1.4 !important;
   color: var(--nb-text) !important;
   text-align: left !important;
@@ -959,7 +959,7 @@ html .agent-history-toggle {
 html .agent-history-toggle:hover { background: var(--nb-selection) !important; }
 .agent-history-counts {
   margin-left: auto;
-  font-size: 10px !important;
+  font-size: 12px !important;
   font-weight: 400 !important;
   color: var(--nb-secondary) !important;
 }

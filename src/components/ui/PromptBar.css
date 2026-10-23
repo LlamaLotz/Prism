@@ -69,7 +69,7 @@ html .prompt-bar textarea:focus-visible {
   min-width: 0;
 }
 .prompt-bar__context {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--nb-secondary);
   min-width: 0;
   overflow-wrap: anywhere;
@@ -86,7 +86,7 @@ html .prompt-bar__controls button {
   background: var(--nb-panel);
   color: var(--nb-text);
   font: inherit;
-  font-size: 11px;
+  font-size: 12px;
   padding: 6px 8px;
   border-radius: var(--nb-radius-sm) !important;
   box-shadow: none !important;
@@ -139,11 +139,11 @@ html .prompt-bar__controls button:disabled {
 
 .prompt-bar [role='alert'] {
   color: var(--nb-text);
-  font-size: 11px;
+  font-size: 12px;
   overflow-wrap: anywhere;
 }
 .model-picker__error {
-  font-size: 11px;
+  font-size: 12px;
   max-width: 220px;
   color: var(--nb-text) !important;
 }
