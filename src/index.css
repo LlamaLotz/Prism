@@ -1678,9 +1678,11 @@ html.theme-gloss {
   -webkit-backdrop-filter: none !important;
 }
 
-/* Gloss capsules: neutral frosted tracks and dynamic accent states */
-.theme-gloss .liquid-gloss-surface button:not(.titlebar-menu):not(.titlebar-menu-dropdown):not(:where(.study-workspace *, .study-assistant *)),
-.theme-gloss button.rounded-full:not(:where(.study-workspace *, .study-assistant *, .prism-navigation-menu *)) {
+/* Gloss capsules: neutral frosted tracks and dynamic accent states.
+   .linkhub-add is exempt — it's a filled accent primary action (editor.css)
+   and must keep its accent fill + computed contrast ink in every theme. */
+.theme-gloss .liquid-gloss-surface button:not(.linkhub-add):not(.titlebar-menu):not(.titlebar-menu-dropdown):not(:where(.study-workspace *, .study-assistant *)),
+.theme-gloss button.rounded-full:not(.linkhub-add):not(:where(.study-workspace *, .study-assistant *, .prism-navigation-menu *)) {
   background: rgba(255, 255, 255, 0.04);
   border-color: rgba(255, 255, 255, 0.12);
   box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.22);
