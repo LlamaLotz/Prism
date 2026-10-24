@@ -89,12 +89,10 @@ pub fn sync_file(app: &tauri::AppHandle, path: &Path, content: &str) -> Result<(
         return Err("Note is outside the active vault".into());
     }
     let conn = crate::db::init_db(app)?;
-    let (id, changed) = sync(
-        &conn,
-        &scope.vault_id,
-        &canonical.to_string_lossy(),
-        content,
-    )?;
+    // Validate through the canonical path (symlinks must not escape the vault),
+    // but keep the caller's spelling as the identity. Canonicalizing on Windows
+    // produces a `\\?\` verbatim path, which used to become a second note row.
+    let (id, changed) = sync(&conn, &scope.vault_id, &path.to_string_lossy(), content)?;
     if changed {
         emit(app, &conn, &scope.vault_id, "note_changed", &id)?;
     }
@@ -107,6 +105,11 @@ pub fn sync(
     path: &str,
     content: &str,
 ) -> Result<(String, bool), String> {
+    // Every caller uses this as the SQLite identity, so normalize here as the
+    // single choke point. This is what stops a save/move from inserting a
+    // mixed-separator or `\\?\` row alongside the indexed path.
+    let path = crate::path_util::path_id(Path::new(path));
+    let path = path.as_str();
     let tx = rusqlite::Transaction::new_unchecked(conn, rusqlite::TransactionBehavior::Immediate)
         .map_err(|e| e.to_string())?;
     let digest = blocks::hash(content);
@@ -306,7 +309,8 @@ pub fn sync(
 // Record invalidation in the same transaction as a path mutation so snapshots
 // cannot observe the new path with an old revision/event sequence.
 pub(crate) fn record_path_change(c: &Connection, path: &str, kind: &str) -> Result<(), String> {
-    c.execute("UPDATE knowledge_vaults SET revision=revision+1 WHERE id IN (SELECT vault_id FROM knowledge_notes WHERE path=?1 AND deleted=0)", [path]).map_err(|e| e.to_string())?;
+    let path = crate::path_util::path_id(Path::new(path));
+    c.execute("UPDATE knowledge_vaults SET revision=revision+1 WHERE id IN (SELECT vault_id FROM knowledge_notes WHERE path=?1 AND deleted=0)", [&path]).map_err(|e| e.to_string())?;
     c.execute("INSERT INTO knowledge_events(vault_id,kind,entity_id) SELECT vault_id,?2,id FROM knowledge_notes WHERE path=?1 AND deleted=0", params![path,kind]).map_err(|e|e.to_string())?;
     Ok(())
 }
@@ -315,7 +319,8 @@ pub fn publish_path_change(
     c: &Connection,
     path: &str,
 ) -> Result<(), String> {
-    let event = c.query_row("SELECT e.sequence,e.vault_id,e.kind,e.entity_id FROM knowledge_events e JOIN knowledge_notes n ON n.id=e.entity_id WHERE n.path=?1 ORDER BY e.sequence DESC LIMIT 1", [path], |r| Ok(RuntimeEvent {sequence:r.get(0)?,vault_id:r.get(1)?,kind:r.get(2)?,entity_id:r.get(3)?})).optional().map_err(|e| e.to_string())?;
+    let path = crate::path_util::path_id(Path::new(path));
+    let event = c.query_row("SELECT e.sequence,e.vault_id,e.kind,e.entity_id FROM knowledge_events e JOIN knowledge_notes n ON n.id=e.entity_id WHERE n.path=?1 ORDER BY e.sequence DESC LIMIT 1", [&path], |r| Ok(RuntimeEvent {sequence:r.get(0)?,vault_id:r.get(1)?,kind:r.get(2)?,entity_id:r.get(3)?})).optional().map_err(|e| e.to_string())?;
     if let Some(event) = event {
         app.emit("knowledge-event", event)
             .map_err(|e| e.to_string())?;
@@ -323,9 +328,11 @@ pub fn publish_path_change(
     Ok(())
 }
 pub fn move_path(conn: &Connection, old: &str, new: &str) -> Result<(), String> {
+    let old = crate::path_util::path_id(Path::new(old));
+    let new = crate::path_util::path_id(Path::new(new));
     let tx = rusqlite::Transaction::new_unchecked(conn, rusqlite::TransactionBehavior::Immediate)
         .map_err(|e| e.to_string())?;
-    record_path_change(&tx, old, "note_moved")?;
+    record_path_change(&tx, &old, "note_moved")?;
     tx.execute(
         "UPDATE knowledge_notes SET path=?1,revision=revision+1,updated_at=unixepoch() WHERE path=?2",
         params![new, old],
@@ -348,6 +355,8 @@ pub fn move_path(conn: &Connection, old: &str, new: &str) -> Result<(), String> 
     tx.commit().map_err(|e| e.to_string())
 }
 pub fn remove(conn: &Connection, path: &str) -> Result<(), String> {
+    let path = crate::path_util::path_id(Path::new(path));
+    let path = path.as_str();
     let tx = rusqlite::Transaction::new_unchecked(conn, rusqlite::TransactionBehavior::Immediate)
         .map_err(|e| e.to_string())?;
     record_path_change(&tx, path, "note_deleted")?;
@@ -364,6 +373,96 @@ pub fn remove(conn: &Connection, path: &str) -> Result<(), String> {
     .map_err(|e| e.to_string())?;
     tx.commit().map_err(|e| e.to_string())
 }
+
+/// Removes index rows whose stored path is not the canonical path identity.
+///
+/// Older builds wrote the same note as `C:\vault\Note.md`, a mixed-separator
+/// variant, and/or a Windows verbatim `\\?\C:\vault\Note.md`. SQLite's unique
+/// constraint only sees three different strings, so the graph rendered three
+/// notes and synthesized a folder chain from the verbatim path. The full index
+/// that follows this call recreates the single canonical row from disk.
+pub fn reconcile_paths(conn: &Connection, vault_id: &str) -> Result<usize, String> {
+    let rows: Vec<(String, String)> = {
+        let mut stmt = conn
+            .prepare("SELECT id,path FROM knowledge_notes WHERE vault_id=?1")
+            .map_err(|e| e.to_string())?;
+        let rows = stmt
+            .query_map([vault_id], |r| Ok((r.get(0)?, r.get(1)?)))
+            .map_err(|e| e.to_string())?;
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(|e| e.to_string())?
+    };
+    let stale: Vec<(String, String)> = rows
+        .into_iter()
+        .filter(|(_, path)| crate::path_util::path_id(Path::new(path)) != *path)
+        .collect();
+    if stale.is_empty() {
+        return Ok(0);
+    }
+
+    let tx = rusqlite::Transaction::new_unchecked(conn, rusqlite::TransactionBehavior::Immediate)
+        .map_err(|e| e.to_string())?;
+    tx.execute_batch("PRAGMA defer_foreign_keys=ON")
+        .map_err(|e| e.to_string())?;
+
+    for (id, path) in &stale {
+        // Knowledge tables keyed by the note UUID and/or path.
+        tx.execute(
+            "DELETE FROM knowledge_chunk_blocks WHERE note_id=?1 OR note_id=?2",
+            params![id, path],
+        )
+        .map_err(|e| e.to_string())?;
+        tx.execute("DELETE FROM knowledge_fts WHERE note_id=?1", params![id])
+            .map_err(|e| e.to_string())?;
+        tx.execute(
+            "DELETE FROM knowledge_edges WHERE source=?1 OR target_ref=?2",
+            params![id, path],
+        )
+        .map_err(|e| e.to_string())?;
+        tx.execute("DELETE FROM knowledge_blocks WHERE note_id=?1", params![id])
+            .map_err(|e| e.to_string())?;
+        tx.execute(
+            "DELETE FROM knowledge_embedding_provenance WHERE path=?1",
+            params![path],
+        )
+        .map_err(|e| e.to_string())?;
+
+        // Legacy tables keyed by the same path spelling. Deleting the `notes`
+        // row cascades aliases/embeddings/block_embeddings/tags.
+        tx.execute("DELETE FROM notes WHERE id=?1 OR path=?1", params![path])
+            .map_err(|e| e.to_string())?;
+        tx.execute(
+            "DELETE FROM backlinks WHERE source_path=?1 OR target_path=?1",
+            params![path],
+        )
+        .map_err(|e| e.to_string())?;
+        tx.execute(
+            "DELETE FROM links WHERE source=?1 OR target=?1",
+            params![path],
+        )
+        .map_err(|e| e.to_string())?;
+        tx.execute("DELETE FROM denied_links WHERE note_path=?1", params![path])
+            .map_err(|e| e.to_string())?;
+        // Deltas first: note_history_deltas references note_history_base.
+        tx.execute(
+            "DELETE FROM note_history_deltas WHERE note_path=?1",
+            params![path],
+        )
+        .map_err(|e| e.to_string())?;
+        tx.execute(
+            "DELETE FROM note_history_base WHERE note_path=?1",
+            params![path],
+        )
+        .map_err(|e| e.to_string())?;
+
+        tx.execute("DELETE FROM knowledge_notes WHERE id=?1", params![id])
+            .map_err(|e| e.to_string())?;
+    }
+
+    tx.commit().map_err(|e| e.to_string())?;
+    Ok(stale.len())
+}
+
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RuntimeEvent {
@@ -445,6 +544,26 @@ mod tests {
         let b = ids(&c);
         assert_eq!(b, vec![a[2].clone(), a[0].clone(), a[1].clone()]);
     }
+    #[test]
+    fn sync_normalizes_path_identity() {
+        let c = setup();
+        let v = vault(&c, Path::new("/vault")).unwrap();
+        let (id, _) = sync(&c, &v, "/vault/a.md", "Same").unwrap();
+        // An equivalent spelling must update the same row instead of inserting
+        // a second note. This is the check that prevents duplicate graph nodes.
+        let (same, changed) = sync(&c, &v, "/vault/./a.md", "Same").unwrap();
+        assert_eq!(id, same);
+        assert!(!changed);
+        let count: i64 = c
+            .query_row(
+                "SELECT count(*) FROM knowledge_notes WHERE vault_id=?1",
+                [&v],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(count, 1);
+    }
+
     #[test]
     fn duplicates_are_not_silently_retargeted() {
         let c = setup();

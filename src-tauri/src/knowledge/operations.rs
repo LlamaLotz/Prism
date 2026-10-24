@@ -504,6 +504,10 @@ fn reconcile(c: &Connection, scope: &Scope, m: &Mutation, undo: bool) -> Result<
         } else {
             (m.source.as_str(), dest.as_str())
         };
+        // Operations carry filesystem paths; the index keys on canonical ids.
+        let old_id = crate::path_util::path_id(Path::new(old));
+        let new_id = crate::path_util::path_id(Path::new(new));
+        let (old, new) = (old_id.as_str(), new_id.as_str());
         if m.tool == "move_folder" {
             crate::db::rename_folder_paths(c, old, new)?;
         } else {
@@ -544,10 +548,18 @@ fn reconcile(c: &Connection, scope: &Scope, m: &Mutation, undo: bool) -> Result<
         vec![target]
     };
     for root in roots {
+        let root_id = crate::path_util::path_id(Path::new(root));
         let live = snapshot(Path::new(root))?;
-        let mut stmt=c.prepare("SELECT path FROM knowledge_notes WHERE vault_id=?1 AND (path=?2 OR instr(path,?2||'/')=1) AND deleted=0").map_err(persistence)?;
+        let mut stmt=c.prepare("SELECT path FROM knowledge_notes WHERE vault_id=?1 AND (path=?2 OR instr(path,?2||?3)=1) AND deleted=0").map_err(persistence)?;
         let indexed = stmt
-            .query_map(params![scope.vault_id, root], |r| r.get::<_, String>(0))
+            .query_map(
+                params![
+                    scope.vault_id,
+                    root_id,
+                    std::path::MAIN_SEPARATOR.to_string()
+                ],
+                |r| r.get::<_, String>(0),
+            )
             .map_err(persistence)?
             .collect::<Result<Vec<_>, _>>()
             .map_err(persistence)?;

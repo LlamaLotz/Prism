@@ -269,6 +269,18 @@ pub fn index_vault(
 ) -> Result<IndexedVault, String> {
     let scope = crate::knowledge::activate(&app_handle, vault_path)?;
     let vault_root = vault_path.to_path_buf();
+    let vault_root_id = crate::path_util::path_id(&vault_root);
+
+    // Repair rows written by older builds before the scan: a note saved through
+    // `canonicalize` on Windows could exist as `\\?\C:\...`, a mixed-separator
+    // variant, and the native path. Those are three SQLite rows (the unique
+    // constraint compares exact strings) and therefore three graph nodes.
+    // Phase 1 recreates one canonical row for every file on disk.
+    {
+        let conn = db::init_db(&app_handle)?;
+        crate::knowledge::reconcile_paths(&conn, &scope.vault_id)?;
+    }
+
     let paths = collect_markdown_paths(&vault_root);
     let folders = collect_folder_paths(&vault_root);
 
@@ -290,7 +302,10 @@ pub fn index_vault(
             let Ok(content) = std::fs::read_to_string(path) else {
                 return;
             };
-            let path_str = path.to_string_lossy().to_string();
+            // Single canonical spelling for every DB write. `sync` normalizes
+            // too, but the legacy `notes`/tags/backlink tables below use this
+            // value directly.
+            let path_str = crate::path_util::path_id(path);
             let title = path
                 .file_stem()
                 .map(|s| s.to_string_lossy().to_string())
@@ -337,9 +352,12 @@ pub fn index_vault(
             rows.collect::<Result<_, _>>().map_err(|e| e.to_string())?
         };
         for path in paths {
-            if !Path::new(&path).starts_with(&vault_root) {
+            // Compare the canonical identity; a stale row may still be stored
+            // with a mixed-separator or verbatim spelling.
+            let id = crate::path_util::path_id(Path::new(&path));
+            if !Path::new(&id).starts_with(&vault_root_id) {
                 set.insert(path);
-            } else if !set.contains(&path) {
+            } else if !set.contains(&id) {
                 crate::knowledge::remove(&conn, &path)?;
             }
         }
@@ -360,7 +378,7 @@ pub fn index_vault(
                 let Ok(content) = std::fs::read_to_string(path) else {
                     return;
                 };
-                let path_str = path.to_string_lossy().to_string();
+                let path_str = crate::path_util::path_id(path);
 
                 let mentions = linker.find_mentions(&content, Some(&path_str));
                 if db::update_backlinks(conn, &path_str, &mentions, &content).is_err() {
