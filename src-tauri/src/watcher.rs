@@ -137,7 +137,9 @@ fn is_markdown(path: &Path) -> bool {
 
 /// Indexes a created/modified note, rescans its mentions and updates backlinks.
 fn handle_change(app_handle: &AppHandle, path: &Path) {
-    let path_str = path.to_string_lossy().to_string();
+    // Filesystem reads need the native path; every SQLite/event identity uses
+    // the canonical spelling so a watcher event cannot fork a note row.
+    let path_str = crate::path_util::path_id(path);
     let Ok(content) = std::fs::read_to_string(path) else {
         return;
     };
@@ -182,7 +184,7 @@ fn handle_change(app_handle: &AppHandle, path: &Path) {
 
 /// Removes a deleted note from the index and clears its graph edges.
 fn handle_remove(app_handle: &AppHandle, path: &Path) {
-    let path_str = path.to_string_lossy().to_string();
+    let path_str = crate::path_util::path_id(path);
 
     if let Ok(conn) = db::init_db(app_handle) {
         let _ = crate::knowledge::remove(&conn, &path_str);
@@ -210,8 +212,8 @@ fn handle_remove(app_handle: &AppHandle, path: &Path) {
 /// Refactors every `[[Old Title]]` / `[[Old Title|Alias]]` reference across
 /// the vault when a note is renamed, and updates the graph accordingly.
 fn handle_rename(app_handle: &AppHandle, from: &Path, to: &Path) {
-    let old_path = from.to_string_lossy().to_string();
-    let new_path = to.to_string_lossy().to_string();
+    let old_path = crate::path_util::path_id(from);
+    let new_path = crate::path_util::path_id(to);
     let Some(old_title) = from.file_stem().map(|s| s.to_string_lossy().to_string()) else {
         return;
     };

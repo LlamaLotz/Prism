@@ -21,6 +21,7 @@ mod engine;
 mod knowledge;
 pub mod linker;
 pub mod menu;
+mod path_util;
 mod watcher;
 
 use linker::{LinkMention, LinkerEngine, NoteLinker};
@@ -716,6 +717,9 @@ fn write_file(
 ) -> Result<(), String> {
     let _mutation = knowledge::operations::lock()?;
     let path = Path::new(&file_path);
+    // Canonical SQLite identity: the caller may pass `C:/...` or a verbatim
+    // `\\?\C:\...` path, which SQLite treats as distinct from the indexed path.
+    let file_id = path_util::path_id(path);
     knowledge::validate_path(&app_handle, path)?;
     if content.len() as u64 > knowledge::note_io::MAX_NOTE_BYTES {
         return Err("NOTE_TOO_LARGE: Notes are limited to 50 MiB.".into());
@@ -748,8 +752,8 @@ fn write_file(
     // (regex + Aho-Corasick) and makes the graph 1:1 with the vault.
     if let Ok(conn) = db::init_db(&app_handle) {
         if content.len() as usize > engine::embeddings::MAX_EMBED_CHARS {
-            let _ = conn.execute("DELETE FROM backlinks WHERE source_path=?1", [&file_path]);
-            let _ = conn.execute("DELETE FROM links WHERE source=?1", [&file_path]);
+            let _ = conn.execute("DELETE FROM backlinks WHERE source_path=?1", [&file_id]);
+            let _ = conn.execute("DELETE FROM links WHERE source=?1", [&file_id]);
             return Ok(());
         }
         let title = path
@@ -757,11 +761,11 @@ fn write_file(
             .map(|s| s.to_string_lossy().to_string())
             .unwrap_or_default();
         let aliases = watcher::extract_aliases(&content);
-        let _ = db::upsert_note(&conn, &file_path, &title, &file_path, &aliases);
-        let _ = db::sync_note_tags(&conn, &file_path, &content);
+        let _ = db::upsert_note(&conn, &file_id, &title, &file_id, &aliases);
+        let _ = db::sync_note_tags(&conn, &file_id, &content);
 
         let targets = db::extract_applied_links(&content);
-        let _ = db::update_links_flat(&conn, &file_path, &targets);
+        let _ = db::update_links_flat(&conn, &file_id, &targets);
 
         // Oversized notes skip the per-save mention/backlink rescan. Mirrors
         // the frontend's LARGE_NOTE_CHARS gate, which already disables LinkHub
@@ -774,8 +778,8 @@ fn write_file(
                 .and_then(|s| knowledge::dictionary(&conn, &s.vault_id))
             {
                 let linker = cached_linker(&state, dictionary);
-                let mentions = linker.find_mentions(&content, Some(&file_path));
-                let _ = db::update_backlinks(&conn, &file_path, &mentions, &content);
+                let mentions = linker.find_mentions(&content, Some(&file_id));
+                let _ = db::update_backlinks(&conn, &file_id, &mentions, &content);
             }
         }
     }
@@ -860,7 +864,7 @@ fn create_file(
     // watcher re-scan would be duplicate work.
     suppress_self_write(&file_path, SELF_WRITE_MASK_MS);
     fs::write(&file_path, file_content).map_err(|e| e.to_string())?;
-    Ok(file_path.to_string_lossy().to_string())
+    Ok(path_util::path_id(&file_path))
 }
 
 #[tauri::command]
@@ -869,7 +873,7 @@ fn create_folder(vault_path: String, relative_path: String) -> Result<String, St
     let validated_relative_path = validate_vault_relative_path(&relative_path, false)?;
     let dir = Path::new(&vault_path).join(validated_relative_path);
     fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-    Ok(dir.to_string_lossy().to_string())
+    Ok(path_util::path_id(&dir))
 }
 
 #[tauri::command]
@@ -1002,6 +1006,7 @@ fn rename_folder(
 fn delete_file(app_handle: tauri::AppHandle, file_path: String) -> Result<(), String> {
     let _mutation = knowledge::operations::lock()?;
     let path = Path::new(&file_path);
+    let file_id = path_util::path_id(path);
     knowledge::validate_path(&app_handle, path)?;
     if path.exists() {
         // Mask the remove event: the frontend re-indexes immediately after.
@@ -1012,25 +1017,25 @@ fn delete_file(app_handle: tauri::AppHandle, file_path: String) -> Result<(), St
     // graph rows here (notes, backlinks, links, embeddings) — otherwise the
     // deleted note would linger as a ghost node/edge in the graph tab.
     if let Ok(conn) = db::init_db(&app_handle) {
-        knowledge::remove(&conn, &file_path)?;
-        knowledge::publish_path_change(&app_handle, &conn, &file_path)?;
-        let _ = conn.execute("DELETE FROM notes WHERE id = ?1", params![file_path]);
+        knowledge::remove(&conn, &file_id)?;
+        knowledge::publish_path_change(&app_handle, &conn, &file_id)?;
+        let _ = conn.execute("DELETE FROM notes WHERE id = ?1", params![file_id]);
         let _ = conn.execute(
             "DELETE FROM backlinks WHERE source_path = ?1 OR target_path = ?1",
-            params![file_path],
+            params![file_id],
         );
         let _ = conn.execute(
             "DELETE FROM links WHERE source = ?1 OR target = ?1",
-            params![file_path],
+            params![file_id],
         );
         let _ = conn.execute(
             "DELETE FROM denied_links WHERE note_path = ?1",
-            params![file_path],
+            params![file_id],
         );
-        let _ = crate::db::clear_block_embeddings(&conn, &file_path);
+        let _ = crate::db::clear_block_embeddings(&conn, &file_id);
         let _ = conn.execute(
             "DELETE FROM embeddings WHERE note_id = ?1",
-            params![file_path],
+            params![file_id],
         );
     }
     Ok(())
@@ -2099,7 +2104,9 @@ async fn replace_chat_transcript(
     tauri::async_runtime::spawn_blocking(move || {
         let scope = knowledge::current(&app_handle)?;
         let conn = db::init_db(&app_handle)?;
-        if study::managed(&scope, &session_id)? { return Ok(0); }
+        if study::managed(&scope, &session_id)? {
+            return Ok(0);
+        }
         db::chat::replace_messages(&conn, &scope.vault_id, &session_id, &messages)
     })
     .await
@@ -2210,8 +2217,11 @@ async fn web_search(app: tauri::AppHandle, query: String) -> Result<Vec<WebSearc
 pub fn run() {
     #[cfg(target_os = "windows")]
     if std::env::args().any(|arg| arg == "--verify-onnx-runtime") {
-        let result = engine::embeddings::initialize_safely(engine::embeddings::initialize_windows_runtime);
-        if let Err(error) = &result { eprintln!("{error}"); }
+        let result =
+            engine::embeddings::initialize_safely(engine::embeddings::initialize_windows_runtime);
+        if let Err(error) = &result {
+            eprintln!("{error}");
+        }
         std::process::exit(if result.is_ok() { 0 } else { 1 });
     }
 

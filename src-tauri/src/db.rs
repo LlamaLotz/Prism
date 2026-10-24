@@ -533,8 +533,19 @@ pub fn rename_folder_paths(
     old_prefix: &str,
     new_prefix: &str,
 ) -> Result<(), String> {
-    let old_prefix = format!("{}/", old_prefix.trim_end_matches('/'));
-    let new_prefix = format!("{}/", new_prefix.trim_end_matches('/'));
+    // Match the spelling used by every other writer. Appending the native
+    // separator (not a hardcoded `/`) keeps Windows paths in `C:\...` form and
+    // prevents prefix updates from missing mixed-separator rows.
+    let old_prefix = format!(
+        "{}{}",
+        crate::path_util::path_id(Path::new(old_prefix)),
+        std::path::MAIN_SEPARATOR
+    );
+    let new_prefix = format!(
+        "{}{}",
+        crate::path_util::path_id(Path::new(new_prefix)),
+        std::path::MAIN_SEPARATOR
+    );
     let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
     tx.execute_batch("PRAGMA defer_foreign_keys = ON")
         .map_err(|e| e.to_string())?;
@@ -1471,6 +1482,75 @@ mod tests {
                 |r| r.get::<_, i64>(0)
             )
             .unwrap(),
+            0
+        );
+    }
+
+    #[test]
+    fn reconcile_paths_drops_non_canonical_duplicate_rows() {
+        let db = Database::open(":memory:").unwrap();
+        let c = &db.conn;
+        let v = crate::knowledge::vault(c, std::path::Path::new("/vault")).unwrap();
+        let (id, _) = crate::knowledge::sync(c, &v, "/vault/a.md", "canonical").unwrap();
+
+        // Simulate an older build writing the same file under another spelling.
+        let stale = "/vault//a.md";
+        c.execute(
+            "INSERT INTO knowledge_notes(id,vault_id,path,title,hash) \
+             VALUES ('stale',?1,?2,'a','stale-hash')",
+            params![v, stale],
+        )
+        .unwrap();
+        c.execute(
+            "INSERT INTO notes(id,title,path) VALUES (?1,'a',?1)",
+            params![stale],
+        )
+        .unwrap();
+        c.execute(
+            "INSERT INTO knowledge_embedding_provenance VALUES (?1,'note','hash','model')",
+            params![stale],
+        )
+        .unwrap();
+        c.execute(
+            "INSERT INTO backlinks(source_path,target_path) VALUES (?1,'target')",
+            params![stale],
+        )
+        .unwrap();
+
+        assert_eq!(crate::knowledge::reconcile_paths(c, &v).unwrap(), 1);
+
+        let paths: Vec<String> = {
+            let mut stmt = c
+                .prepare("SELECT path FROM knowledge_notes WHERE vault_id=?1 ORDER BY path")
+                .unwrap();
+            let rows = stmt.query_map([&v], |r| r.get(0)).unwrap();
+            rows.map(Result::unwrap).collect()
+        };
+        assert_eq!(paths, vec!["/vault/a.md"]);
+        assert_eq!(
+            c.query_row("SELECT id FROM knowledge_notes WHERE id=?1", [&id], |r| {
+                r.get::<_, String>(0)
+            })
+            .unwrap(),
+            id
+        );
+        assert_eq!(
+            c.query_row("SELECT count(*) FROM notes", [], |r| r.get::<_, i64>(0))
+                .unwrap(),
+            0
+        );
+        assert_eq!(
+            c.query_row(
+                "SELECT count(*) FROM knowledge_embedding_provenance",
+                [],
+                |r| r.get::<_, i64>(0)
+            )
+            .unwrap(),
+            0
+        );
+        assert_eq!(
+            c.query_row("SELECT count(*) FROM backlinks", [], |r| r.get::<_, i64>(0))
+                .unwrap(),
             0
         );
     }
