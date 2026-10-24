@@ -9,7 +9,7 @@ async function cover(page: Page) {
   await page.getByRole('button', { name: 'Choose cover image', exact: true }).click();
   await expect(page.getByRole('dialog', { name: 'Notebook cover' })).toBeVisible();
 }
-for (const theme of ['industrial', 'glass', 'gloss']) for (const mode of ['light', 'dark']) {
+for (const theme of ['industrial', 'gloss']) for (const mode of ['light', 'dark']) {
   test(`card options, focus and covers ${theme} ${mode}`, async ({ page }, info) => {
     await page.goto(`${url}&theme=${theme}&mode=${mode}`);
     await expect(page.getByLabel(`Options for ${title}`)).toBeVisible();

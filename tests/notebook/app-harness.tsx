@@ -48,6 +48,7 @@ const settings = {
   appearance: {
     themeStyle: query.get('theme') || 'industrial',
     themeMode: query.get('mode') || 'dark',
+    liquidGlassOpacity: 0.93,
     // 'notebook' composes the library; any other page composes the AI sidebar
     // (App hides the sidebar on the Notebook page, which owns its own chat).
     startupView: query.get('view') || 'notebook',
@@ -117,6 +118,12 @@ Object.defineProperty(window, '__TAURI_INTERNALS__', {
         case 'find_block_related_notes': return [];
         case 'rename_file': return null;
         case 'get_graph': return { nodes: [{ id: '/vault/A/Note.md', title: 'Note', exists: true }, { id: '/vault/Loose.md', title: 'Loose', exists: true }], links: [{ source: '/vault/A/Note.md', target: '/vault/Loose.md' }] };
+        // Full vault paths exercise withTopics' suffix resolution against the
+        // vault-relative ids produced by noteGraph.
+        case 'get_topic_groups': return [
+          ['research', [['/vault/A/Note.md', 'Note'], ['/vault/Loose.md', 'Loose']]],
+          ['loose', [['/vault/Loose.md', 'Loose']]],
+        ];
         case 'get_ingestion_engine_status': return { engine: 'rust', rustAvailable: true };
         case 'model_service_status': return { state: 'ready', command: '', message: 'Ready' };
         case 'agent_list_tools': return [{ name: 'read_note', description: 'Read a note', requiresApproval: false }];

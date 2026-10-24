@@ -5,7 +5,7 @@ async function review(page:Page,query='') {
  await page.getByRole('button',{name:'Review import',exact:true}).click();
  await expect(page.getByRole('dialog',{name:'Review document import'})).toBeVisible();
 }
-for(const theme of ['industrial','glass','gloss']) for(const mode of ['light','dark']) test(`document review ${theme} ${mode}`,async({page})=>{
+for(const theme of ['industrial','gloss']) for(const mode of ['light','dark']) test(`document review ${theme} ${mode}`,async({page})=>{
  await review(page,`theme=${theme}&mode=${mode}&retained&collapsed`);
  const dialog=page.getByRole('dialog',{name:'Review document import'});
  await expect(page.getByRole('button',{name:'Close import review'})).toBeFocused();

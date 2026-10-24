@@ -1,17 +1,15 @@
 import { test, expect, type Page } from '@playwright/test';
 
 /**
- * The three appearances must be recognisably different, not just legible:
- * Industrial is opaque and square, Liquid Glass is translucent and rounded, and
- * Liquid Gloss is the deepest translucency with the largest radii and a sheen.
- * Frost is carried by static alpha plus a specular edge/sheen, never by a
- * per-element `backdrop-filter` (see the guard in notebook-tokens.css). These
- * assertions read the real rendered surfaces.
+ * The two appearances must be recognisably different, not just legible:
+ * Industrial is opaque and square, while Liquid Gloss is translucent, rounded,
+ * and carries a sheen. Frost is carried by static alpha plus a specular
+ * edge/sheen, never by a per-element `backdrop-filter` (see the guard in
+ * notebook-tokens.css). These assertions read the real rendered surfaces.
  */
 
 const EXPECTED: Record<string, { radius: number; opaque: boolean; shadow: boolean; sheen: boolean }> = {
   industrial: { radius: 0, opaque: true, shadow: false, sheen: false },
-  glass: { radius: 16, opaque: false, shadow: true, sheen: false },
   gloss: { radius: 20, opaque: false, shadow: true, sheen: true },
 };
 
@@ -58,18 +56,16 @@ test.describe('archetype differentiation', () => {
     });
   }
 
-  test('the three archetypes are not interchangeable', async ({ page }) => {
+  test('the two archetypes are not interchangeable', async ({ page }) => {
     const seen: unknown[] = [];
     for (const theme of Object.keys(EXPECTED)) {
       await open(page, theme);
       seen.push(await probe(page));
     }
-    const [industrial, glass, gloss] = seen as Array<{ radius: number; alpha: number; blur: boolean }>;
-    expect(industrial.radius).toBeLessThan(glass.radius);
-    expect(glass.radius).toBeLessThan(gloss.radius);
-    // Translucency deepens archetype by archetype: opaque -> glass -> gloss.
-    expect(industrial.alpha).toBeGreaterThan(glass.alpha);
-    expect(glass.alpha).toBeGreaterThan(gloss.alpha);
+    const [industrial, gloss] = seen as Array<{ radius: number; alpha: number; blur: boolean }>;
+    expect(industrial.radius).toBeLessThan(gloss.radius);
+    // Translucency deepens from opaque Industrial to translucent Liquid Gloss.
+    expect(industrial.alpha).toBeGreaterThan(gloss.alpha);
     expect(seen.some(surface => (surface as { blur: boolean }).blur)).toBe(false);
   });
 
@@ -83,4 +79,33 @@ test.describe('archetype differentiation', () => {
       expect(dark.alpha === 1).toBe(light.alpha === 1);
     }
   });
+});
+
+test('the retired Rounded archetype migrates to Liquid Gloss and persists', async ({ page }) => {
+  // The app fixture serves `theme=glass` through get_runtime_config, so this
+  // exercises the Rust-config migration path in App's settings load.
+  await page.goto('/tests/notebook/app-harness.html?theme=glass&mode=dark&view=graph');
+  await expect(page.locator('.sidebar')).toBeVisible({ timeout: 45000 });
+
+  await expect.poll(() => page.evaluate(() =>
+    document.documentElement.classList.contains('theme-gloss')
+  )).toBe(true);
+  expect(await page.evaluate(() =>
+    document.documentElement.classList.contains('theme-glass')
+  )).toBe(false);
+
+  const saves = await page.evaluate(() =>
+    (window as any).fixtureCalls.filter((call: any) => call.command === 'save_runtime_config')
+  );
+  const migrated = saves.find((call: any) =>
+    call.args?.config?.appearance?.themeStyle === 'gloss'
+  );
+  expect(migrated?.args?.config?.appearance).toMatchObject({
+    themeStyle: 'gloss',
+    themeMode: 'dark',
+    liquidGlassOpacity: 0.93,
+  });
+  expect(saves.some((call: any) =>
+    call.args?.config?.appearance?.themeStyle === 'glass'
+  )).toBe(false);
 });

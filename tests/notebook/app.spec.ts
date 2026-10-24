@@ -34,7 +34,7 @@ const contrast = (page: Page, selector: string) => page.locator(selector).evalua
 });
 
 test.describe('full application composition', () => {
-  for (const theme of ['industrial', 'glass', 'gloss']) for (const mode of ['light', 'dark']) {
+  for (const theme of ['industrial', 'gloss']) for (const mode of ['light', 'dark']) {
     test(`notebook library in the app shell ${theme} ${mode}`, async ({ page }) => {
       test.setTimeout(90000);
       const errors = await boot(page, `?theme=${theme}&mode=${mode}`, page.getByRole('heading', { name: 'Notebooks', exact: true }));
@@ -125,13 +125,22 @@ test.describe('full application composition', () => {
     await page.locator('[data-note-path$="Drafts/Field notes.md"]').click({ button: 'right' });
     await page.getByRole('button', { name: 'Move to folder…', exact: true }).click();
     const move = page.getByRole('dialog', { name: 'Move note to folder' });
-    await move.getByLabel('Vault folder', { exact: true }).selectOption({ label: 'Research' });
+    const folders = move.getByLabel('Vault folder', { exact: true });
+    await folders.getByRole('option', { name: 'Research', exact: true }).click();
     await move.getByRole('button', { name: 'Move note', exact: true }).click();
     await expect(move.getByRole('alert')).toContainText('already exists in that folder');
     await expect(move).toBeVisible();
 
+    // Keyboard navigation starts from the current selection and wraps to the root.
+    const search = move.getByLabel('Search vault folder', { exact: true });
+    await search.focus();
+    await search.press('ArrowDown');
+    await search.press('Enter');
+    await expect(folders.getByRole('option', { name: 'Vault root', exact: true })).toHaveAttribute('aria-selected', 'true');
+    await expect(folders.getByRole('option', { name: 'Research', exact: true })).toHaveAttribute('aria-selected', 'false');
+
     // Moving to the vault root succeeds.
-    await move.getByLabel('Vault folder', { exact: true }).selectOption({ label: 'Vault root' });
+    await folders.getByRole('option', { name: 'Vault root', exact: true }).click();
     await move.getByRole('button', { name: 'Move note', exact: true }).click();
     await expect.poll(() => page.evaluate(() =>
       (window as any).fixtureCalls.find((c: any) => c.command === 'rename_file')?.args.newPath)).toBe('/vault/Field notes.md');

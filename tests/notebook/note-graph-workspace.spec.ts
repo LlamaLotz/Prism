@@ -9,8 +9,16 @@ async function boot(page: Page, theme = 'industrial', mode = 'dark', view = 'edi
   await page.keyboard.press('Control+Shift+A');
 }
 async function note(page: Page) { await page.locator('[data-note-path="/vault/Loose.md"]').click(); }
+const focusChip = (page: Page) => page.locator(`${graph} [data-graph-focus-chip]`);
+async function enableTopics(page: Page) {
+  const show = page.locator(graph).getByRole('button', { name: 'Show graph layers' });
+  await show.click();
+  await page.locator(graph).getByRole('checkbox', { name: 'Topics', exact: true }).check();
+  await show.click();
+  await expect(page.locator(`${graph} .nodes > g[data-node-kind="topic"][data-node-id="topic:research"]`)).toBeVisible();
+}
 
-for (const theme of ['industrial', 'glass', 'gloss']) for (const mode of ['light', 'dark']) {
+for (const theme of ['industrial', 'gloss']) for (const mode of ['light', 'dark']) {
   test(`graph mode button contrast ${theme} ${mode}`, async ({ page }) => {
     await boot(page, theme, mode, 'graph');
     const modes = page.locator(`${graph} .graph-mode-group`);
@@ -200,4 +208,230 @@ test('opening a graph node splits, replacing a note keeps the graph, and 3D foll
   const height = (await canvas.boundingBox())!.height;
   await divider(page).press('ArrowDown');
   await expect.poll(async () => (await canvas.boundingBox())!.height).toBeLessThan(height);
+});
+
+test('graph Show menu toggles folder and topic layers and persists them', async ({ page }) => {
+  test.setTimeout(90000);
+  await boot(page, 'industrial', 'dark', 'graph');
+
+  const folderNodes = page.locator(`${graph} .nodes > g[data-node-kind="folder"]`);
+  const noteNodes = page.locator(`${graph} .nodes > g[data-node-kind="note"]`);
+  const topicResearch = page.locator(`${graph} .nodes > g[data-node-kind="topic"][data-node-id="topic:research"]`);
+  const topicLoose = page.locator(`${graph} .nodes > g[data-node-kind="topic"][data-node-id="topic:loose"]`);
+  const show = page.locator(graph).getByRole('button', { name: 'Show graph layers' });
+
+  // Folders are on by default.
+  await expect(noteNodes.first()).toBeVisible();
+  await expect(folderNodes.first()).toBeVisible();
+  await show.click();
+  const folders = page.locator(graph).getByRole('checkbox', { name: 'Folders', exact: true });
+  const topics = page.locator(graph).getByRole('checkbox', { name: 'Topics', exact: true });
+  await expect(folders).toBeChecked();
+  await expect(topics).not.toBeChecked();
+
+  // Unchecking Folders hides folder nodes immediately and persists.
+  await folders.uncheck();
+  await expect(folderNodes).toHaveCount(0);
+  expect(await page.evaluate(() => localStorage.getItem('prism_graph_folders'))).toBe('false');
+
+  await page.reload();
+  await expect(page.locator('.sidebar')).toBeVisible({ timeout: 45000 });
+  await page.keyboard.press('Control+Shift+A');
+  await expect(noteNodes.first()).toBeVisible();
+  await expect(folderNodes).toHaveCount(0);
+
+  // Enabling Topics adds @tag nodes resolved from full vault paths.
+  await show.click();
+  await expect(folders).not.toBeChecked();
+  await expect(topics).not.toBeChecked();
+  await topics.check();
+  await expect(topicResearch).toBeVisible();
+  await expect(topicLoose).toBeVisible();
+  await expect(topicResearch).toContainText('@research');
+  expect(await page.evaluate(() => localStorage.getItem('prism_graph_topics'))).toBe('true');
+  // The checkbox row click must not dismiss the menu.
+  await expect(topics).toBeChecked();
+  await expect(page.locator(graph).getByRole('menu', { name: 'Show graph layers' })).toBeVisible();
+
+  // Topic activation focuses the tag set: no editor split, no missing-note
+  // dialog, and no Topics view navigation.
+  await page.locator(`${graph} .graph-canvas`).click({ position: { x: 20, y: 20 } });
+  await topicResearch.dispatchEvent('click');
+  await expect(divider(page)).toHaveCount(0);
+  await expect(page.locator(editor)).toBeHidden();
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await expect(page.locator('[data-region="topics"]')).toHaveCount(0);
+
+  await page.reload();
+  await expect(page.locator('.sidebar')).toBeVisible({ timeout: 45000 });
+  await page.keyboard.press('Control+Shift+A');
+  await expect(topicResearch).toBeVisible();
+  await expect(topicLoose).toBeVisible();
+
+  await show.click();
+  await expect(topics).toBeChecked();
+  await topics.uncheck();
+  await expect(topicResearch).toHaveCount(0);
+  await expect(topicLoose).toHaveCount(0);
+  expect(await page.evaluate(() => localStorage.getItem('prism_graph_topics'))).toBe('false');
+});
+
+test('graph header keeps one row and hides the hint by container width', async ({ page }) => {
+  test.setTimeout(90000);
+  await boot(page, 'industrial', 'dark', 'graph');
+
+  const hint = page.locator(`${graph} .graph-hint`);
+  const title = page.locator(`${graph} .graph-header-title`);
+  const controls = page.locator(`${graph} .graph-header-controls`);
+  const showLabel = page.locator(`${graph} .graph-show-label`);
+  const assertOneRow = async () => {
+    const titleBox = (await title.boundingBox())!;
+    const controlsBox = (await controls.boundingBox())!;
+    expect(Math.abs((titleBox.y + titleBox.height / 2) - (controlsBox.y + controlsBox.height / 2))).toBeLessThan(6);
+    expect(titleBox.x + titleBox.width).toBeLessThanOrEqual(controlsBox.x + 2);
+  };
+
+  // Wide pane: the inline hint is visible and the header is one row.
+  await expect(hint).toBeVisible();
+  await assertOneRow();
+
+  // Narrow pane (~436px after the sidebar rail collapses): hint hides, but
+  // title and controls still share a row.
+  await page.setViewportSize({ width: 700, height: 960 });
+  await expect(hint).toBeHidden();
+  expect(await page.locator(graph).evaluate((el) => el.clientWidth)).toBeLessThan(720);
+  await assertOneRow();
+
+  // Very narrow pane: the Show label is icon-only, mode buttons stay compact.
+  await page.setViewportSize({ width: 500, height: 960 });
+  await expect(showLabel).toBeHidden();
+  expect(await page.locator(graph).evaluate((el) => el.clientWidth)).toBeLessThanOrEqual(520);
+  await assertOneRow();
+  const modeWidths = await page.locator(`${graph} .graph-mode-group .seg-button`).evaluateAll((buttons) =>
+    buttons.map((button) => button.getBoundingClientRect().width)
+  );
+  for (const width of modeWidths) expect(width).toBeGreaterThanOrEqual(30);
+  for (const width of modeWidths) expect(width).toBeLessThanOrEqual(36);
+  await expect(page.locator(`${graph}`).getByRole('button', { name: 'Show graph layers' })).toBeVisible();
+});
+
+test('folder hub hover previews and click pins its subtree', async ({ page }) => {
+  test.setTimeout(90000);
+  await boot(page, 'industrial', 'dark', 'graph');
+
+  const folder = page.locator(`${graph} .nodes > g[data-node-id="folder:A"]`);
+  const folderCircle = folder.locator('circle.node-circle');
+  const noteA = page.locator(`${graph} .nodes > g[data-node-id="A/Note.md"]`);
+  const loose = page.locator(`${graph} .nodes > g[data-node-id="Loose.md"]`);
+  const chip = focusChip(page);
+  const status = page.locator('[data-graph-focus-status]');
+  await expect(folderCircle).toBeVisible();
+
+  // Hover is a transient preview of the folder plus its descendants. The
+  // wiki-linked note outside the folder stays dimmed, and previews are silent.
+  await folderCircle.hover();
+  await expect(chip).toContainText('Preview: A');
+  await expect(chip).toHaveAttribute('data-graph-focus-pinned', 'false');
+  expect((await status.textContent())?.trim()).toBe('');
+  await expect.poll(() => noteA.evaluate((el) => getComputedStyle(el).opacity)).toBe('1');
+  await expect.poll(() => loose.evaluate((el) => getComputedStyle(el).opacity)).toBe('0.2');
+
+  // Click pins it; moving the pointer away must not clear the focus.
+  await folderCircle.click();
+  await expect(chip).toContainText('Focus: A');
+  await expect(chip).toHaveAttribute('data-graph-focus-pinned', 'true');
+  await expect(status).toContainText('Graph focus: A');
+  await expect(chip.getByRole('button', { name: 'Clear graph focus' })).toBeVisible();
+  await expect(folder.locator('circle.node-focus-ring')).toHaveAttribute('opacity', '1');
+  await page.mouse.move(5, 5);
+  await expect(chip).toContainText('Focus: A');
+
+  // Clicking the pinned hub again clears it and suppresses the hover preview
+  // until the pointer leaves the hub.
+  await folderCircle.click();
+  await expect(chip).toHaveCount(0);
+  expect((await status.textContent())?.trim()).toBe('');
+  await page.mouse.move(5, 5);
+  await folderCircle.hover();
+  await expect(chip).toContainText('Preview: A');
+});
+
+test('topic hub focus stays a tag set and never navigates', async ({ page }) => {
+  test.setTimeout(90000);
+  await boot(page, 'industrial', 'dark', 'graph');
+  await enableTopics(page);
+
+  const topic = page.locator(`${graph} .nodes > g[data-node-kind="topic"][data-node-id="topic:research"]`);
+  const topicCircle = topic.locator('circle.node-circle');
+  const noteA = page.locator(`${graph} .nodes > g[data-node-id="A/Note.md"]`);
+  const loose = page.locator(`${graph} .nodes > g[data-node-id="Loose.md"]`);
+  const folder = page.locator(`${graph} .nodes > g[data-node-id="folder:A"]`);
+  const chip = focusChip(page);
+
+  // A topic focuses its hub and directly tagged notes only; the containing
+  // folder is not part of the tag set.
+  await topicCircle.hover();
+  await expect(chip).toContainText('Preview: @research');
+  await expect.poll(() => noteA.evaluate((el) => getComputedStyle(el).opacity)).toBe('1');
+  await expect.poll(() => loose.evaluate((el) => getComputedStyle(el).opacity)).toBe('1');
+  await expect.poll(() => folder.evaluate((el) => getComputedStyle(el).opacity)).toBe('0.2');
+
+  await topicCircle.click();
+  await expect(chip).toContainText('Focus: @research');
+  await expect(divider(page)).toHaveCount(0);
+  await expect(page.locator(editor)).toBeHidden();
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await expect(page.locator('[data-region="topics"]')).toHaveCount(0);
+
+  await chip.getByRole('button', { name: 'Clear graph focus' }).click();
+  await expect(chip).toHaveCount(0);
+});
+
+test('graph focus clears on Escape, empty canvas, layer removal, and note open; 2D/3D keeps it', async ({ page }) => {
+  test.setTimeout(90000);
+  await boot(page, 'industrial', 'dark', 'graph');
+
+  const folder = page.locator(`${graph} .nodes > g[data-node-id="folder:A"]`);
+  const folderCircle = folder.locator('circle.node-circle');
+  const chip = focusChip(page);
+  const show = page.locator(graph).getByRole('button', { name: 'Show graph layers' });
+
+  await folderCircle.click();
+  await expect(chip).toContainText('Focus: A');
+
+  // Switching views must preserve the focus.
+  await page.locator(graph).getByRole('button', { name: '3D Graph', exact: true }).click();
+  await expect(page.locator(`${graph} canvas`).first()).toBeVisible();
+  await expect(chip).toContainText('Focus: A');
+  await page.locator(graph).getByRole('button', { name: '2D Graph', exact: true }).click();
+  await expect(folderCircle).toBeVisible();
+  await expect(chip).toContainText('Focus: A');
+
+  // Escape clears the pinned focus.
+  await page.keyboard.press('Escape');
+  await expect(chip).toHaveCount(0);
+
+  // Empty canvas clears it too.
+  await folderCircle.click();
+  await expect(chip).toContainText('Focus: A');
+  await page.locator(`${graph} .graph-canvas > svg`).dispatchEvent('click');
+  await expect(chip).toHaveCount(0);
+
+  // Turning off the focused layer drops the focus.
+  await folderCircle.click();
+  await expect(chip).toContainText('Focus: A');
+  await show.click();
+  const folders = page.locator(graph).getByRole('checkbox', { name: 'Folders', exact: true });
+  await folders.uncheck();
+  await expect(chip).toHaveCount(0);
+  await folders.check();
+  await show.click();
+  await expect(folderCircle).toBeVisible();
+
+  // Opening a note returns the graph to neutral.
+  await folderCircle.click();
+  await expect(chip).toContainText('Focus: A');
+  await page.locator(`${graph} .nodes > g[data-node-id="Loose.md"] circle.node-circle`).click();
+  await expect(divider(page)).toBeVisible();
+  await expect(chip).toHaveCount(0);
 });

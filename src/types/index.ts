@@ -23,8 +23,10 @@ export interface WikiLink {
 }
 
 export interface GraphNode {
-  kind?: 'note'|'folder';
+  kind?: 'note'|'folder'|'topic';
   folderPath?:string;
+  /** Original @tag (without the leading @) for topic nodes. */
+  tag?: string;
   id: string; // The note title
   title: string;
   exists: boolean;
@@ -49,7 +51,7 @@ export interface GraphPayload {
 }
 
 export interface GraphLink {
-  kind?: 'link'|'contains';
+  kind?: 'link'|'contains'|'topic';
   source: string;
   target: string;
 }
@@ -105,8 +107,8 @@ export interface AppSettings {
     injectUserProfile: boolean;
   };
   appearance: {
-    /** Design language: 'industrial' (razor-sharp technical), 'glass' (soft pill-shaped frosted panels), or 'gloss' (deep blur + vibrant blue accent). */
-    themeStyle: 'industrial' | 'glass' | 'gloss';
+    /** Design language: 'industrial' (square, opaque, razor-sharp technical) or 'gloss' (rounded, translucent, deep blur + vibrant blue accent). */
+    themeStyle: 'industrial' | 'gloss';
     /** Color scheme: 'dark' or 'light'. */
     themeMode: 'dark' | 'light';
     startupView: AppPage;

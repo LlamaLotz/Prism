@@ -1,6 +1,6 @@
 import {test,expect} from '@playwright/test';
 const url='/tests/notebook/study-harness.html';
-for(const theme of ['industrial','glass','gloss'])for(const mode of ['light','dark'])test(`workspace and materials ${theme} ${mode}`,async({page})=>{
+for(const theme of ['industrial','gloss'])for(const mode of ['light','dark'])test(`workspace and materials ${theme} ${mode}`,async({page})=>{
  await page.setViewportSize({width:1440,height:960});await page.goto(`${url}?theme=${theme}&mode=${mode}`);await page.getByRole('button',{name:'Open notebook',exact:true}).click();
  await expect(page.getByRole('button',{name:'Thirukkural Structure',exact:false})).toBeVisible();
  await page.screenshot({path:`output/playwright/study-${theme}-${mode}.png`});
@@ -58,7 +58,7 @@ test('generation progress, failure and empty state',async({page})=>{
  await page.goto(url+'?failure');await page.getByRole('button',{name:'Open notebook',exact:true}).click();await page.getByRole('button',{name:'Quiz',exact:true}).click();await page.getByRole('button',{name:'Generate',exact:true}).click();await expect(page.getByText('Generating Quiz…',{exact:false})).toBeVisible();await expect(page.getByRole('alert')).toContainText('Generation failed');
  await page.goto(url+'?empty&narrow');await expect(page.getByRole('heading',{name:'Start your first notebook'})).toBeVisible();
 });
-for(const theme of ['industrial','glass','gloss'])for(const mode of ['light','dark'])test(`narrow notebook ${theme} ${mode}`,async({page})=>{
+for(const theme of ['industrial','gloss'])for(const mode of ['light','dark'])test(`narrow notebook ${theme} ${mode}`,async({page})=>{
  await page.setViewportSize({width:420,height:850});await page.goto(`${url}?theme=${theme}&mode=${mode}`);await page.getByRole('button',{name:'Open notebook',exact:true}).click();
  await page.getByRole('button',{name:'Tools',exact:true}).click();await page.getByRole('button',{name:'Thirukkural Structure',exact:false}).click();
  const viewer=page.getByRole('region',{name:'Saved study material'});await expect(viewer).toBeFocused();await page.keyboard.press('Space');await expect(page.getByRole('group',{name:'Show question',exact:true})).toContainText('Virtue, wealth, and love.');
@@ -99,7 +99,7 @@ test('agent history is a collapsible dropdown capped at half the chat view',asyn
  await expect(page.getByRole('button',{name:'Approve',exact:true})).toBeVisible();
  await expect(toggle).toHaveAttribute('aria-expanded','true');
 });
-for(const theme of ['industrial','glass','gloss'])for(const mode of ['light','dark'])test(`agent history dropdown ${theme} ${mode}`,async({page})=>{
+for(const theme of ['industrial','gloss'])for(const mode of ['light','dark'])test(`agent history dropdown ${theme} ${mode}`,async({page})=>{
  await page.setViewportSize({width:1440,height:960});await page.goto(`${url}?theme=${theme}&mode=${mode}&history`);await page.getByRole('button',{name:'Open notebook',exact:true}).click();
  await page.getByRole('button',{name:'Agent OFF'}).click();
  await page.getByLabel('Message',{exact:true}).fill('{"tool":"edit_note","input":{"noteId":"s1","operations":[]}}');

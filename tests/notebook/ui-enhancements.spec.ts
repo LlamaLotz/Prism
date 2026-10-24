@@ -40,7 +40,7 @@ test('AI enhancements require review and have undo',async({page})=>{
   await page.getByRole('button',{name:'Undo AI changes'}).click();
   await expect(page.getByRole('button',{name:'Undo AI changes'})).not.toBeVisible();
 });
-for(const theme of ['industrial','glass','gloss']) for(const mode of ['light','dark']) test(`enhancement geometry ${theme} ${mode}`,async({page})=>{
+for(const theme of ['industrial','gloss']) for(const mode of ['light','dark']) test(`enhancement geometry ${theme} ${mode}`,async({page})=>{
   await page.setViewportSize({width:420,height:800});
   await page.goto(`/tests/notebook/runtime-harness.html?noapproval&enhancements&collapsed&theme=${theme}&mode=${mode}`);
   await page.getByRole('button',{name:'AI tools',exact:true}).click();

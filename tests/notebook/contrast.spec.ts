@@ -161,7 +161,7 @@ const report = (label: string, failures: Failure[]) => {
 };
 
 test.describe('rendered contrast', () => {
-  for (const theme of ['industrial', 'glass', 'gloss']) for (const mode of ['light', 'dark']) {
+  for (const theme of ['industrial', 'gloss']) for (const mode of ['light', 'dark']) {
     test(`notebook ${theme} ${mode}`, async ({ page }) => {
       test.setTimeout(120000);
       await page.setViewportSize({ width: 1440, height: 960 });

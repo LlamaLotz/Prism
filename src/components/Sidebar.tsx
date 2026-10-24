@@ -346,10 +346,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
         className={`sidebar-note-row group flex items-center justify-between text-xs px-3 py-2.5 rounded-lg transition-all ${
           draggingPath === note.path ? 'cursor-grabbing' : 'cursor-default'
         } ${
-          isActive 
-            ? 'sidebar-note-row-active bg-[var(--nb-card)] border-l-2 border-brand-400 text-[var(--nb-focus)] font-medium'
+          isActive
+            ? 'sidebar-note-row-active font-medium hover:bg-brand-500/10'
             : 'text-[var(--nb-secondary)] hover:text-[var(--nb-secondary)] hover:bg-brand-500/10'
         }`}
+        aria-current={isActive ? 'page' : undefined}
         style={{ paddingLeft: `min(${Math.min(depth, 4) * 12 + 12}px, max(12px, calc(100cqi - 160px)))` }}
         onClick={() => {
           if (suppressClickRef.current) {
@@ -363,7 +364,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         title="Double-click to open in the full editor; drag to move"
       >
         <div className="sidebar-note-content flex items-center gap-2 truncate flex-1 pr-2">
-          <FileText className={`sidebar-note-icon w-4 h-4 shrink-0 ${isActive ? 'text-[var(--nb-focus)]' : 'text-[var(--nb-secondary)]'}`} />
+          <FileText className={`sidebar-note-icon w-4 h-4 shrink-0 ${isActive ? 'text-[var(--color-brand-500)]' : 'text-[var(--nb-secondary)]'}`} />
           <span className="truncate">{note.title}</span>
         </div>
 

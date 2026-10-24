@@ -511,10 +511,10 @@ const Toggle: React.FC<{
   checked: boolean;
   onChange: (v: boolean) => void;
   disabled?: boolean;
-  /** Theme style: 'industrial' = square, 'glass'/'gloss' = pill/circle */
-  themeStyle?: 'industrial' | 'glass' | 'gloss';
+  /** Theme style: 'industrial' = square, 'gloss' = pill/circle */
+  themeStyle?: 'industrial' | 'gloss';
 }> = ({ checked, onChange, disabled, themeStyle = 'industrial' }) => {
-  const isRounded = themeStyle === 'glass' || themeStyle === 'gloss';
+  const isRounded = themeStyle === 'gloss';
   return (
   <button
     type="button"
@@ -640,10 +640,10 @@ const Segmented: React.FC<{
   options: { value: string; label: string }[];
   value: string;
   onChange: (v: string) => void;
-  /** Theme style: 'industrial' = square blocks, 'glass'/'gloss' = pill capsules */
-  themeStyle?: 'industrial' | 'glass' | 'gloss';
+  /** Theme style: 'industrial' = square blocks, 'gloss' = pill capsules */
+  themeStyle?: 'industrial' | 'gloss';
 }> = ({ options, value, onChange, themeStyle = 'industrial' }) => {
-  const isRounded = themeStyle === 'glass' || themeStyle === 'gloss';
+  const isRounded = themeStyle === 'gloss';
   return (
   <div className={`flex items-center bg-[var(--color-surface)] border border-[var(--color-border)] p-0.5 ${isRounded ? 'rounded-full' : ''}`}>
     {options.map((o) => (
@@ -1349,17 +1349,12 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                           {
                             value: 'industrial' as const,
                             label: 'Industrial Precision',
-                            sub: 'Opaque architectural layout, razor-sharp technical feel',
-                          },
-                          {
-                            value: 'glass' as const,
-                            label: 'Rounded',
-                            sub: 'Soft pill-shaped edges, frosted glass panels, backdrop blur',
+                            sub: 'Square corners and opaque panels with a razor-sharp technical feel',
                           },
                           {
                             value: 'gloss' as const,
                             label: 'Liquid Gloss',
-                            sub: 'Deep multi-layer blur, vibrant azure accents, frosted fluid glass',
+                            sub: 'Rounded corners and translucent frosted panels with deep blur and azure accents',
                           },
                         ]).map((opt) => {
                           const active = draft.appearance.themeStyle === opt.value;
