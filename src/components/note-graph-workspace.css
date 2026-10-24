@@ -26,10 +26,11 @@ html:is(.theme-glass, .theme-gloss) [data-workspace-pane="editor"] > .workspace-
 
 /* ==========================================================================
    Knowledge Network graph header — responsive to the actual graph pane width
-   (container queries), not the viewport. Title stays on one line; the
-   Show-folders toggle and 2D/3D segmented control wrap to a second row when
-   the pane narrows side-by-side with the editor. Buttons never overlap the
-   canvas or extend beyond the panel; canvas fills remaining space.
+   (container queries), not the viewport. Title and controls stay on one row
+   at every pane width: the title truncates and the controls keep their
+   intrinsic width. Below 720px the inline hint is hidden (the canvas title
+   attribute keeps the instruction available); below 520px the Show trigger
+   becomes icon-only and spacing tightens. The bottom legend never hides.
    ========================================================================== */
 [data-region="graph"] {
   container-type: inline-size;
@@ -40,8 +41,7 @@ html:is(.theme-glass, .theme-gloss) [data-workspace-pane="editor"] > .workspace-
   align-items: center;
   justify-content: space-between;
   gap: 8px 12px;
-  row-gap: 8px;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   padding: 10px 16px;
   border-bottom: 1px solid var(--color-border);
   flex-shrink: 0;
@@ -53,6 +53,7 @@ html:is(.theme-glass, .theme-gloss) [data-workspace-pane="editor"] > .workspace-
   gap: 8px;
   min-width: 0;
   flex: 1 1 auto;
+  overflow: hidden;
 }
 .graph-header-title h2 {
   font-size: 13px;
@@ -60,25 +61,36 @@ html:is(.theme-glass, .theme-gloss) [data-workspace-pane="editor"] > .workspace-
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  min-width: 0;
 }
 .graph-header-controls {
   display: flex;
   align-items: center;
   gap: 8px;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   justify-content: flex-end;
   min-width: 0;
+  flex: 0 0 auto;
 }
 .graph-switcher {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   min-width: 0;
 }
-.graph-folders-toggle {
+
+/* Show-layers dropdown: trigger + popup anchored inside the graph pane. */
+.graph-show-menu {
+  position: relative;
+  display: inline-flex;
+  flex-shrink: 0;
+}
+.graph-show-trigger {
+  position: relative;
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 6px;
   min-height: var(--nb-control-min-height, 32px);
   padding: 4px 10px;
@@ -92,18 +104,68 @@ html:is(.theme-glass, .theme-gloss) [data-workspace-pane="editor"] > .workspace-
   cursor: pointer;
   flex-shrink: 0;
 }
-.graph-folders-toggle:hover {
+.graph-show-trigger:hover,
+.graph-show-trigger[aria-expanded="true"] {
   background: var(--nb-hover-bg, var(--nb-selection));
   border-color: var(--nb-hover-border, var(--nb-focus));
 }
-.graph-folders-toggle input {
-  accent-color: var(--color-brand-500);
+.graph-show-trigger:focus-visible {
+  outline: 2px solid var(--nb-focus, var(--color-brand-500));
+  outline-offset: 2px;
+}
+.graph-show-label {
+  white-space: nowrap;
+}
+.graph-show-chevron {
+  opacity: 0.7;
+}
+.graph-show-dot {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 6px;
+  height: 6px;
+  border-radius: 9999px;
+  background: var(--color-brand-500);
+  box-shadow: 0 0 0 1px var(--nb-card, var(--color-surface));
+  pointer-events: none;
+}
+.graph-show-menu-popup {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 30;
+  min-width: 168px;
+  max-width: min(220px, calc(100cqi - 16px));
+  max-height: 240px;
+  overflow-y: auto;
+  padding: 4px;
+  background: var(--nb-card, var(--color-surface));
+  border: 1px solid var(--nb-border, var(--color-border));
+  border-radius: var(--nb-radius-sm);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.35);
+}
+.graph-show-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 30px;
+  padding: 5px 8px;
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+  color: var(--nb-text, var(--color-text-body));
+  border-radius: calc(var(--nb-radius-sm) * 0.75);
+  cursor: pointer;
+}
+.graph-show-row:hover {
+  background: var(--nb-hover-bg, var(--nb-selection));
+}
+.graph-show-row input {
   width: 14px;
   height: 14px;
   flex-shrink: 0;
-}
-.graph-folders-toggle span {
-  white-space: nowrap;
+  accent-color: var(--color-brand-500);
 }
 .graph-mode-group {
   flex-shrink: 0;
@@ -116,13 +178,83 @@ html .graph-mode-group.seg-control .seg-button[aria-pressed="true"] {
   color: var(--color-brand-contrast, var(--nb-selected-ink, #0b0e13)) !important;
 }
 .graph-mode-group .seg-button {
-  min-width: 68px;
+  min-width: 32px;
+  width: 32px;
+  padding: 4px 0;
 }
 .graph-hint {
   font-size: 12px;
   font-weight: 500;
   white-space: nowrap;
   flex-shrink: 0;
+}
+/* Folder/topic spotlight chip. Hover shows a transient Preview; a click pins
+   Focus and exposes a clear affordance. Only pinned changes are announced. */
+.graph-focus-chip {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  z-index: 12;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: min(280px, calc(100cqi - 24px));
+  min-height: 30px;
+  padding: 5px 7px 5px 10px;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.2;
+  color: var(--nb-text, var(--color-text-hi));
+  background: var(--nb-card, var(--color-surface));
+  border: 1px solid var(--nb-border, var(--color-border));
+  border-radius: var(--nb-radius-sm);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.18);
+}
+.graph-focus-dot {
+  width: 8px;
+  height: 8px;
+  flex-shrink: 0;
+  border-radius: 9999px;
+}
+.graph-focus-text {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  min-width: 0;
+}
+.graph-focus-verb {
+  color: var(--nb-secondary, var(--color-text-body));
+  font-weight: 500;
+  white-space: nowrap;
+}
+.graph-focus-label {
+  color: var(--nb-text, var(--color-text-hi));
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.graph-focus-clear {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  margin-left: 2px;
+  flex-shrink: 0;
+  color: var(--nb-secondary, var(--color-text-body));
+  background: transparent;
+  border: 0;
+  border-radius: calc(var(--nb-radius-sm) * 0.75);
+  cursor: pointer;
+}
+.graph-focus-clear:hover {
+  background: var(--nb-hover-bg, var(--nb-selection));
+  color: var(--nb-text, var(--color-text-hi));
+}
+.graph-focus-clear:focus-visible {
+  outline: 2px solid var(--nb-focus, var(--color-brand-500));
+  outline-offset: 1px;
 }
 .graph-icon-btn {
   display: inline-flex;
@@ -148,42 +280,54 @@ html .graph-mode-group.seg-control .seg-button[aria-pressed="true"] {
   border-color: var(--nb-selected-border, var(--color-brand-600));
 }
 .graph-icon-btn:focus-visible,
-.graph-folders-toggle:focus-within {
+.graph-show-trigger:focus-visible {
   outline: 2px solid var(--nb-focus, var(--color-brand-500));
   outline-offset: 2px;
 }
-/* Narrow graph pane (side-by-side): stack title over controls, hide the hint
-   (still available as button titles), keep every label on one line. */
+/* The inline hint is the first thing to go in a narrow pane; the same text
+   remains available as the canvas title attribute. */
+@container graph (max-width: 720px) {
+  .graph-hint {
+    display: none;
+  }
+}
+/* Compact toolbar: icon-only Show trigger and tighter spacing, still one row. */
 @container graph (max-width: 520px) {
   .graph-header {
-    align-items: flex-start;
+    gap: 6px;
+    padding: 8px 10px;
   }
   .graph-header-title {
-    flex: 1 1 100%;
+    gap: 6px;
   }
   .graph-header-controls {
-    flex: 1 1 100%;
-    justify-content: flex-start;
+    gap: 6px;
   }
-  .graph-hint {
+  .graph-switcher {
+    gap: 6px;
+  }
+  .graph-show-trigger {
+    gap: 0;
+    padding: 4px 6px;
+  }
+  .graph-show-label,
+  .graph-show-chevron {
     display: none;
   }
 }
 @container graph (max-width: 380px) {
   .graph-header {
-    padding: 8px 12px;
+    gap: 4px;
+    padding: 6px 8px;
+  }
+  .graph-header-controls {
+    gap: 4px;
   }
   .graph-switcher {
-    gap: 6px;
+    gap: 4px;
   }
-  .graph-folders-toggle {
-    padding: 4px 8px;
-    font-size: 12px;
-  }
-  .graph-mode-group .seg-button {
-    min-width: 60px;
-    padding: 4px 10px;
-    font-size: 12px;
+  .graph-show-trigger {
+    padding: 4px 5px;
   }
 }
 /* Graph canvas always fills the space beneath its header. */

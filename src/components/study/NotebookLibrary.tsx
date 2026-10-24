@@ -24,7 +24,7 @@ export function NotebookLibrary({ vaultPath, notebooks, materials, onOpen, onCre
   const [appearance, setAppearance] = useState(() => document.documentElement.className);
   useEffect(() => { const observer = new MutationObserver(() => setAppearance(document.documentElement.className)); observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] }); return () => observer.disconnect(); }, []);
   const industrial = appearance.includes('theme-industrial');
-  const archetype = industrial ? 'industrial' : appearance.includes('theme-gloss') ? 'gloss' : 'glass';
+  const archetype = industrial ? 'industrial' : 'gloss';
   const key = `prism.notebook.library:${vaultPath}:${archetype}`;
   const [coverFor, setCoverFor] = useState<Collection | null>(null);
   const [coverError, setCoverError] = useState('');

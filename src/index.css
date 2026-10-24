@@ -1302,17 +1302,11 @@ button.titlebar-menu-dropdown:hover {
 /* Rounded light-mode toggle geometry is finalized in the authoritative
    switch block at the end of this stylesheet. */
 
-/* Light-mode sidebar controls: selected note content stays charcoal while the
-   configured accent remains reserved for the left indicator and active states. */
-.mode-light .sidebar-note-row-active {
-  background: color-mix(in srgb, var(--color-brand-500) 8%, transparent) !important;
-  border-left-color: var(--color-brand-500) !important;
-  color: #0f172a !important;
-}
-.mode-light .sidebar-note-row-active .sidebar-note-content,
-.mode-light .sidebar-note-row-active .sidebar-note-content > span,
+/* Light-mode sidebar selection stays quiet: the row is unfilled and only the
+   note icon carries the accent. Brand-800 keeps that icon at >=3:1 against the
+   light panel without forcing neutral ink over it. */
 .mode-light .sidebar-note-row-active .sidebar-note-icon {
-  color: #0f172a !important;
+  color: var(--color-brand-800);
 }
 .mode-light .sidebar-toolbar-button {
   background: rgba(0, 0, 0, 0.03) !important;
@@ -1792,15 +1786,6 @@ html.theme-gloss {
 .mode-light .sidebar-pill-button:hover {
   border-color: rgba(0, 0, 0, 0.22) !important;
   background: rgba(0, 0, 0, 0.06) !important;
-  color: #0f172a !important;
-}
-.mode-light .sidebar-note-row-active {
-  border-left-width: 3px !important;
-  border-left-style: solid !important;
-  border-left-color: var(--color-brand-500) !important;
-  color: #0f172a !important;
-}
-.mode-light .sidebar-note-row-active * {
   color: #0f172a !important;
 }
 .theme-glass .switch-track,

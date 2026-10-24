@@ -24,7 +24,7 @@ test('background job cancellation remains accessible after approval',async({page
  await expect(page.getByLabel('Background jobs')).toContainText('cancelled');
 });
 
-for (const theme of ['industrial','glass','gloss']) for (const mode of ['light','dark']) {
+for (const theme of ['industrial','gloss']) for (const mode of ['light','dark']) {
  test(`runtime ${theme} ${mode} navigation and layout`,async({page})=>{
   test.setTimeout(90000);
   await page.goto(`/tests/notebook/runtime-harness.html?theme=${theme}&mode=${mode}&noapproval&states`);
@@ -97,7 +97,7 @@ test('modal approvals trap focus and Escape denies only the current request',asy
  await expect(page.getByRole('dialog')).not.toBeVisible();
 });
 test('feature routes preserve saved providers and explain execution boundaries',async({page})=>{
- await page.goto('/tests/notebook/runtime-harness.html?noapproval&settings&collapsed&theme=glass&mode=light');
+ await page.goto('/tests/notebook/runtime-harness.html?noapproval&settings&collapsed&theme=gloss&mode=light');
  await expect(page.getByRole('heading',{name:'Provider by feature'})).not.toBeVisible();
  await page.getByText('Advanced AI settings',{exact:true}).click();
  await expect(page.getByRole('heading',{name:'Provider by feature'})).toBeVisible();

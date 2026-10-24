@@ -20,7 +20,7 @@ test('sidebar allocation preserves preferences, bounds, and workspace space', ()
   expect(sidebarLayout(base).vaultWidth).toBe(264);
 });
 
-for (const theme of ['industrial', 'glass', 'gloss']) for (const mode of ['light', 'dark']) {
+for (const theme of ['industrial', 'gloss']) for (const mode of ['light', 'dark']) {
   test(`sidebar sizing and controls ${theme} ${mode}`, async ({ page }) => {
     test.setTimeout(90000);
     await page.addInitScript(() => {
@@ -172,6 +172,27 @@ for (const mode of ['light', 'dark']) {
     }, { data: png.toString('base64'), samples });
     expect(samples.length).toBeGreaterThan(10);
     expect(failures).toEqual([]);
+  });
+}
+
+for (const mode of ['dark', 'light']) {
+  test(`selected note row is marked and unfilled at rest (${mode})`, async ({ page }) => {
+    test.setTimeout(90000);
+    await page.goto(`/tests/notebook/app-harness.html?theme=gloss&mode=${mode}&view=editor`);
+    const row = page.locator('[data-note-path$="Loose.md"]');
+    await expect(row).toBeVisible({ timeout: 45000 });
+
+    await row.click();
+    await expect(row).toHaveAttribute('aria-current', 'page');
+    await expect(page.locator('.sidebar-note-row[aria-current="page"]')).toHaveCount(1);
+
+    // Selection is not a filled card: move the pointer away so the hover tint
+    // cannot be mistaken for a resting background.
+    await page.mouse.move(0, 0);
+    await expect.poll(() => row.evaluate(el => {
+      const background = getComputedStyle(el).backgroundColor;
+      return background === 'transparent' || background === 'rgba(0, 0, 0, 0)';
+    })).toBe(true);
   });
 }
 

@@ -32,6 +32,23 @@
 .runtime-settings { padding: 20px; margin-bottom: 24px; }
 .runtime-settings label { display: grid; gap: 8px; margin: 16px 0; font-size: 13px; }
 .runtime-settings :is(select,input) { width: 100%; min-width: 0; background: var(--color-surface); color: var(--color-text-hi); border: 1px solid var(--color-border); border-radius: 8px; padding: 9px; }
+.folder-picker { display: grid; gap: 10px; }
+.folder-picker label { margin: 0; }
+.folder-picker-listbox { max-height: 240px; overflow-y: auto; padding: 4px; background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 8px; scrollbar-width: thin; scrollbar-color: var(--color-border) transparent; -webkit-tap-highlight-color: transparent; }
+.folder-picker input:focus-visible, .folder-picker-listbox:focus-visible, .folder-picker-option:focus-visible { outline: 2px solid var(--color-brand-500); outline-offset: 2px; }
+.folder-picker-option { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 38px; padding: 0 10px; color: var(--color-text-body); background: transparent; border: 0; border-radius: 0; font-size: 13px; cursor: pointer; user-select: none; -webkit-tap-highlight-color: transparent; }
+.folder-picker-option:hover, .folder-picker-option[data-active="true"], .folder-picker-option[aria-selected="true"] { background: transparent; }
+.folder-picker-option-name { color: var(--color-text-body, var(--nb-secondary)); transition: color 120ms ease, text-shadow 120ms ease; }
+.folder-picker-option:hover .folder-picker-option-name, .folder-picker-option:focus-visible .folder-picker-option-name, .folder-picker-option[data-active="true"] .folder-picker-option-name { color: var(--color-text-hi); text-shadow: 0 0 8px color-mix(in srgb, var(--color-brand-500) 38%, transparent); }
+.folder-picker-check { flex: none; color: var(--color-brand-500); }
+.folder-picker-option-unavailable { color: var(--color-text-body); opacity: .6; cursor: default; }
+.folder-picker-empty { margin: 0; padding: 10px; color: var(--color-text-body); font-size: 12px; line-height: 1.6; }
+.runtime-dialog .folder-picker.runtime-settings { margin: 18px 0 0; padding: 0; background: transparent; border: 0; border-radius: 0; box-shadow: none; }
+.runtime-dialog .runtime-actions { gap: 10px; margin-top: 22px; }
+.runtime-dialog .runtime-actions .runtime-button { min-height: 36px; padding: 8px 14px; gap: 8px; font-size: 13px; line-height: 1.2; transition: background-color 100ms ease, transform 100ms ease; }
+.runtime-dialog .runtime-actions .runtime-button:active:not(:disabled) { background: var(--color-surface-hover); transform: scale(.98); }
+.runtime-dialog .runtime-actions .runtime-button.runtime-primary:active:not(:disabled) { background: color-mix(in srgb, var(--color-brand-500) 24%, var(--color-panel)); }
+@media (prefers-reduced-motion: reduce) { .runtime-dialog .runtime-actions .runtime-button { transition: none; } .runtime-dialog .runtime-actions .runtime-button:active:not(:disabled) { transform: none; } }
 .runtime-routes { margin-top: 24px; padding-top: 20px; border-top: 1px solid var(--color-border); }
 .runtime-local { display: grid; gap: 8px; margin-top: 20px; padding: 14px; background: var(--color-surface); border-radius: 8px; }
 .agent-review, .agent-undo { padding: 12px; border-radius: 0; overflow-wrap: anywhere; }

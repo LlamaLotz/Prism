@@ -2,7 +2,7 @@ import { test, expect } from '@playwright/test';
 test('URL method stays compatible with native adapter', async ({ page }) => {
   await page.goto('/tests/ingest/harness.html');
   await page.getByPlaceholder('https://www.youtube.com/watch?v=...').fill('https://youtu.be/example');
-  await page.getByLabel('Vault folder', { exact: true }).selectOption('Notes/Deep');
+  await page.getByLabel('Vault folder', { exact: true }).getByRole('option', { name: 'Notes/Deep', exact: true }).click();
   await page.getByRole('button', { name: 'Whisper', exact: true }).click();
   await page.getByRole('button', { name: 'Start Ingestion' }).click();
   expect(await page.evaluate(() => (window as any).ingestFixture.calls)).toEqual([['url', 'https://youtu.be/example', 'whisper', 'Notes/Deep']]);

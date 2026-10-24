@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import ForceGraph3D from 'react-force-graph-3d';
 import * as THREE from 'three';
 import { GraphNode, GraphLink, NoteFile } from '../types';
+import { focusColor, type GraphFocus } from '../services/graphFocus';
 import { Network, Home, Orbit } from 'lucide-react';
 import { mixHex, hexToRgba } from '../utils/accentColor';
 import { usePrefersReducedMotion } from '../utils/usePrefersReducedMotion';
@@ -16,8 +17,16 @@ interface GraphView3DProps {
   autoRotateSpeed?: number;
   labelQuality?: 'standard' | 'high';
   nodeColor?: string;
-  themeStyle?: 'industrial' | 'glass' | 'gloss';
+  themeStyle?: 'industrial' | 'gloss';
   themeMode?: 'dark' | 'light';
+  /** Folder/topic spotlight currently previewed or pinned by the container. */
+  focus?: (GraphFocus & { pinned: boolean }) | null;
+  /** Id of the sticky hub, used to suppress hover after a second click. */
+  pinnedFocusId?: string | null;
+  onHoverFocus?: (id: string | null) => void;
+  onClearFocus?: () => void;
+  /** Focus chip rendered above the canvas by the container. */
+  focusOverlay?: React.ReactNode;
 }
 
 interface TooltipState {
@@ -35,6 +44,10 @@ let COLOR_EXISTS = '#64CCFA'; // brand-400 (lighter sky)
 const COLOR_MISSING = '#3c3b39'; // slate-grey
 let COLOR_HOVER = '#7ED4FA'; // brand-300 (light sky)
 const LINK_COLOR_DARK = 'rgba(245, 242, 242, 0.08)';
+// Topic layer mirrors the 2D graph's teal treatment.
+const TOPIC_COLOR = '#2dd4bf';
+const TOPIC_HOVER_COLOR = '#5eead4';
+const TOPIC_LINK_COLOR = 'rgba(45, 212, 191, 0.4)';
 
 export function setGraphPalette(nodeColor: string): void {
   const base = /^#[0-9a-f]{6}$/i.test(nodeColor) ? nodeColor.toLowerCase() : '#38BDF8';
@@ -65,6 +78,11 @@ export const GraphView3D: React.FC<GraphView3DProps> = ({
   nodeColor = '#38BDF8',
   themeStyle = 'industrial',
   themeMode = 'dark',
+  focus = null,
+  pinnedFocusId = null,
+  onHoverFocus,
+  onClearFocus,
+  focusOverlay,
 }) => {
   const graphRef = useRef<any>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -76,10 +94,13 @@ export const GraphView3D: React.FC<GraphView3DProps> = ({
   const sphereGeoRef = useRef<THREE.SphereGeometry | null>(null);
   if (!sphereGeoRef.current) sphereGeoRef.current = new THREE.SphereGeometry(1, 24, 24);
   const matCacheRef = useRef<Map<string, THREE.MeshStandardMaterial | THREE.MeshPhysicalMaterial>>(new Map());
-  const hoverMatRef = useRef<THREE.MeshStandardMaterial | THREE.MeshPhysicalMaterial | null>(null);
   const nodeMeshesRef = useRef<Map<string, THREE.Mesh>>(new Map());
+  const nodeSpritesRef = useRef<Map<string, THREE.Sprite>>(new Map());
+  const nodeRingsRef = useRef<Map<string, THREE.Sprite>>(new Map());
+  const ringTextureRef = useRef<THREE.CanvasTexture | null>(null);
   const labelCacheRef = useRef<Map<string, THREE.Sprite>>(new Map());
   const nodeGroupsRef = useRef<Set<THREE.Group>>(new Set());
+  const focusRafRef = useRef<number | null>(null);
 
   const [autoRotate, setAutoRotate] = useState(autoRotateOnLoad && !prefersReducedMotion);
   // Keep the runtime control synchronized when the saved preference changes
@@ -98,6 +119,18 @@ export const GraphView3D: React.FC<GraphView3DProps> = ({
   themeModeRef.current = themeMode;
   const onSelectNoteByTitleRef = useRef(onSelectNoteByTitle);
   onSelectNoteByTitleRef.current = onSelectNoteByTitle;
+  const pinnedFocusIdRef = useRef(pinnedFocusId);
+  pinnedFocusIdRef.current = pinnedFocusId;
+  const hoverFocusRef = useRef(onHoverFocus);
+  hoverFocusRef.current = onHoverFocus;
+  const clearFocusRef = useRef(onClearFocus);
+  clearFocusRef.current = onClearFocus;
+  const focusRef = useRef(focus);
+  focusRef.current = focus;
+  // After clicking a pinned hub off, ignore hover on that same hub until the
+  // pointer leaves it — otherwise the preview would immediately re-appear.
+  const suppressedHubRef = useRef<string | null>(null);
+  const lastHoveredIdRef = useRef<string | null>(null);
   const graphDataRef = useRef(graphData);
   graphDataRef.current = graphData;
   const pendingFrameRef = useRef(false);
@@ -156,7 +189,7 @@ export const GraphView3D: React.FC<GraphView3DProps> = ({
     return { nodes, links };
   }, [graphData]);
 
-  const isGlassTheme = themeStyle === 'glass' || themeStyle === 'gloss';
+  const isGlassTheme = themeStyle === 'gloss';
   const isDarkMode = themeMode === 'dark';
   const configuredNodeColor = /^#[0-9a-f]{6}$/i.test(nodeColor) ? nodeColor : COLOR_ACTIVE;
   const configuredExistsColor = mixHex(configuredNodeColor, '#ffffff', 0.22);
@@ -180,11 +213,11 @@ export const GraphView3D: React.FC<GraphView3DProps> = ({
     scene.add(amb); lightsRef.current.push(amb);
   }, [configuredNodeColor, isGlassTheme]);
 
-  // Rebuild materials when theme/mode change.
+  // Rebuild shared base materials when theme/mode change. Node meshes own
+  // per-node clones (needed for focus opacity), so they copy from these bases.
   useEffect(() => {
     for (const m of matCacheRef.current.values()) m.dispose();
     matCacheRef.current.clear();
-    if (hoverMatRef.current) { hoverMatRef.current.dispose(); hoverMatRef.current = null; }
   }, [backgroundPattern, configuredNodeColor, isGlassTheme, isDarkMode]);
 
   const materialFor = (color: string, isActive: boolean) => {
@@ -217,31 +250,6 @@ export const GraphView3D: React.FC<GraphView3DProps> = ({
     }
     return m;
   };
-
-  if (!hoverMatRef.current) {
-    if (isGlassTheme) {
-      hoverMatRef.current = new THREE.MeshPhysicalMaterial({
-        color: new THREE.Color(configuredHoverColor),
-        emissive: new THREE.Color(configuredHoverColor),
-        emissiveIntensity: 0.9,
-        roughness: 0.05,
-        metalness: 0.1,
-        transmission: 0,
-        specularIntensity: 1.0,
-        specularColor: new THREE.Color(0xffffff),
-        transparent: false,
-        opacity: 1.0,
-      });
-    } else {
-      hoverMatRef.current = new THREE.MeshStandardMaterial({
-        color: configuredHoverColor,
-        emissive: configuredHoverColor,
-        emissiveIntensity: 0.7,
-        roughness: 0.3,
-        metalness: 0.15,
-      });
-    }
-  }
 
   // ── World-space backdrop ─────────────────────────────────────────────
   const bgObjectRef = useRef<THREE.Mesh | null>(null);
@@ -312,6 +320,7 @@ export const GraphView3D: React.FC<GraphView3DProps> = ({
   };
 
   const colorForNode = (node: any) => {
+    if (node.kind === 'topic') return TOPIC_COLOR;
     if (activeTitleRef.current && node.title?.toLowerCase() === activeTitleRef.current) return configuredNodeColor;
     return node.kind==='folder' ? '#a78bfa' : node.exists ? configuredExistsColor : COLOR_MISSING;
   };
@@ -387,41 +396,134 @@ export const GraphView3D: React.FC<GraphView3DProps> = ({
       }
       if ((child as THREE.Sprite).material) {
         const spriteMat = (child as THREE.Sprite).material;
-        if (spriteMat.map) spriteMat.map.dispose();
+        // Label/ring textures are shared templates owned by their caches;
+        // only the per-node sprite material is disposed here.
         spriteMat.dispose();
       }
     });
   };
 
+  // Camera-facing halo for a focused hub. One shared white ring texture is
+  // tinted per kind, and per-node sprite materials fade independently.
+  const ringTexture = () => {
+    if (ringTextureRef.current) return ringTextureRef.current;
+    const size = 128;
+    const canvas = document.createElement('canvas');
+    canvas.width = size; canvas.height = size;
+    const ctx = canvas.getContext('2d')!;
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 9;
+    ctx.beginPath();
+    ctx.arc(size / 2, size / 2, size / 2 - 8, 0, Math.PI * 2);
+    ctx.stroke();
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.colorSpace = THREE.SRGBColorSpace;
+    ringTextureRef.current = texture;
+    return texture;
+  };
+
+  // Copy only the visual properties from a shared base material; per-node
+  // opacity/transparency belong to the node and must survive hover/focus.
+  const copyMaterial = (target: THREE.Material, base: THREE.Material) => {
+    const to = target as any;
+    const from = base as any;
+    if (to.color && from.color) to.color.copy(from.color);
+    if (to.emissive && from.emissive) to.emissive.copy(from.emissive);
+    if (typeof from.emissiveIntensity === 'number') to.emissiveIntensity = from.emissiveIntensity;
+    if (typeof from.roughness === 'number') to.roughness = from.roughness;
+    if (typeof from.metalness === 'number') to.metalness = from.metalness;
+  };
+
   const nodeThreeObject = useCallback((node: any) => {
     const col = colorForNode(node);
     const isActive = activeTitleRef.current && node.title?.toLowerCase() === activeTitleRef.current;
-    const mesh = new THREE.Mesh(sphereGeoRef.current!, materialFor(col, !!isActive));
+    const base = materialFor(col, !!isActive);
+    // Per-node clone: focus dimming is an opacity change, and mutating the
+    // shared cached material would dim every node that uses it.
+    const mesh = new THREE.Mesh(sphereGeoRef.current!, base.clone());
     const r = nodeRadius(node.linksCount ?? 0);
     mesh.scale.set(r, r, r); mesh.userData.baseScale = r;
     mesh.userData.title = node.title ?? node.id;
     mesh.userData.exists = !!node.exists;mesh.userData.kind=node.kind;
     nodeMeshesRef.current.set(node.id, mesh);
-    const label = makeLabelSprite(node.title ?? node.id);
+
+    const cachedLabel = makeLabelSprite(node.title ?? node.id);
+    // Clone the sprite material (sharing the cached texture) so each node can
+    // fade independently and no sprite is re-parented between groups.
+    const label = new THREE.Sprite(cachedLabel.material.clone());
+    label.scale.copy(cachedLabel.scale);
     label.position.set(0, r + LABEL_HEIGHT / 2 + 1.5, 0);
+    nodeSpritesRef.current.set(node.id, label);
+
     const group = new THREE.Group();
+    let ring: THREE.Sprite | null = null;
+    if (node.kind === 'folder' || node.kind === 'topic') {
+      const ringMaterial = new THREE.SpriteMaterial({
+        map: ringTexture(),
+        color: new THREE.Color(focusColor(node.kind)),
+        transparent: true,
+        opacity: 0,
+        depthWrite: false,
+      });
+      ring = new THREE.Sprite(ringMaterial);
+      const ringScale = r * 2.9;
+      ring.scale.set(ringScale, ringScale, 1);
+      ring.visible = false;
+      nodeRingsRef.current.set(node.id, ring);
+      group.add(ring);
+    }
     group.add(mesh); group.add(label);
     nodeGroupsRef.current.add(group);
+
+    // Nodes created while a spotlight is active must match it immediately,
+    // before the focus effect gets a chance to run.
+    const currentFocus = focusRef.current;
+    if (currentFocus) {
+      const opacity = currentFocus.ids.has(node.id) ? 1 : 0.2;
+      const material = mesh.material as THREE.Material;
+      material.transparent = opacity < 1;
+      material.opacity = opacity;
+      label.material.transparent = true;
+      label.material.opacity = opacity;
+      if (ring) {
+        ring.visible = currentFocus.hubId === node.id;
+        ring.material.opacity = ring.visible ? 1 : 0;
+        ring.material.color.set(focusColor(currentFocus.kind));
+      }
+    }
     return group;
   }, [activeTitle, configuredNodeColor, configuredExistsColor, labelQuality, themeCacheKey]);
 
   const applyNodeColor = (mesh: THREE.Mesh) => {
     const title = mesh.userData.title as string | undefined;
+    const isTopic = mesh.userData.kind === 'topic';
     const isActive = activeTitleRef.current && title && title.toLowerCase() === activeTitleRef.current;
-    const col = mesh.userData.kind==='folder' ? '#a78bfa' : isActive ? configuredNodeColor : mesh.userData.exists ? configuredExistsColor : COLOR_MISSING;
-    mesh.material = materialFor(col, !!isActive);
+    const col = isTopic ? TOPIC_COLOR : mesh.userData.kind==='folder' ? '#a78bfa' : isActive ? configuredNodeColor : mesh.userData.exists ? configuredExistsColor : COLOR_MISSING;
+    const base = materialFor(col, !!isActive);
+    const current = mesh.material as THREE.Material;
+    if ((current as any).type !== (base as any).type) {
+      const next = base.clone();
+      (next as any).opacity = (current as any).opacity ?? 1;
+      (next as any).transparent = (current as any).transparent ?? false;
+      mesh.material = next;
+      current.dispose();
+      return;
+    }
+    copyMaterial(current, base);
   };
 
   const applyHover = (node: any | null) => {
     for (const [, mesh] of nodeMeshesRef.current) { mesh.scale.set(mesh.userData.baseScale, mesh.userData.baseScale, mesh.userData.baseScale); applyNodeColor(mesh); }
     if (node) {
       const mesh = nodeMeshesRef.current.get(node.id);
-      if (mesh) { const s = mesh.userData.baseScale * 1.3; mesh.scale.set(s, s, s); mesh.material = hoverMatRef.current!; }
+      if (mesh) {
+        const s = mesh.userData.baseScale * 1.3;
+        mesh.scale.set(s, s, s);
+        // Topics keep their teal identity when hovered instead of borrowing the
+        // accent-colored hover shade.
+        const hoverColor = node.kind === 'topic' ? TOPIC_HOVER_COLOR : configuredHoverColor;
+        copyMaterial(mesh.material as THREE.Material, materialFor(hoverColor, false));
+      }
     }
   };
 
@@ -446,23 +548,56 @@ export const GraphView3D: React.FC<GraphView3DProps> = ({
   };
 
   const handleNodeHover = useCallback((node: any | null) => {
+    const nextId = node?.id ?? null;
+    const previousId = lastHoveredIdRef.current;
+    if (previousId && previousId !== nextId && suppressedHubRef.current === previousId) {
+      suppressedHubRef.current = null;
+    }
+    lastHoveredIdRef.current = nextId;
+
+    const isHub = node && (node.kind === 'folder' || node.kind === 'topic');
+    if (isHub) {
+      if (suppressedHubRef.current !== node.id) hoverFocusRef.current?.(node.id);
+    } else {
+      hoverFocusRef.current?.(null);
+    }
+
     applyHover(node ?? null);
     if (!node) { stopTooltipPoll(); setTooltip(null); return; }
     updateTooltip(node);
     startTooltipPoll(node);
   }, [activeTitle, configuredNodeColor, configuredExistsColor, configuredHoverColor]);
 
-  const handlePointerLeave = useCallback(() => { stopTooltipPoll(); setTooltip(null); }, []);
+  const handlePointerLeave = useCallback(() => {
+    stopTooltipPoll();
+    setTooltip(null);
+    lastHoveredIdRef.current = null;
+    suppressedHubRef.current = null;
+    hoverFocusRef.current?.(null);
+  }, []);
 
   const linkColor = useCallback(
-    () => isGlassTheme
-      ? (isDarkMode ? 'rgba(255, 255, 255, 0.25)' : 'rgba(0, 0, 0, 0.20)')
-      : (isDarkMode ? LINK_COLOR_DARK : 'rgba(30, 41, 59, 0.15)'),
+    (link?: any) => link?.kind === 'topic'
+      ? TOPIC_LINK_COLOR
+      : isGlassTheme
+        ? (isDarkMode ? 'rgba(255, 255, 255, 0.25)' : 'rgba(0, 0, 0, 0.20)')
+        : (isDarkMode ? LINK_COLOR_DARK : 'rgba(30, 41, 59, 0.15)'),
     [isGlassTheme, isDarkMode]
   );
   const particleColor = useCallback(() => hexToRgba(configuredNodeColor, 0.8), [configuredNodeColor]);
 
-  const handleNodeClick = useCallback((node: any) => onSelectNoteByTitleRef.current(node.id), []);
+  const handleNodeClick = useCallback((node: any) => {
+    const isHub = node.kind === 'folder' || node.kind === 'topic';
+    if (isHub && pinnedFocusIdRef.current === node.id) {
+      // A second click on the pinned hub clears it and suppresses hover until
+      // the pointer leaves the node.
+      suppressedHubRef.current = node.id;
+      hoverFocusRef.current?.(null);
+    } else if (isHub) {
+      suppressedHubRef.current = null;
+    }
+    onSelectNoteByTitleRef.current(node.id);
+  }, []);
   const handleEngineStop = useCallback(() => {
     if (!pendingFrameRef.current) return;
     pendingFrameRef.current = false;
@@ -510,6 +645,63 @@ export const GraphView3D: React.FC<GraphView3DProps> = ({
 
   useEffect(() => { for (const [, mesh] of nodeMeshesRef.current) applyNodeColor(mesh); }, [activeTitle, configuredNodeColor, configuredExistsColor]);
 
+  // Dim non-focused nodes and fade the hub halo. Materials are per-node, so
+  // this never mutates the shared cache or re-heats the simulation.
+  useEffect(() => {
+    const targets: Array<{ material: THREE.Material; from: number; to: number; sprite?: THREE.Sprite }> = [];
+    const ids = focus?.ids ?? null;
+    for (const [id, mesh] of nodeMeshesRef.current) {
+      const material = mesh.material as THREE.Material;
+      targets.push({ material, from: material.opacity ?? 1, to: !ids || ids.has(id) ? 1 : 0.2 });
+    }
+    for (const [id, sprite] of nodeSpritesRef.current) {
+      const material = sprite.material;
+      targets.push({ material, from: material.opacity ?? 1, to: !ids || ids.has(id) ? 1 : 0.2 });
+    }
+    for (const [id, ring] of nodeRingsRef.current) {
+      const isHub = !!focus && id === focus.hubId;
+      if (isHub && focus) ring.material.color.set(focusColor(focus.kind));
+      // Keep every halo visible while its opacity fades; the apply step hides
+      // fully transparent sprites so no ring pops out of existence.
+      ring.visible = true;
+      targets.push({ material: ring.material, from: ring.material.opacity, to: isHub ? 1 : 0, sprite: ring });
+    }
+
+    if (focusRafRef.current !== null) {
+      cancelAnimationFrame(focusRafRef.current);
+      focusRafRef.current = null;
+    }
+
+    const apply = (value: number) => {
+      for (const target of targets) {
+        const material = target.material as any;
+        const opacity = target.from + (target.to - target.from) * value;
+        material.opacity = opacity;
+        const transparent = !!material.isSpriteMaterial || opacity < 1;
+        if (material.transparent !== transparent) {
+          material.transparent = transparent;
+          material.needsUpdate = true;
+        }
+        if (target.sprite) target.sprite.visible = opacity > 0.01;
+      }
+    };
+
+    if (reduceMotionRef.current || targets.every((target) => target.from === target.to)) {
+      apply(1);
+      return;
+    }
+
+    const started = performance.now();
+    const duration = 180;
+    const tick = (now: number) => {
+      const progress = Math.min(1, (now - started) / duration);
+      apply(progress);
+      if (progress < 1) focusRafRef.current = requestAnimationFrame(tick);
+      else focusRafRef.current = null;
+    };
+    focusRafRef.current = requestAnimationFrame(tick);
+  }, [focus]);
+
   useEffect(() => {
     const g = graphRef.current, controls = g?.controls?.();
     if (!controls) return;
@@ -543,6 +735,8 @@ export const GraphView3D: React.FC<GraphView3DProps> = ({
     for (const n of graphData.nodes) { const t = n.title ?? n.id; if (t) titles.add(String(t)); }
     const nodeIds = new Set(graphData.nodes.map((n) => n.id));
     for (const id of nodeMeshesRef.current.keys()) { if (!nodeIds.has(id)) nodeMeshesRef.current.delete(id); }
+    for (const id of nodeSpritesRef.current.keys()) { if (!nodeIds.has(id)) nodeSpritesRef.current.delete(id); }
+    for (const id of nodeRingsRef.current.keys()) { if (!nodeIds.has(id)) nodeRingsRef.current.delete(id); }
     for (const [title, sprite] of labelCacheRef.current) {
       if (titles.has(title)) continue;
       sprite.userData.texture?.dispose?.(); sprite.material?.dispose?.();
@@ -554,13 +748,17 @@ export const GraphView3D: React.FC<GraphView3DProps> = ({
     return () => {
       stopTooltipPoll();
       if (graphRef.current) { const controls = graphRef.current.controls?.(); if (controls) controls.dispose?.(); }
+      if (focusRafRef.current !== null) cancelAnimationFrame(focusRafRef.current);
       for (const group of nodeGroupsRef.current) disposeNodeGroup(group);
       nodeGroupsRef.current.clear();
       sphereGeoRef.current?.dispose();
       for (const m of matCacheRef.current.values()) m.dispose();
-      hoverMatRef.current?.dispose();
       for (const sprite of labelCacheRef.current.values()) { sprite.userData.texture?.dispose?.(); sprite.material?.dispose?.(); }
-      nodeMeshesRef.current.clear(); labelCacheRef.current.clear();
+      ringTextureRef.current?.dispose();
+      nodeMeshesRef.current.clear();
+      nodeSpritesRef.current.clear();
+      nodeRingsRef.current.clear();
+      labelCacheRef.current.clear();
     };
   }, []);
 
@@ -600,7 +798,7 @@ export const GraphView3D: React.FC<GraphView3DProps> = ({
           </button>
         </div>
       </div>
-      <div ref={containerRef} className="graph-canvas flex-1 overflow-hidden relative bg-[var(--color-base)]" onPointerLeave={handlePointerLeave}>
+      <div ref={containerRef} className="graph-canvas flex-1 overflow-hidden relative bg-[var(--color-base)]" title="Drag to rotate • Scroll to zoom • Right-drag to pan" onPointerLeave={handlePointerLeave}>
         <ForceGraph3D
           ref={graphRef} graphData={stableData} width={size.width} height={size.height}
           controlType="orbit"
@@ -615,11 +813,13 @@ export const GraphView3D: React.FC<GraphView3DProps> = ({
           linkWidth={0.8} linkDirectionalParticles={prefersReducedMotion ? 0 : 2} linkDirectionalParticleSpeed={0.005}
           linkDirectionalParticleWidth={1.5} linkDirectionalParticleColor={particleColor}
           onNodeClick={handleNodeClick} onNodeHover={handleNodeHover}
+          onBackgroundClick={() => clearFocusRef.current?.()}
           onEngineStop={handleEngineStop}
           warmupTicks={prefersReducedMotion ? 160 : 0}
           cooldownTicks={prefersReducedMotion ? 1 : undefined}
           cooldownTime={prefersReducedMotion ? 0 : 1200}
         />
+        {focusOverlay}
         {tooltip && (
           <div className="absolute z-10 pointer-events-none bg-slate-900/95 border border-slate-700/80 rounded-lg px-3 py-2 shadow-2xl backdrop-blur-sm"
             style={{ left: tooltip.x + 14, top: tooltip.y - 8, transform: 'translateY(-100%)' }}>

@@ -120,7 +120,7 @@ const report = (label: string, failures: Failure[]) => {
 };
 
 test.describe('settings rendered contrast', () => {
-  for (const theme of ['industrial', 'glass', 'gloss']) for (const mode of ['light', 'dark']) {
+  for (const theme of ['industrial', 'gloss']) for (const mode of ['light', 'dark']) {
     test(`settings ${theme} ${mode} with default accent`, async ({ page }) => {
       await page.setViewportSize({ width: 1440, height: 960 });
       await page.goto(`/tests/settings/harness.html?theme=${theme}&mode=${mode}`);

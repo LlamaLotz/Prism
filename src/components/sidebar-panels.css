@@ -50,8 +50,6 @@ html .sidebar, html .sidebar-collapsed-rail { color: var(--nb-text); background-
 .sidebar-header { flex-shrink: 0; gap: 8px; }
 .sidebar-note-row { min-width: 0; transition-property: color, background-color; }
 .sidebar-tree > *, .sidebar-note-content { min-width: 0; max-width: 100%; }
-html .sidebar .sidebar-note-row-active { background: var(--nb-selection) !important; border-left-color: var(--nb-focus) !important; }
-html .sidebar .sidebar-note-row-active :is(span, svg), html .sidebar .sidebar-note-row-active { color: var(--nb-text) !important; }
 html .sidebar :is(button, input), html .sidebar-collapsed-rail button {
   color: var(--nb-text) !important; background-color: var(--nb-card) !important; border-color: var(--nb-border) !important;
 }

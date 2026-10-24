@@ -351,7 +351,7 @@ test("note preview keyboard entry and Escape restore trigger focus", async ({
   await expect(trigger).toBeFocused();
 });
 
-for (const theme of ["industrial", "glass", "gloss"])
+for (const theme of ["industrial", "gloss"])
   for (const mode of ["light", "dark"]) {
     test(`editor and PDF controls in ${theme} ${mode} at narrow width`, async ({
       page,
@@ -366,7 +366,7 @@ for (const theme of ["industrial", "glass", "gloss"])
         .click();
       await page.setViewportSize({ width: 720, height: 900 });
       const editor = page.locator('[data-region="editor"]');
-      const radius = theme === "industrial" ? 0 : theme === "glass" ? 10 : 12;
+      const radius = theme === "industrial" ? 0 : 12;
       // Selected ink must always accompany its intended accent fill.
       for (const selector of ['.editor-mode-group button[aria-pressed="true"]', '.linkhub-tabs button[aria-selected="true"]']) {
         const selected = editor.locator(selector);
@@ -596,7 +596,7 @@ test("long annotation headings wrap without truncation or horizontal overflow", 
   expect(await reader.locator('.pdf-annotations').evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true);
 });
 
-for (const theme of ['industrial', 'glass', 'gloss']) {
+for (const theme of ['industrial', 'gloss']) {
   for (const mode of ['light', 'dark']) {
     test(`PDF annotation colors and shapes in ${theme} ${mode}`, async ({ page }) => {
       await page.goto(`/tests/notebook/app-harness.html?theme=${theme}&mode=${mode}&view=editor&research`);
@@ -641,7 +641,7 @@ for (const theme of ['industrial', 'glass', 'gloss']) {
       await expect(mark).toHaveCSS('background-color', 'rgb(101, 168, 245)');
       await expect(reader.getByRole('button', { name: 'Annotation color on page 1: blue', exact: true }).locator('.pdf-color-swatch')).toHaveCSS('background-color', 'rgb(101, 168, 245)');
       // Keyboard focus must remain visible even though marks have none.
-      // Industrial uses outline; glass/gloss use a box-shadow ring.
+      // Industrial uses outline; gloss uses a box-shadow ring.
       await heading.focus();
       await page.keyboard.press('Tab');
       await expect(reader.getByLabel('Comment on page 1')).toBeFocused();

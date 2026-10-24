@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 const url='/tests/notebook/study-harness.html?library';
-for(const theme of ['industrial','glass','gloss'])for(const mode of ['light','dark'])test(`library geometry and contrast ${theme} ${mode}`,async({page})=>{
+for(const theme of ['industrial','gloss'])for(const mode of ['light','dark'])test(`library geometry and contrast ${theme} ${mode}`,async({page})=>{
  await page.goto(`${url}&theme=${theme}&mode=${mode}`);
  await expect(page.getByRole('heading',{name:'Notebooks',exact:true})).toBeVisible();
  await page.screenshot({path:`output/playwright/library-${theme}-${mode}.png`});

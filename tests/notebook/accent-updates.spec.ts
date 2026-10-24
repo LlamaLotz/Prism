@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 
-for (const theme of ['industrial', 'glass', 'gloss']) for (const mode of ['light', 'dark']) {
+for (const theme of ['industrial', 'gloss']) for (const mode of ['light', 'dark']) {
   test(`accent updates open dropdowns and text selection in ${theme} ${mode}`, async ({ page }) => {
     await page.goto(`/tests/notebook/study-harness.html?theme=${theme}&mode=${mode}`);
     await page.getByRole('button', { name: 'Open notebook', exact: true }).click();

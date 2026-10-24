@@ -1,6 +1,7 @@
 import React, { useEffect, useRef } from 'react';
 import * as d3 from 'd3';
 import { NoteFile, GraphNode, GraphLink } from '../types';
+import { focusColor, type GraphFocus } from '../services/graphFocus';
 import { Network, Home, RotateCw } from 'lucide-react';
 import { mixHex, hexToRgba } from '../utils/accentColor';
 import { usePrefersReducedMotion } from '../utils/usePrefersReducedMotion';
@@ -31,6 +32,11 @@ let STROKE_EXISTS = '#31A6DA'; // brand-600
 let GRID_COLOR = 'rgba(56, 189, 248, 0.05)';
 let MESH_COLOR = 'rgba(56, 189, 248, 0.18)';
 const LINK_COLOR = 'rgba(150, 147, 143, 0.35)';
+// Topic layer: teal nodes and links, distinct from folder purple and the
+// user-configured note palette.
+const TOPIC_COLOR = '#2dd4bf';
+const TOPIC_HOVER = '#5eead4';
+const TOPIC_LINK_COLOR = 'rgba(45, 212, 191, 0.4)';
 
 /** Re-derives the node palette from a user-picked base color. */
 export function setGraphPalette(nodeColor: string): void {
@@ -57,6 +63,14 @@ interface GraphViewProps {
   themeMode?: 'dark' | 'light';
   /** User-chosen node color — triggers a targeted repaint without force rebuild. */
   nodeColor?: string;
+  /** Folder/topic spotlight currently previewed or pinned by the container. */
+  focus?: (GraphFocus & { pinned: boolean }) | null;
+  /** Id of the sticky hub, used to suppress hover after a second click. */
+  pinnedFocusId?: string | null;
+  onHoverFocus?: (id: string | null) => void;
+  onClearFocus?: () => void;
+  /** Focus chip rendered above the canvas by the container. */
+  focusOverlay?: React.ReactNode;
 }
 
 export const GraphView: React.FC<GraphViewProps> = ({
@@ -68,6 +82,11 @@ export const GraphView: React.FC<GraphViewProps> = ({
   persistNodePositions = true,
   themeMode = 'dark',
   nodeColor,
+  focus = null,
+  pinnedFocusId = null,
+  onHoverFocus,
+  onClearFocus,
+  focusOverlay,
 }) => {
   const svgRef = useRef<SVGSVGElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -129,6 +148,22 @@ export const GraphView: React.FC<GraphViewProps> = ({
   useEffect(() => {
     selectNoteRef.current = onSelectNoteByTitle;
   }, [onSelectNoteByTitle]);
+
+  // Focus callbacks/state are read from refs so the long-lived D3 handlers
+  // always see the current values without rebuilding the force layout.
+  const pinnedFocusIdRef = useRef(pinnedFocusId);
+  pinnedFocusIdRef.current = pinnedFocusId;
+  const hoverFocusRef = useRef(onHoverFocus);
+  hoverFocusRef.current = onHoverFocus;
+  const clearFocusRef = useRef(onClearFocus);
+  clearFocusRef.current = onClearFocus;
+  // After clicking a pinned hub off, ignore hover on that same hub until the
+  // pointer leaves it — otherwise the preview would immediately re-appear.
+  const suppressedHubRef = useRef<string | null>(null);
+  // Live selections let the focus effect dim the existing DOM without
+  // re-running the simulation.
+  const nodeSelectionRef = useRef<any>(null);
+  const linkSelectionRef = useRef<any>(null);
 
   const getDimensions = () => {
     const w = containerRef.current?.clientWidth || 0;
@@ -306,6 +341,14 @@ export const GraphView: React.FC<GraphViewProps> = ({
     svg.call(zoom);
     zoomBehaviorRef.current = zoom;
 
+    // Empty-canvas click clears focus. Node clicks stop propagation above, so
+    // this only runs for the backdrop, links, or empty space.
+    svg.on('click.focusClear', (event: any) => {
+      const target = event.target as Element | null;
+      if (target?.closest?.('g.nodes > g')) return;
+      clearFocusRef.current?.();
+    });
+
     // 3. Force Physics Simulation: Strong repulsion + Collision to prevent clumping
     const simulation = d3.forceSimulation<any>(d3Nodes)
       .velocityDecay(0.72) // Heavy ground friction: stops nodes from sliding/skating
@@ -341,9 +384,11 @@ export const GraphView: React.FC<GraphViewProps> = ({
       .data(d3Links)
       .enter()
       .append('line')
-      .attr('stroke', linkStroke)
+      .attr('data-link-kind', (d: any) => d.kind ?? 'link')
+      .attr('stroke', (d: any) => (d.kind === 'topic' ? TOPIC_LINK_COLOR : linkStroke))
       .attr('stroke-width', 1.5)
       .attr('stroke-dasharray', (d: any) => (d.targetExists === false ? '4,4' : 'none'));
+    linkSelectionRef.current = linkElements;
 
     // 5. Draw Node Vertices
     const nodeElements = gContainer.append('g')
@@ -352,6 +397,8 @@ export const GraphView: React.FC<GraphViewProps> = ({
       .data(d3Nodes)
       .enter()
       .append('g')
+      .attr('data-node-id', (d: any) => d.id)
+      .attr('data-node-kind', (d: any) => d.kind ?? 'note')
       .attr('cursor', 'pointer')
       .call(
         d3.drag<SVGGElement, any>()
@@ -382,11 +429,24 @@ export const GraphView: React.FC<GraphViewProps> = ({
           })
       );
 
+    // Focus halo sits behind the node circle. It only becomes visible for the
+    // folder/topic hub that currently owns the focus.
+    nodeElements.append('circle')
+      .attr('class', 'node-focus-ring')
+      .attr('r', (d: any) => Math.max(7, Math.min(20, (d.linksCount || 1) * 1.8 + 6)) + 5)
+      .attr('fill', 'none')
+      .attr('stroke', 'none')
+      .attr('stroke-width', 2)
+      .attr('opacity', 0)
+      .attr('pointer-events', 'none');
+
     // Node Circle
     nodeElements.append('circle')
+      .attr('class', 'node-circle')
       .attr('filter', 'url(#node-drop-shadow)') // Anchors node onto background plane
       .attr('r', (d: any) => Math.max(7, Math.min(20, (d.linksCount || 1) * 1.8 + 6)))
       .attr('fill', (d: any) => {
+        if (d.kind === 'topic') return TOPIC_COLOR;
         const isCurrent = activeNote && d.title && activeNote.title.toLowerCase() === d.title.toLowerCase();
         if (isCurrent) return COLOR_ACTIVE;
         return d.kind==='folder' ? '#a78bfa' : d.exists !== false ? COLOR_EXISTS : COLOR_MISSING;
@@ -399,6 +459,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
         const isCurrent = activeNote && d.title && activeNote.title.toLowerCase() === d.title.toLowerCase();
         return isCurrent ? 2.5 : 1;
       });
+    nodeSelectionRef.current = nodeElements;
 
     // Node Text Labels — use one explicit center anchor for both the text and
     // its pill. This avoids baseline/ascent differences leaving the glyphs
@@ -463,19 +524,36 @@ export const GraphView: React.FC<GraphViewProps> = ({
       } catch {}
     });
 
-    // Node Interactivity
-    nodeElements.on('click', (_event: any, d: any) => {
+    // Node Interactivity. Hubs (folders/topics) toggle focus; notes open.
+    nodeElements.on('click', (event: any, d: any) => {
+      event.stopPropagation();
+      const isHub = d.kind === 'folder' || d.kind === 'topic';
+      if (isHub && pinnedFocusIdRef.current === d.id) {
+        // Clicking the pinned hub again clears it and suppresses its hover
+        // preview until the pointer leaves.
+        suppressedHubRef.current = d.id;
+        hoverFocusRef.current?.(null);
+      } else if (isHub) {
+        suppressedHubRef.current = null;
+      }
       if (d.title || d.id) {
         selectNoteRef.current(d.id);
       }
     });
 
     nodeElements.on('mouseover', function (this: SVGGElement, _event: any, d: any) {
-      d3.select(this).select('circle')
+      const isHub = d.kind === 'folder' || d.kind === 'topic';
+      if (isHub) {
+        if (suppressedHubRef.current !== d.id) hoverFocusRef.current?.(d.id);
+      } else {
+        hoverFocusRef.current?.(null);
+      }
+
+      d3.select(this).select('circle.node-circle')
         .transition()
         .duration(motionDuration(150))
         .attr('r', Math.max(10, Math.min(24, (d.linksCount || 1) * 1.8 + 10)))
-        .attr('fill', COLOR_HOVER);
+        .attr('fill', (d: any) => (d.kind === 'topic' ? TOPIC_HOVER : COLOR_HOVER));
 
       d3.select(this).select('text')
         .transition()
@@ -491,13 +569,19 @@ export const GraphView: React.FC<GraphViewProps> = ({
         .attr('stroke', isLight ? 'rgba(148, 163, 184, 0.5)' : 'rgba(255, 255, 255, 0.25)');
     })
     .on('mouseout', function (this: SVGGElement, _event: any, d: any) {
+      const isHub = d.kind === 'folder' || d.kind === 'topic';
+      if (isHub) {
+        if (suppressedHubRef.current === d.id) suppressedHubRef.current = null;
+        else hoverFocusRef.current?.(null);
+      }
+
       const isCurrent = activeNote && d.title && activeNote.title.toLowerCase() === d.title.toLowerCase();
-      
-      d3.select(this).select('circle')
+
+      d3.select(this).select('circle.node-circle')
         .transition()
         .duration(motionDuration(150))
         .attr('r', Math.max(7, Math.min(20, (d.linksCount || 1) * 1.8 + 6)))
-        .attr('fill', d.kind==='folder' ? '#a78bfa' : isCurrent ? COLOR_ACTIVE : (d.exists !== false ? COLOR_EXISTS : COLOR_MISSING));
+        .attr('fill', d.kind==='topic' ? TOPIC_COLOR : d.kind==='folder' ? '#a78bfa' : isCurrent ? COLOR_ACTIVE : (d.exists !== false ? COLOR_EXISTS : COLOR_MISSING));
 
       d3.select(this).select('text')
         .transition()
@@ -655,8 +739,8 @@ export const GraphView: React.FC<GraphViewProps> = ({
       const isCurrent = activeNote && d.title && activeNote.title.toLowerCase() === d.title.toLowerCase();
 
       // Update circle fill/stroke
-      node.select('circle')
-        .attr('fill', d.kind==='folder' ? '#a78bfa' : isCurrent ? COLOR_ACTIVE : (d.exists !== false ? COLOR_EXISTS : COLOR_MISSING))
+      node.select('circle.node-circle')
+        .attr('fill', d.kind==='topic' ? TOPIC_COLOR : d.kind==='folder' ? '#a78bfa' : isCurrent ? COLOR_ACTIVE : (d.exists !== false ? COLOR_EXISTS : COLOR_MISSING))
         .attr('stroke', isCurrent ? STROKE_COLOR : STROKE_EXISTS);
 
       // Update text color
@@ -669,6 +753,48 @@ export const GraphView: React.FC<GraphViewProps> = ({
         .attr('stroke', pillStroke);
     });
   }, [nodeColor, themeMode, activeNote]);
+
+  // Spotlight the focused folder subtree/topic set by dimming everything else.
+  // Opacity-only: the force simulation and camera are never touched, and the
+  // transition collapses to an instant swap under reduced motion.
+  useEffect(() => {
+    const nodeSel = nodeSelectionRef.current;
+    const linkSel = linkSelectionRef.current;
+    if (!nodeSel || !linkSel) return;
+
+    const ids = focus?.ids ?? null;
+    const duration = motionDuration(180);
+    const endpoint = (value: any) => (value && typeof value === 'object' ? value.id : value);
+    const nodeOpacity = (d: any) => (!ids || ids.has(d.id) ? 1 : 0.2);
+    const linkOpacity = (d: any) =>
+      !ids || (ids.has(endpoint(d.source)) && ids.has(endpoint(d.target))) ? 1 : 0.1;
+
+    nodeSel.interrupt();
+    linkSel.interrupt();
+
+    // Keep the semantic color/glow on every hub ring so clearing or moving the
+    // focus fades it out instead of snapping the stroke away.
+    const ring = nodeSel.select('circle.node-focus-ring')
+      .attr('stroke', (d: any) =>
+        d.kind === 'folder' || d.kind === 'topic' ? focusColor(d.kind) : 'none'
+      )
+      .style('filter', (d: any) =>
+        d.kind === 'folder' || d.kind === 'topic'
+          ? `drop-shadow(0 0 5px ${focusColor(d.kind)})`
+          : null
+      );
+    const ringOpacity = (d: any) => (focus && d.id === focus.hubId ? 1 : 0);
+    ring.interrupt();
+    if (duration === 0) {
+      nodeSel.style('opacity', nodeOpacity);
+      linkSel.style('opacity', linkOpacity);
+      ring.attr('opacity', ringOpacity);
+    } else {
+      nodeSel.transition().duration(duration).style('opacity', nodeOpacity);
+      linkSel.transition().duration(duration).style('opacity', linkOpacity);
+      ring.transition().duration(duration).attr('opacity', ringOpacity);
+    }
+  }, [focus]);
 
   // Header Manual Reset Button
   // If the OS preference is switched on while a layout is still settling,
@@ -707,12 +833,15 @@ export const GraphView: React.FC<GraphViewProps> = ({
     }
   };
 
+  const hasFolders = graphData.nodes.some((node) => node.kind === 'folder');
+  const hasTopics = graphData.nodes.some((node) => node.kind === 'topic');
+
   return (
     <div
       data-region="graph"
       className="flex-1 bg-slate-950/40 border-r border-slate-900/60 flex flex-col h-full relative select-none overflow-hidden"
     >
-      {/* Header bar — wraps to two rows in narrow graph panes (container query). */}
+      {/* Header bar — title and controls stay on one row at every pane width. */}
       <div className="graph-header px-6 py-3.5 border-b border-slate-900/60 bg-slate-950/60 shrink-0 z-10">
         <div className="graph-header-title flex items-center gap-2">
           <Network className="w-4 h-4 text-brand-400 shrink-0" />
@@ -739,8 +868,9 @@ export const GraphView: React.FC<GraphViewProps> = ({
       </div>
 
       {/* SVG Container — fills remaining space beneath the header. */}
-      <div ref={containerRef} className="graph-canvas flex-1 overflow-hidden relative w-full h-full">
+      <div ref={containerRef} className="graph-canvas flex-1 overflow-hidden relative w-full h-full" title="Drag to arrange • Scroll to zoom">
         <svg ref={svgRef} className="w-full h-full block" />
+        {focusOverlay}
 
         {/* Legend */}
         <div className="absolute bottom-4 left-4 bg-slate-900/90 border border-slate-800/80 px-3.5 py-2.5 rounded-xl shadow-lg text-xs space-y-1.5 backdrop-blur-md z-10">
@@ -753,6 +883,18 @@ export const GraphView: React.FC<GraphViewProps> = ({
             <div className="w-2.5 h-2.5 rounded-full bg-brand-400 border border-brand-700" />
             <span className="text-slate-200">Existing Notes</span>
           </div>
+          {hasFolders && (
+            <div className="flex items-center gap-2">
+              <div className="w-2.5 h-2.5 rounded-full border border-white/60" style={{ backgroundColor: '#a78bfa' }} />
+              <span className="text-slate-200">Folders</span>
+            </div>
+          )}
+          {hasTopics && (
+            <div className="flex items-center gap-2">
+              <div className="w-2.5 h-2.5 rounded-full border border-white/60" style={{ backgroundColor: TOPIC_COLOR }} />
+              <span className="text-slate-200">Topics (@tag)</span>
+            </div>
+          )}
           <div className="flex items-center gap-2">
             <div className="w-2.5 h-2.5 rounded-full bg-slate-600 border border-dashed border-slate-500" />
             <span className="text-slate-400">Uncreated Wiki-links</span>

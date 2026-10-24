@@ -133,7 +133,7 @@ export default function App() {
     });
   }, [settings.appearance.accentColor, settings.appearance.hoverGlowColor]);
 
-  // Apply theme classes to the root element: .theme-industrial or .theme-glass
+  // Apply theme classes to the root element: .theme-industrial or .theme-gloss
   // combined with .mode-dark or .mode-light. CSS tokens swap instantly.
   useEffect(() => {
     const root = document.documentElement;
@@ -158,7 +158,7 @@ export default function App() {
   }, [settings.appearance.themeStyle, settings.appearance.themeMode, settings.appearance.liquidGlassOpacity]);
 
   useEffect(() => {setSelectedFolder('');setMoveTarget(null);setFolderReveal(null);return()=>sharedStudy.cancelAgents(settings.vaultPath);}, [settings.vaultPath]);
-  const isRounded = settings.appearance.themeStyle === 'glass' || settings.appearance.themeStyle === 'gloss';
+  const isRounded = settings.appearance.themeStyle === 'gloss';
 
 
   // Apply the chosen logo as the OS window (taskbar) icon. The theme mode is
@@ -664,6 +664,11 @@ export default function App() {
       }
       if (cancelled) return;
 
+      // The retired "Rounded" archetype ('glass') folds into Liquid Gloss.
+      // Preserve the user's mode, accent and glass opacity while upgrading.
+      const hadGlassStyle = (merged.appearance.themeStyle as string) === 'glass';
+      if (hadGlassStyle) merged.appearance.themeStyle = 'gloss';
+
       // Migrate the former built-in amber defaults without overwriting any
       // custom color the user has explicitly chosen.
       const legacyDefault = '#feb05d';
@@ -694,7 +699,7 @@ export default function App() {
       const hadUnsafeGlassOpacity =
         safeGlassOpacity !== merged.appearance.liquidGlassOpacity;
       merged = { ...merged, appearance: migratedAppearance };
-      if (hadLegacyDefault || hadUnsafeGlassOpacity) {
+      if (hadLegacyDefault || hadUnsafeGlassOpacity || hadGlassStyle) {
         tauriAPI.saveRuntimeConfig(merged).catch((e) => {
           console.error('Failed to persist appearance migration:', e);
           appLogger.error('Failed to persist appearance migration', e);
