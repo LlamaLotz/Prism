@@ -224,12 +224,18 @@ fn pdf_copy(s: &Scope, source: &Path, expected: Option<&str>) -> Result<(PathBuf
     let dir = directory(s, ".prism/research")?;
     let reference = dir.join(format!("{id}.source.json"));
     operations::validate(&s.root, &reference)?;
-    if source.starts_with(s.root.join(".prism/documents")) {
+    let retained = crate::path_util::relative_to(&s.root, source)
+        .is_some_and(|relative| relative.starts_with(Path::new(".prism").join("documents")));
+    if retained {
         operations::validate(&s.root, source)?;
         operations::atomic_write(
             &reference,
-            &serde_json::to_vec(&source.strip_prefix(&s.root).map_err(err)?.to_string_lossy())
-                .map_err(err)?,
+            &serde_json::to_vec(
+                &crate::path_util::relative_to(&s.root, source)
+                    .ok_or_else(|| err("Source is outside vault"))?
+                    .to_string_lossy(),
+            )
+            .map_err(err)?,
             !reference.exists(),
         )?;
         return Ok((source.to_path_buf(), id));
@@ -241,8 +247,12 @@ fn pdf_copy(s: &Scope, source: &Path, expected: Option<&str>) -> Result<(PathBuf
     }
     operations::atomic_write(
         &reference,
-        &serde_json::to_vec(&path.strip_prefix(&s.root).map_err(err)?.to_string_lossy())
-            .map_err(err)?,
+        &serde_json::to_vec(
+            &crate::path_util::relative_to(&s.root, &path)
+                .ok_or_else(|| err("Source is outside vault"))?
+                .to_string_lossy(),
+        )
+        .map_err(err)?,
         !reference.exists(),
     )?;
     Ok((path, id))
@@ -360,13 +370,13 @@ pub async fn research_import_attachment(
     let filename = format!("{}-{}", uuid::Uuid::new_v4(), name);
     let dest = dir.join(&filename);
     operations::atomic_write(&dest, &bytes, true)?;
-    let depth = note
-        .parent()
-        .ok_or("Missing note folder")?
-        .strip_prefix(&scope.root)
-        .map_err(err)?
-        .components()
-        .count();
+    let depth = crate::path_util::relative_to(
+        &scope.root,
+        note.parent().ok_or("Missing note folder")?,
+    )
+    .ok_or_else(|| err("Note is outside the vault"))?
+    .components()
+    .count();
     Ok(Some(format!(
         "{}attachments/{}",
         "../".repeat(depth),

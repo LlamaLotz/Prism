@@ -131,7 +131,9 @@ fn get_topic_groups(
     let scope = knowledge::current(&app_handle)?;
     let mut groups = db::get_topic_groups(&conn)?;
     for (_, notes) in &mut groups {
-        notes.retain(|(path, _)| Path::new(path).starts_with(&scope.root));
+        notes.retain(|(path, _)| {
+            crate::path_util::relative_to(&scope.root, Path::new(path)).is_some()
+        });
     }
     groups.retain(|(_, notes)| !notes.is_empty());
     Ok(groups)

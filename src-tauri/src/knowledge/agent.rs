@@ -198,24 +198,23 @@ fn ensure_inside_vault(scope: &super::Scope, path: &Path) -> Result<PathBuf, Str
         ancestor = ancestor.parent().ok_or("Path has no existing parent")?;
     }
     let canon = std::fs::canonicalize(ancestor).map_err(|e| e.to_string())?;
-    if !canon.starts_with(&scope.root) {
+    if crate::path_util::relative_to(&scope.root, &canon).is_none() {
         return Err("Path is outside the active vault".into());
     }
     // Also ensure the full abs (even if not yet existent) would be inside root
     // by checking that the ancestor's canonical + remaining suffix stays inside root
     let suffix = abs.strip_prefix(ancestor).unwrap_or(Path::new(""));
     let would_be = canon.join(suffix);
-    if !would_be.starts_with(&scope.root) {
+    if crate::path_util::relative_to(&scope.root, &would_be).is_none() {
         return Err("Path is outside the active vault".into());
     }
     Ok(abs)
 }
 
 fn vault_relative(scope: &super::Scope, abs: &str) -> String {
-    Path::new(abs)
-        .strip_prefix(&scope.root)
+    crate::path_util::relative_to(&scope.root, Path::new(abs))
         .map(|p| p.to_string_lossy().to_string())
-        .unwrap_or_else(|_| abs.to_string())
+        .unwrap_or_else(|| abs.to_string())
 }
 
 fn extract_frontmatter(content: &str) -> (String, String) {
@@ -631,7 +630,10 @@ fn read_note_blocking(
     let conn = crate::db::init_db(&app)?;
     let (id, path) = resolve_note(&conn, &scope.vault_id, &note_ref)?;
     let abs = Path::new(&path);
-    if !abs.starts_with(&scope.root) {
+    if crate::path_util::relative_to(&scope.root, abs)
+        .filter(|relative| !relative.as_os_str().is_empty())
+        .is_none()
+    {
         return Err("Note is outside the active vault".into());
     }
     let content = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
@@ -1044,13 +1046,15 @@ fn preview_create_note(
         ));
     }
     // Validate folder depth like lib.rs create_file
-    let rel_path = abs
-        .strip_prefix(&scope.root)
-        .unwrap_or(&abs)
+    let rel_path = crate::path_util::relative_to(&scope.root, &abs)
+        .unwrap_or_else(|| abs.clone())
         .to_string_lossy()
         .to_string();
-    let parts: Vec<&str> = rel_path.split('/').filter(|p| !p.is_empty()).collect();
-    if parts.len() > 6 {
+    let depth = Path::new(&rel_path)
+        .components()
+        .filter(|part| matches!(part, std::path::Component::Normal(_)))
+        .count();
+    if depth > 6 {
         return Err("Folders can be nested up to 5 levels deep".into());
     }
     if rel_path.contains("..") || rel_path.contains('\0') || rel_path.contains(':') {
@@ -1161,13 +1165,15 @@ fn preview_create_folder(
     if abs.exists() {
         return Err("Folder already exists".into());
     }
-    let rel_check = abs
-        .strip_prefix(&scope.root)
-        .unwrap_or(&abs)
+    let rel_check = crate::path_util::relative_to(&scope.root, &abs)
+        .unwrap_or_else(|| abs.clone())
         .to_string_lossy()
         .to_string();
-    let parts: Vec<&str> = rel_check.split('/').filter(|p| !p.is_empty()).collect();
-    if parts.len() > 5 {
+    let depth = Path::new(&rel_check)
+        .components()
+        .filter(|part| matches!(part, std::path::Component::Normal(_)))
+        .count();
+    if depth > 5 {
         return Err("Folders can be nested up to 5 levels deep".into());
     }
     create_pending(
@@ -1415,7 +1421,7 @@ pub async fn agent_call_tool(
                 for entry in walkdir::WalkDir::new(&scope.root).follow_links(false).sort_by_file_name().into_iter().filter_entry(|e|e.depth()==0 || !e.file_name().to_string_lossy().starts_with('.')) {
                     let entry=entry.map_err(|e|e.to_string())?;
                     if entry.depth()==0 || entry.file_type().is_symlink(){continue;}
-                    let path=entry.path().strip_prefix(&scope.root).map_err(|e|e.to_string())?.to_string_lossy().replace('\\',"/");
+                    let path=crate::path_util::relative_to(&scope.root,entry.path()).ok_or("Path is outside the active vault")?.to_string_lossy().replace('\\',"/");
                     if !folder.is_empty() && path!=folder && !path.starts_with(&(folder.clone()+"/")){continue;}
                     let is_folder=entry.file_type().is_dir();
                     if !is_folder && entry.path().extension().and_then(|s|s.to_str()).is_none_or(|s|!s.eq_ignore_ascii_case("md")){continue;}
@@ -1920,7 +1926,7 @@ pub async fn prepare_ai_enhancement(app: tauri::AppHandle, task: String, path: S
                 let candidate = candidates.iter().find(|c| c.note_id == id).ok_or("Invalid links: unknown note identity")?;
                 let (_, current_path) = resolve_note(&conn, &scope.vault_id, &id)?;
                 if current_path != candidate.path { return Err("CONFLICT: Link candidate moved. Generate a fresh preview.".into()); }
-                let target = Path::new(&current_path).strip_prefix(&scope.root).map_err(|_| "Invalid link target")?.with_extension("").to_string_lossy().replace('\\', "/");
+                let target = crate::path_util::relative_to(&scope.root, Path::new(&current_path)).ok_or("Invalid link target")?.with_extension("").to_string_lossy().replace('\\', "/");
                 if target.contains(['[', ']', '#', '|', '\n']) { return Err("Unsupported link target".into()); }
                 links.push(format!("[[{target}]]"));
             }

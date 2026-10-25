@@ -549,7 +549,7 @@ fn build_plan_blocking(
             .map_err(|e| e.to_string())?;
         let Some((path, title)) = meta else { continue };
         // Exclude paths outside vault root (defense-in-depth, though vault_id already scopes)
-        if !Path::new(&path).starts_with(&scope.root) {
+        if crate::path_util::relative_to(&scope.root, Path::new(&path)).is_none() {
             continue;
         }
         let (rrf, lex, sem) = rrf_by_id.get(&nid).cloned().unwrap_or((0.0, None, None));

@@ -58,16 +58,21 @@ pub struct OperationView {
 }
 
 pub fn validate(root: &Path, path: &Path) -> Result<(), String> {
-    if !path.starts_with(root)
-        || path == root
-        || path
-            .components()
-            .any(|c| matches!(c, std::path::Component::ParentDir))
+    if path
+        .components()
+        .any(|c| matches!(c, std::path::Component::ParentDir))
     {
         return Err(conflict("Path is outside the vault or is its root"));
     }
+    // Compare normalized components, not raw prefixes: the active root is
+    // canonicalized (`\\?\C:\Vault` on Windows) while notes arrive in the
+    // normal spelling (`C:\Vault\Note.md`), so `Path::starts_with` rejected
+    // every note inside the vault.
+    let relative = crate::path_util::relative_to(root, path)
+        .filter(|relative| !relative.as_os_str().is_empty())
+        .ok_or_else(|| conflict("Path is outside the vault or is its root"))?;
     let mut current = root.to_path_buf();
-    for part in path.strip_prefix(root).map_err(persistence)?.components() {
+    for part in relative.components() {
         current.push(part);
         match std::fs::symlink_metadata(&current) {
             Ok(meta) if meta.file_type().is_symlink() => {
@@ -1385,6 +1390,25 @@ mod tests {
         let link = s.root.join("link.md");
         std::os::unix::fs::symlink(&p, &link).unwrap();
         assert!(validate(&s.root, &link).is_err());
+    }
+    #[test]
+    fn verbatim_vault_root_accepts_normally_spelled_note_paths() {
+        // Windows: `activate` stores the canonical root with a `\\?\` prefix
+        // while the indexer and frontend use the normal `C:\...` spelling.
+        // The raw `starts_with` check treated those as different locations and
+        // rejected every save, including the post-write revision read that
+        // surfaced as a false "Save failed" conflict.
+        let root = Path::new(r"\\?\C:\Users\Shiva\Documents\New folder");
+        validate(
+            root,
+            Path::new(r"C:\Users\Shiva\Documents\New folder\Untitled Note.md"),
+        )
+        .unwrap();
+        // The root itself, siblings with a shared prefix, and traversal stay rejected.
+        assert!(validate(root, Path::new(r"C:\Users\Shiva\Documents\New folder")).is_err());
+        assert!(validate(root, Path::new(r"C:\Users\Shiva\Documents\New folder2\a.md")).is_err());
+        assert!(validate(root, Path::new(r"C:\Users\Shiva\Documents\Other\a.md")).is_err());
+        assert!(validate(root, Path::new(r"C:\Users\Shiva\Documents\New folder\..\a.md")).is_err());
     }
 }
 

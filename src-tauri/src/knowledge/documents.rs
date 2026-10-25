@@ -1522,7 +1522,8 @@ mod tests {
         assert!(p
             .outputs
             .iter()
-            .all(|o| Path::new(&o.path).starts_with(s.root.join("Chosen"))));
+            .all(|o| crate::path_util::relative_to(&s.root, Path::new(&o.path))
+                .is_some_and(|relative| relative.starts_with("Chosen"))));
         std::fs::remove_dir_all(s.root.join("Chosen")).unwrap();
         assert!(regenerate(c, &s, &mut p, &doc).is_err());
         // Plans that never selected a folder keep creating their historical destination.
