@@ -1,4 +1,5 @@
 import { test, expect, type Locator, type Page } from '@playwright/test';
+import { openConversationMenu } from './assistant-menu';
 
 const url = '/tests/notebook/app-harness.html';
 
@@ -66,7 +67,13 @@ test.describe('full application composition', () => {
       // The sidebar opens on the shared conversation, which owns the composer.
       const shared = page.locator('.study-assistant');
       await expect(shared.getByRole('combobox', { name: 'Chat model' })).toBeVisible();
+      // The Agent toggle now lives in the conversation ⋮ menu, and the panel no
+      // longer shows a vault-context label or a jump to the other chat view.
+      await openConversationMenu(page);
       await expect(shared.getByRole('button', { name: /Agent (ON|OFF)/ })).toBeVisible();
+      await expect(shared.getByRole('button', { name: 'Open in other view' })).toHaveCount(0);
+      await openConversationMenu(page);
+      await expect(shared.getByText('Vault context')).toHaveCount(0);
       await expect(shared.getByRole('textbox', { name: 'Message', exact: true })).toBeVisible();
       let ratios = await contrast(page, '.study-assistant');
       expect(ratios.text).toBeGreaterThanOrEqual(4.5);
@@ -82,6 +89,100 @@ test.describe('full application composition', () => {
       expect(errors).toEqual([]);
     });
   }
+
+  test('the AI assistant keeps the approval disclaimer in a popup', async ({ page }) => {
+    test.setTimeout(90000);
+    const errors = await boot(page, '?view=editor', page.locator('.study-assistant'));
+    const shared = page.locator('.study-assistant');
+
+    // New assistant chats start with Agent on; approval is an icon-only control.
+    await openConversationMenu(page);
+    await expect(shared.getByRole('button', { name: 'Agent ON', exact: true })).toBeVisible();
+    await page.keyboard.press('Escape');
+    const approve = shared.getByRole('button', { name: 'Approve for me OFF' });
+    await expect(approve).toBeVisible();
+    await expect(approve).toHaveText('');
+    await expect(approve).toHaveAttribute('title', 'Approve for me OFF');
+    await approve.hover();
+
+    await approve.click();
+    const notice = shared.getByRole('dialog', { name: 'Approval details' });
+    await expect(notice).toBeVisible();
+    await expect(notice).toContainText('Vault changes are approved automatically in this conversation. Undo is available in history. External processing still needs its own consent.');
+    // The disclaimer is only in the popup, never parked under the composer.
+    await expect(shared.getByText(/Vault changes are approved automatically/)).toHaveCount(1);
+
+    // Escape dismisses it and leaves no inline copy behind.
+    await page.keyboard.press('Escape');
+    await expect(notice).toHaveCount(0);
+    await expect(shared.getByText(/Vault changes are approved automatically/)).toHaveCount(0);
+
+    // The info affordance beside the control reopens it.
+    await shared.getByRole('button', { name: 'Approval details' }).click();
+    await expect(notice).toBeVisible();
+
+    // Turning Approve for me off closes the popup and drops the affordance.
+    await shared.getByRole('button', { name: 'Approve for me ON' }).click();
+    await expect(notice).toHaveCount(0);
+    await expect(shared.getByRole('button', { name: 'Approval details' })).toHaveCount(0);
+    expect(errors).toEqual([]);
+  });
+
+  test('AI assistant title aligns with the conversation selector', async ({ page }) => {
+    test.setTimeout(90000);
+    await boot(page, '?view=editor', page.locator('.study-assistant'));
+    const shared = page.locator('.study-assistant');
+    const conversations = shared.getByRole('combobox', { name: 'Conversation' });
+    const verifyAlignment = async () => {
+      const [heading, selector] = await Promise.all([
+        shared.locator('.study-toolbar h2').boundingBox(),
+        conversations.boundingBox(),
+      ]);
+      expect(heading).not.toBeNull();
+      expect(selector).not.toBeNull();
+      expect(Math.abs(heading!.x - selector!.x)).toBeLessThanOrEqual(1);
+    };
+
+    await verifyAlignment();
+    await shared.getByRole('button', { name: 'Expand chat' }).click();
+    await verifyAlignment();
+    await page.setViewportSize({ width: 420, height: 850 });
+    await verifyAlignment();
+
+  });
+
+  test('AI assistant Default model sends without requiring a saved profile ID', async ({ page }) => {
+    test.setTimeout(90000);
+    await boot(page, '?view=editor&gemini', page.locator('.study-assistant'));
+    const shared = page.locator('.study-assistant');
+    await expect(shared.getByRole('combobox', { name: 'Chat model' })).toContainText('Default model');
+    await openConversationMenu(page);
+    await shared.getByRole('button', { name: 'Agent ON', exact: true }).click();
+    await shared.getByRole('textbox', { name: 'Message', exact: true }).fill('Hello Gemini');
+    await shared.getByRole('button', { name: 'Send', exact: true }).click();
+
+    const calls = () => page.evaluate(() => (window as any).fixtureCalls as Array<{ command: string; args: any }>);
+    await expect.poll(async () => (await calls()).some(call => call.command === 'study_chat')).toBe(true);
+    const sent = (await calls()).find(call => call.command === 'study_chat')!;
+    const saved = (await calls()).find(call => call.command === 'study_request' && call.args.action === 'setChatProvider')!;
+    expect(saved.args.payload.providerId).toBe('');
+    expect(sent.args.providerId).toBe('');
+    expect(JSON.stringify([saved, sent])).not.toContain('fixture-only-key');
+    await expect(shared.getByRole('alert')).toHaveCount(0);
+  });
+
+  test('an unconfigured AI assistant defaults to None and explains what is missing', async ({ page }) => {
+    test.setTimeout(90000);
+    const errors = await boot(page, '?view=editor&unconfigured', page.locator('.study-assistant'));
+    const shared = page.locator('.study-assistant');
+
+    await expect(shared.getByRole('combobox', { name: 'Chat model' })).toContainText('None');
+    await expect(shared.getByRole('alert')).toContainText('No AI model is configured yet');
+    // Nothing is dispatched without a model: the composer refuses to send.
+    await shared.getByRole('textbox', { name: 'Message', exact: true }).fill('Hello');
+    await expect(shared.getByRole('button', { name: 'Send', exact: true })).toBeDisabled();
+    expect(errors).toEqual([]);
+  });
 
   test('opening a notebook from the library loads the workspace panels', async ({ page }) => {
     test.setTimeout(90000);

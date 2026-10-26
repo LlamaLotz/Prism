@@ -218,19 +218,7 @@ async fn execute_inner(app: &tauri::AppHandle, request: ModelRequest, callback: 
         return Err("Model capability is not available for this task".into());
     }
     let cfg = crate::config::load_runtime_config(app).ok_or("Configure an AI provider first")?;
-    let route = request.provider_id.as_ref().filter(|id| !id.is_empty()).or_else(|| if request.provider_id.is_none() {cfg.models.routes.get(&request.task)} else {None});
-    let configured = route.and_then(|id| cfg.models.providers.iter().find(|p| &p.id == id));
-    let model = if let Some(provider) = configured {
-        if !provider.capabilities.iter().any(|c| c == "generation") {
-            return Err("Selected model does not support generation".into());
-        }
-        &provider.config
-    } else {
-        if route.is_some_and(|r| r != "configured" && r != &cfg.omni_route.model) {
-            return Err("The selected task model is unavailable".into());
-        }
-        &cfg.omni_route
-    };
+    let model = resolve_model_config(request.provider_id.as_deref(), &request.task, &cfg.models, &cfg.omni_route)?;
     if model.base_url.is_empty() || model.model.is_empty() {
         return Err("Configure an AI provider and model first".into());
     }
@@ -365,9 +353,63 @@ async fn execute_inner(app: &tauri::AppHandle, request: ModelRequest, callback: 
     text.ok_or("Provider returned no text".into())
 }
 
+/// Resolve a conversation's saved profile ID separately from the provider
+/// name stored in the global assistant configuration. `Some("")` is the
+/// explicit Default model selection and must use `default`, even if a task
+/// route exists; `None` inherits the configured task route.
+fn resolve_model_config<'a>(
+    provider_id: Option<&'a str>,
+    task: &str,
+    settings: &'a ModelSettings,
+    default: &'a crate::config::OmniRouteConfig,
+) -> Result<&'a crate::config::OmniRouteConfig, String> {
+    let route = provider_id
+        .filter(|id| !id.is_empty())
+        .or_else(|| if provider_id.is_none() { settings.routes.get(task).map(String::as_str) } else { None });
+    if let Some(id) = route {
+        if let Some(profile) = settings.providers.iter().find(|profile| profile.id == id) {
+            if !profile.capabilities.iter().any(|capability| capability == "generation") {
+                return Err("Selected model does not support generation".into());
+            }
+            return Ok(&profile.config);
+        }
+        if id != "configured" && id != default.model {
+            return Err("Selected provider unavailable".into());
+        }
+    }
+    Ok(default)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn default_selection_uses_global_provider_while_saved_and_invalid_ids_stay_distinct() {
+        let mut default = crate::config::OmniRouteConfig::default();
+        default.provider = "google".into();
+        default.base_url = "https://generativelanguage.googleapis.com/v1beta/openai/".into();
+        default.model = "gemini-2.5-flash".into();
+        default.api_key = "fixture-only-secret".into();
+        let saved = crate::config::OmniRouteConfig { provider: "openai".into(), model: "saved-model".into(), ..Default::default() };
+        let settings = ModelSettings {
+            routes: [("CHAT".into(), "saved-profile".into())].into_iter().collect(),
+            providers: vec![ConfiguredModel { id: "saved-profile".into(), name: "Saved".into(), config: saved.clone(), capabilities: vec!["generation".into()] }],
+            ..Default::default()
+        };
+
+        // The UI's empty string is explicit Default model, independent of any
+        // task-level route; it resolves to global Gemini configuration.
+        let selected = resolve_model_config(Some(""), "CHAT", &settings, &default).unwrap();
+        assert_eq!(selected.provider, "google");
+        assert_eq!(selected.base_url, "https://generativelanguage.googleapis.com/v1beta/openai/");
+        assert_eq!(selected.model, "gemini-2.5-flash");
+
+        assert_eq!(resolve_model_config(Some("saved-profile"), "CHAT", &settings, &default).unwrap().model, "saved-model");
+        assert_eq!(resolve_model_config(None, "CHAT", &settings, &default).unwrap().model, "saved-model");
+        assert_eq!(resolve_model_config(Some("removed-profile"), "CHAT", &settings, &default).unwrap_err(), "Selected provider unavailable");
+    }
+
     #[test]
     fn privacy_defaults_and_localhost_forwarders() {
         assert_eq!(

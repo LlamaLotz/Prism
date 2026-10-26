@@ -69,6 +69,22 @@ const settings = {
   },
 } as unknown as AppSettings;
 
+// ?unconfigured models a fresh install: no provider, endpoint or model was ever
+// chosen, so the assistant must present "None" instead of a hidden default.
+if (query.has('unconfigured')) {
+  settings.omniRoute.provider = '';
+  settings.omniRoute.apiKey = '';
+  settings.omniRoute.baseUrl = '';
+  settings.omniRoute.model = '';
+  if (settings.models) settings.models.providers = [];
+}
+if (query.has('gemini')) {
+  settings.omniRoute.provider = 'google';
+  settings.omniRoute.apiKey = 'fixture-only-key';
+  settings.omniRoute.baseUrl = 'https://generativelanguage.googleapis.com/v1beta/openai/';
+  settings.omniRoute.model = 'gemini-2.5-flash';
+}
+
 const noteContents: Record<string,string> = {};
 const documentId = 'a'.repeat(64);
 let annotationFile = JSON.parse(localStorage.getItem('fixture-annotations') || 'null') || { version: 1, documentId, revision: 0, entries: [] };
@@ -124,8 +140,13 @@ Object.defineProperty(window, '__TAURI_INTERNALS__', {
           ['research', [['/vault/A/Note.md', 'Note'], ['/vault/Loose.md', 'Loose']]],
           ['loose', [['/vault/Loose.md', 'Loose']]],
         ];
+        // Agent surface: enabling Agent mounts AgentReview, which reads these.
+        case 'agent_list_tools': return [{ name: 'read_note', description: 'Read a note', requiresApproval: false }];
+        case 'agent_list_pending':
+        case 'agent_list_operations': return [];
         case 'get_ingestion_engine_status': return { engine: 'rust', rustAvailable: true };
         case 'model_service_status': return { state: 'ready', command: '', message: 'Ready' };
+        case 'study_chat': return true;
         case 'agent_list_tools': return [{ name: 'read_note', description: 'Read a note', requiresApproval: false }];
         case 'study_request': {
           const payload = args.payload ?? {};
@@ -136,7 +157,9 @@ Object.defineProperty(window, '__TAURI_INTERNALS__', {
             case 'notes': return { items: sources, nextOffset: null };
             case 'chat': return { session: null, collectionId: payload.collectionId ?? null, managed: true, messages: [] };
             case 'newChat': return { id: crypto.randomUUID(), title: 'New conversation', origin: 'copilot', collectionId: payload.collectionId ?? null, messageCount: 0 };
-            case 'setChatProvider': return true;
+            case 'setChatProvider':
+              if (typeof payload.providerId !== 'string') throw new Error('Missing providerId; select Default model or a saved provider.');
+              return true;
             default: return null;
           }
         }

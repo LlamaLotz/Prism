@@ -1,4 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
+import { toggleAgent } from './assistant-menu';
 
 /**
  * Rendered contrast + boundary audit.
@@ -187,7 +188,7 @@ test.describe('rendered contrast', () => {
       }
 
       // Agent history drawer, expanded.
-      await page.getByRole('button', { name: 'Agent OFF' }).click();
+      await toggleAgent(page);
       await page.getByLabel('Message', { exact: true }).fill('{"tool":"edit_note","input":{"noteId":"s1","operations":[]}}');
       await page.getByRole('button', { name: 'Send', exact: true }).click();
       await expect(page.getByRole('button', { name: 'Approve', exact: true })).toBeVisible();
@@ -230,7 +231,7 @@ test.describe('rendered contrast', () => {
         await page.getByRole('button', { name: 'Tools', exact: true }).first().click();
       }
 
-      await page.getByRole('button', { name: 'Agent OFF' }).click();
+      await toggleAgent(page);
       await page.getByLabel('Message', { exact: true }).fill('{"tool":"edit_note","input":{"noteId":"s1","operations":[]}}');
       await page.getByRole('button', { name: 'Send', exact: true }).click();
       await expect(page.getByRole('button', { name: 'Approve', exact: true })).toBeVisible();

@@ -607,6 +607,23 @@ html .study-menu-body > button:hover:not(:disabled) {
   background: var(--nb-selection) !important;
 }
 
+/* State chip on a menu toggle row (e.g. Agent ON/OFF). The enabled value uses
+   full-strength ink: an accent tint measured below 4.5:1 on the menu surface. */
+.study-menu-state {
+  margin-left: auto;
+  padding-left: 10px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--nb-secondary);
+}
+.study-menu-state[data-on] {
+  color: var(--nb-text);
+}
+html .study-menu-body > button[aria-pressed='true'] {
+  background: var(--nb-selection) !important;
+}
+
 /* --- Material viewer ----------------------------------------------------- */
 .study-viewer-back {
   flex-shrink: 0;
@@ -897,6 +914,7 @@ html .study-workspace .study-flashcard {
 .study-workspace audio { width: 100%; }
 .study-assistant { padding: 10px; }
 .study-assistant > .study-toolbar { flex-shrink: 0; }
+.study-assistant > .study-toolbar > h2 { margin-left: 14px; }
 .study-assistant > .study-toolbar > button { white-space: normal; }
 
 /* --- Agent review -------------------------------------------------------- */

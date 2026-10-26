@@ -1,6 +1,16 @@
 import { test, expect } from '@playwright/test';
+import { toggleAgent } from './assistant-menu';
+import { DEFAULT_SETTINGS } from '../../src/defaultSettings';
 
 const studyUrl = '/tests/notebook/study-harness.html';
+
+test('a fresh AI setup starts with no provider, model or endpoint', () => {
+  // Requirement: nothing is prefilled — an unconfigured install reads as None
+  // instead of inheriting a hardcoded provider/model.
+  expect(DEFAULT_SETTINGS.omniRoute.provider).toBe('');
+  expect(DEFAULT_SETTINGS.omniRoute.model).toBe('');
+  expect(DEFAULT_SETTINGS.omniRoute.baseUrl).toBe('');
+});
 
 for (const target of ['unrelated panel', 'menu', 'ancestor', 'document'] as const) {
   test(`model picker handles scrolling in ${target}`, async ({ page }) => {
@@ -68,7 +78,7 @@ test('prompt bar model picker works in the study notebook and stays compact', as
 
 test('AI thinking status reflects real request phases and clears when done', async ({ page }) => {
   await page.goto(studyUrl + '?slow');await page.getByRole('button',{name:'Open notebook',exact:true}).click();
-  await page.getByRole('button', { name: 'Agent OFF' }).click();
+  await toggleAgent(page);
   await page.getByLabel('Message', { exact: true }).fill('Compare these sources');
   await page.getByRole('button', { name: 'Send', exact: true }).click();
   await expect(page.locator('.ai-status-line__label').filter({hasText:'Generating…'})).toBeVisible();
