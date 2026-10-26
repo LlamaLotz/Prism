@@ -1053,7 +1053,10 @@ export function PdfReader({
       aria-label="PDF reader"
       onContextMenu={openContextMenu}
     >
-      <header className="pdf-toolbar pdf-header">
+      <header
+        className="pdf-toolbar pdf-header"
+        data-searching={searchOpen || undefined}
+      >
         <strong className="pdf-title">PDF reader</strong>
         {pdf && (
           <>
@@ -1121,163 +1124,184 @@ export function PdfReader({
                 <ZoomIn size={18} aria-hidden="true" />
               </button>
             </div>
-            <button
-              type="button"
-              className="pdf-icon-button"
-              aria-label="Rotate"
-              title="Rotate"
-              onClick={() => setRotation((value) => (value + 90) % 360)}
-            >
-              <RotateCw size={18} aria-hidden="true" />
-            </button>
           </>
         )}
-        <div className="pdf-toolbar-actions">
+        <div className="pdf-toolbar-tail">
           {pdf && (
             <>
               <button
-                ref={findTrigger}
                 type="button"
                 className="pdf-icon-button"
-                aria-label="Find in PDF"
-                title="Find in PDF (Ctrl/Cmd+F)"
-                aria-expanded={searchOpen}
-                aria-controls={searchOpen ? "pdf-find" : undefined}
-                onClick={openSearch}
+                aria-label="Rotate"
+                title="Rotate"
+                onClick={() => setRotation((value) => (value + 90) % 360)}
               >
-                <Search size={18} aria-hidden="true" />
+                <RotateCw size={18} aria-hidden="true" />
               </button>
-              <PdfToolbarMenu
-                id="pdf-annotation-tools"
-                label="Annotation tools"
-                icon={<PenLine size={18} aria-hidden="true" />}
-                triggerRef={penTrigger}
-                open={penOpen}
-                setOpen={setPenOpen}
-              >
-                <button
-                  type="button"
-                  className="pdf-menu-item"
-                  disabled={!selection.length}
-                  onClick={() => {
-                    add(selection);
-                    setPenOpen(false);
-                  }}
+              {searchOpen && (
+                <div
+                  id="pdf-find-field"
+                  className="pdf-find-field"
+                  role="search"
+                  aria-label="Find in PDF"
                 >
-                  <Highlighter aria-hidden="true" />
-                  Highlight selection
-                </button>
-                <button
-                  type="button"
-                  className="pdf-menu-item"
-                  aria-pressed={pointMode}
-                  onClick={() => {
-                    setPointMode((value) => !value);
-                    setPenOpen(false);
-                  }}
-                >
-                  <MessageSquarePlus aria-hidden="true" />
-                  Add point comment
-                </button>
-                <div className="pdf-menu-sep" />
-                <div className="pdf-menu-label">Highlight color</div>
-                <ColorSwatches
-                  color={color}
-                  change={setColor}
-                  label="Highlight color"
-                />
-                <p className="pdf-menu-hint">
-                  {pointMode
-                    ? "Click a page to place a comment."
-                    : "Select PDF text to highlight it."}
-                </p>
-              </PdfToolbarMenu>
-              <div className="pdf-save-group">
-                <button
-                  type="button"
-                  className="pdf-icon-button pdf-save-button"
-                  data-state={saveState}
-                  aria-label="Save annotations"
-                  title={saveTitle}
-                  aria-busy={savePhase === "saving"}
-                  disabled={!file || !dirty || savePhase === "saving"}
-                  onClick={() => void save()}
-                >
-                  {savePhase === "saving" ? (
-                    <Loader2
-                      size={18}
-                      className="pdf-save-spinner"
-                      aria-hidden="true"
-                    />
-                  ) : (
-                    <Save size={18} aria-hidden="true" />
-                  )}
-                </button>
-                <span className="pdf-save-status" role="status">
-                  {saveLabel}
-                </span>
-              </div>
+                  <input
+                    ref={searchInput}
+                    aria-label="Find in PDF"
+                    placeholder="Find in PDF…"
+                    value={query}
+                    onChange={(e) => {
+                      setQuery(e.target.value);
+                      searchRun.current++;
+                      setSearching(false);
+                      setSearchDone(false);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        void search();
+                      }
+                      if (e.key === "Escape") {
+                        e.preventDefault();
+                        closeSearch();
+                      }
+                    }}
+                  />
+                </div>
+              )}
             </>
           )}
-          <div className="pdf-toolbar-corner">
-            <button
-              type="button"
-              className="pdf-icon-button pdf-close"
-              aria-label="Close PDF"
-              title="Close PDF"
-              onClick={close}
-            >
-              <X size={18} aria-hidden="true" />
-            </button>
+          <div className="pdf-toolbar-actions">
             {pdf && (
+              <>
+                <button
+                  ref={findTrigger}
+                  type="button"
+                  className="pdf-icon-button"
+                  aria-label="Find in PDF"
+                  title="Find in PDF (Ctrl/Cmd+F)"
+                  aria-expanded={searchOpen}
+                  aria-controls={
+                    searchOpen ? "pdf-find-field pdf-find" : undefined
+                  }
+                  onClick={openSearch}
+                >
+                  <Search size={18} aria-hidden="true" />
+                </button>
+                <PdfToolbarMenu
+                  id="pdf-annotation-tools"
+                  label="Annotation tools"
+                  icon={<PenLine size={18} aria-hidden="true" />}
+                  triggerRef={penTrigger}
+                  open={penOpen}
+                  setOpen={setPenOpen}
+                >
+                  <button
+                    type="button"
+                    className="pdf-menu-item"
+                    disabled={!selection.length}
+                    onClick={() => {
+                      add(selection);
+                      setPenOpen(false);
+                    }}
+                  >
+                    <Highlighter aria-hidden="true" />
+                    Highlight selection
+                  </button>
+                  <button
+                    type="button"
+                    className="pdf-menu-item"
+                    aria-pressed={pointMode}
+                    onClick={() => {
+                      setPointMode((value) => !value);
+                      setPenOpen(false);
+                    }}
+                  >
+                    <MessageSquarePlus aria-hidden="true" />
+                    Add point comment
+                  </button>
+                  <div className="pdf-menu-sep" />
+                  <div className="pdf-menu-label">Highlight color</div>
+                  <ColorSwatches
+                    color={color}
+                    change={setColor}
+                    label="Highlight color"
+                  />
+                  <p className="pdf-menu-hint">
+                    {pointMode
+                      ? "Click a page to place a comment."
+                      : "Select PDF text to highlight it."}
+                  </p>
+                </PdfToolbarMenu>
+                <div className="pdf-save-group">
+                  <button
+                    type="button"
+                    className="pdf-icon-button pdf-save-button"
+                    data-state={saveState}
+                    aria-label="Save annotations"
+                    title={saveTitle}
+                    aria-busy={savePhase === "saving"}
+                    disabled={!file || !dirty || savePhase === "saving"}
+                    onClick={() => void save()}
+                  >
+                    {savePhase === "saving" ? (
+                      <Loader2
+                        size={18}
+                        className="pdf-save-spinner"
+                        aria-hidden="true"
+                      />
+                    ) : (
+                      <Save size={18} aria-hidden="true" />
+                    )}
+                  </button>
+                  <span className="pdf-save-status" role="status">
+                    {saveLabel}
+                  </span>
+                </div>
+              </>
+            )}
+            <div className="pdf-toolbar-corner">
               <button
                 type="button"
-                className="pdf-icon-button"
-                aria-label={`Annotations (${entries.length})`}
-                title={
-                  annotationsOpen
-                    ? "Hide annotations panel"
-                    : "Show annotations panel"
-                }
-                aria-pressed={annotationsOpen}
-                aria-controls="pdf-annotations"
-                onClick={() => setAnnotationsOpen((value) => !value)}
+                className="pdf-icon-button pdf-close"
+                aria-label="Close PDF"
+                title="Close PDF"
+                onClick={close}
               >
-                {annotationsOpen ? (
-                  <PanelRightClose size={18} aria-hidden="true" />
-                ) : (
-                  <PanelRightOpen size={18} aria-hidden="true" />
-                )}
+                <X size={18} aria-hidden="true" />
               </button>
-            )}
+              {pdf && (
+                <button
+                  type="button"
+                  className="pdf-icon-button"
+                  aria-label={`Annotations (${entries.length})`}
+                  title={
+                    annotationsOpen
+                      ? "Hide annotations panel"
+                      : "Show annotations panel"
+                  }
+                  aria-pressed={annotationsOpen}
+                  aria-controls="pdf-annotations"
+                  onClick={() => setAnnotationsOpen((value) => !value)}
+                >
+                  {annotationsOpen ? (
+                    <PanelRightClose size={18} aria-hidden="true" />
+                  ) : (
+                    <PanelRightOpen size={18} aria-hidden="true" />
+                  )}
+                </button>
+              )}
+            </div>
           </div>
         </div>
       </header>
       {searchOpen && (
-        <div id="pdf-find" className="pdf-find" role="search" aria-label="Find in PDF">
-          <Search size={14} aria-hidden="true" />
-          <input
-            ref={searchInput}
-            aria-label="Find in PDF"
-            placeholder="Find in PDF…"
-            value={query}
-            onChange={(e) => {
-              setQuery(e.target.value);
-              searchRun.current++;
-              setSearching(false);
-              setSearchDone(false);
-            }}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") {
-                e.preventDefault();
-                void search();
-              }
-              if (e.key === "Escape") {
-                e.preventDefault();
-                closeSearch();
-              }
-            }}
-          />
+        <div
+          id="pdf-find"
+          className="pdf-find"
+          role="group"
+          aria-label="PDF search actions"
+        >
           <button
             type="button"
             className="pdf-icon-button"

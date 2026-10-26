@@ -218,6 +218,20 @@ test("PDF find shortcut and compact menus keep every tool reachable", async ({
     }),
   ).toHaveCount(0);
 
+  // The field occupies the toolbar gap between Rotate and Find.
+  const searchField = reader.locator(".pdf-find-field");
+  const fieldBox = await searchField.boundingBox();
+  const inlineRotateBox = await reader
+    .getByRole("button", { name: "Rotate", exact: true })
+    .boundingBox();
+  const inlineFindBox = await findButton.boundingBox();
+  expect(fieldBox!.x).toBeGreaterThanOrEqual(
+    inlineRotateBox!.x + inlineRotateBox!.width,
+  );
+  expect(fieldBox!.x + fieldBox!.width).toBeLessThanOrEqual(inlineFindBox!.x);
+  expect(Math.abs(fieldBox!.y - inlineFindBox!.y)).toBeLessThan(2);
+  expect(fieldBox!.width).toBeGreaterThan(120);
+
   // Editable fields keep paste and select-all in the reader-owned menu.
   await findInput.fill("Research");
   await findInput.click({ button: "right" });
@@ -853,6 +867,16 @@ for (const theme of ["industrial", "gloss"])
 
       expect(await reader.locator('.pdf-page').first().evaluate(el => parseFloat(getComputedStyle(el).borderTopLeftRadius))).toBe(0);
       await reader.getByRole('button', { name: 'Find in PDF', exact: true }).click();
+      const searchField = reader.locator('.pdf-find-field');
+      const fieldBox = await searchField.boundingBox();
+      const searchFindBox = await pdfFind.boundingBox();
+      const searchRotateBox = await pdfRotate.boundingBox();
+      expect(fieldBox!.x).toBeGreaterThanOrEqual(
+        searchRotateBox!.x + searchRotateBox!.width,
+      );
+      expect(fieldBox!.x + fieldBox!.width).toBeLessThanOrEqual(searchFindBox!.x);
+      expect(Math.abs(fieldBox!.y - searchFindBox!.y)).toBeLessThan(2);
+      expect(fieldBox!.width).toBeGreaterThan(120);
       await reader.getByRole('textbox', { name: 'Find in PDF' }).fill('Research');
       await reader.getByRole('button', { name: 'Search PDF', exact: true }).click();
       await expect(reader.getByRole('button', { name: 'Page 1', exact: true })).toBeVisible();
