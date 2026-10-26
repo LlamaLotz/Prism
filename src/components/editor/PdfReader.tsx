@@ -2,7 +2,6 @@ import {
   Check,
   ChevronLeft,
   ChevronRight,
-  EllipsisVertical,
   Highlighter,
   Loader2,
   MessageSquarePlus,
@@ -349,8 +348,7 @@ export function PdfReader({
     [searching, setSearching] = useState(false),
     [searchDone, setSearchDone] = useState(false),
     [searchOpen, setSearchOpen] = useState(false);
-  const [penOpen, setPenOpen] = useState(false),
-    [moreOpen, setMoreOpen] = useState(false);
+  const [penOpen, setPenOpen] = useState(false);
   const [contextMenu, setContextMenu] =
     useState<PdfContextMenuState | null>(null);
   const [attempt, setAttempt] = useState(0),
@@ -366,7 +364,6 @@ export function PdfReader({
   const searchInput = useRef<HTMLInputElement>(null);
   const findTrigger = useRef<HTMLButtonElement>(null);
   const penTrigger = useRef<HTMLButtonElement>(null);
-  const moreTrigger = useRef<HTMLButtonElement>(null);
   const currentEntries = useRef(entries);
   const changeVersion = useRef(0);
   const savingRef = useRef(false);
@@ -398,7 +395,6 @@ export function PdfReader({
     setNeedsPassword(false);
     setSearchOpen(false);
     setPenOpen(false);
-    setMoreOpen(false);
     setContextMenu(null);
     setSavePhase("idle");
     setDirty(false);
@@ -552,7 +548,6 @@ export function PdfReader({
   const openSearch = useCallback(() => {
     setSearchOpen(true);
     setPenOpen(false);
-    setMoreOpen(false);
     setContextMenu(null);
     requestAnimationFrame(() => {
       searchInput.current?.focus();
@@ -562,14 +557,6 @@ export function PdfReader({
   const closeSearch = useCallback(() => {
     setSearchOpen(false);
     requestAnimationFrame(() => findTrigger.current?.focus());
-  }, []);
-  const setPenMenu = useCallback((open: boolean) => {
-    setPenOpen(open);
-    if (open) setMoreOpen(false);
-  }, []);
-  const setMoreMenu = useCallback((open: boolean) => {
-    setMoreOpen(open);
-    if (open) setPenOpen(false);
   }, []);
 
   // PDF search owns Ctrl/Cmd+F while the reader is open. Editor.tsx also
@@ -872,7 +859,6 @@ export function PdfReader({
     event.preventDefault();
     event.stopPropagation();
     setPenOpen(false);
-    setMoreOpen(false);
     contextEditable.current = activeField;
     contextFieldRange.current = null;
     let fieldSelection = "";
@@ -1135,6 +1121,15 @@ export function PdfReader({
                 <ZoomIn size={18} aria-hidden="true" />
               </button>
             </div>
+            <button
+              type="button"
+              className="pdf-icon-button"
+              aria-label="Rotate"
+              title="Rotate"
+              onClick={() => setRotation((value) => (value + 90) % 360)}
+            >
+              <RotateCw size={18} aria-hidden="true" />
+            </button>
           </>
         )}
         <div className="pdf-toolbar-actions">
@@ -1158,7 +1153,7 @@ export function PdfReader({
                 icon={<PenLine size={18} aria-hidden="true" />}
                 triggerRef={penTrigger}
                 open={penOpen}
-                setOpen={setPenMenu}
+                setOpen={setPenOpen}
               >
                 <button
                   type="button"
@@ -1222,57 +1217,40 @@ export function PdfReader({
                   {saveLabel}
                 </span>
               </div>
-              <PdfToolbarMenu
-                id="pdf-more-options"
-                label="More options"
-                icon={<EllipsisVertical size={18} aria-hidden="true" />}
-                triggerRef={moreTrigger}
-                open={moreOpen}
-                setOpen={setMoreMenu}
-              >
-                <button
-                  type="button"
-                  className="pdf-menu-item"
-                  onClick={() => {
-                    setRotation((value) => (value + 90) % 360);
-                    setMoreOpen(false);
-                    requestAnimationFrame(() => moreTrigger.current?.focus());
-                  }}
-                >
-                  <RotateCw aria-hidden="true" />
-                  Rotate
-                </button>
-                <button
-                  type="button"
-                  className="pdf-menu-item"
-                  aria-pressed={annotationsOpen}
-                  aria-controls="pdf-annotations"
-                  title="Show or hide the annotations panel"
-                  onClick={() => {
-                    setAnnotationsOpen((value) => !value);
-                    setMoreOpen(false);
-                    requestAnimationFrame(() => moreTrigger.current?.focus());
-                  }}
-                >
-                  {annotationsOpen ? (
-                    <PanelRightClose aria-hidden="true" />
-                  ) : (
-                    <PanelRightOpen aria-hidden="true" />
-                  )}
-                  Annotations ({entries.length})
-                </button>
-              </PdfToolbarMenu>
             </>
           )}
-          <button
-            type="button"
-            className="pdf-icon-button pdf-close"
-            aria-label="Close PDF"
-            title="Close PDF"
-            onClick={close}
-          >
-            <X size={18} aria-hidden="true" />
-          </button>
+          <div className="pdf-toolbar-corner">
+            <button
+              type="button"
+              className="pdf-icon-button pdf-close"
+              aria-label="Close PDF"
+              title="Close PDF"
+              onClick={close}
+            >
+              <X size={18} aria-hidden="true" />
+            </button>
+            {pdf && (
+              <button
+                type="button"
+                className="pdf-icon-button"
+                aria-label={`Annotations (${entries.length})`}
+                title={
+                  annotationsOpen
+                    ? "Hide annotations panel"
+                    : "Show annotations panel"
+                }
+                aria-pressed={annotationsOpen}
+                aria-controls="pdf-annotations"
+                onClick={() => setAnnotationsOpen((value) => !value)}
+              >
+                {annotationsOpen ? (
+                  <PanelRightClose size={18} aria-hidden="true" />
+                ) : (
+                  <PanelRightOpen size={18} aria-hidden="true" />
+                )}
+              </button>
+            )}
+          </div>
         </div>
       </header>
       {searchOpen && (

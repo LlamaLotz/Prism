@@ -105,7 +105,6 @@ test("PDF point comments save, reopen, rotate and insert a durable quote link", 
     .getByRole("button", { name: "Save annotations", exact: true })
     .click();
   await expect(reader.getByRole("status")).toHaveText("Saved");
-  await reader.getByRole("button", { name: "More options", exact: true }).click();
   await reader.getByRole("button", { name: "Rotate", exact: true }).click();
   await expect(reader.locator(".pdf-comment-dot")).toHaveCount(1);
   await reader.getByRole("button", { name: "Insert quote into note" }).click();
@@ -264,31 +263,61 @@ test("PDF find shortcut and compact menus keep every tool reachable", async ({
   await expect(tools).toHaveAttribute("aria-expanded", "false");
   await expect(tools).toBeFocused();
 
-  const more = reader.getByRole("button", {
-    name: "More options",
-    exact: true,
+  // Rotate sits directly after the zoom controls. The annotations toggle is
+  // stacked directly underneath Close at the far right.
+  const rotate = reader.getByRole("button", { name: "Rotate", exact: true });
+  const close = reader.getByRole("button", { name: "Close PDF", exact: true });
+  const annotationToggle = reader.getByRole("button", {
+    name: /Annotations \(0\)/,
   });
-  await more.click();
-  await expect(more).toHaveAttribute("aria-expanded", "true");
   await expect(
-    reader.getByRole("button", { name: "Rotate", exact: true }),
-  ).toBeFocused();
+    reader.getByRole("button", { name: "More options", exact: true }),
+  ).toHaveCount(0);
+  await expect(annotationToggle).toBeVisible();
+  const zoomInBox = await reader
+    .getByRole("button", { name: "Zoom in", exact: true })
+    .boundingBox();
+  const rotateBox = await rotate.boundingBox();
+  expect(rotateBox!.x).toBeGreaterThan(zoomInBox!.x);
+  expect(Math.abs(rotateBox!.y - zoomInBox!.y)).toBeLessThan(4);
+  const closeBox = await close.boundingBox();
+  const annotationBox = await annotationToggle.boundingBox();
+  // The corner is taller than a single control, but every top-row control
+  // must share Close's baseline. Only the annotations toggle sits below it.
+  const findBox = await reader
+    .getByRole("button", { name: "Find in PDF", exact: true })
+    .boundingBox();
+  const toolsBox = await reader
+    .getByRole("button", { name: "Annotation tools", exact: true })
+    .boundingBox();
+  const saveBox = await reader
+    .getByRole("button", { name: "Save annotations", exact: true })
+    .boundingBox();
+  for (const box of [rotateBox, findBox, toolsBox, saveBox]) {
+    expect(Math.abs(box!.y - closeBox!.y)).toBeLessThan(2);
+  }
+  expect(Math.abs(annotationBox!.x - closeBox!.x)).toBeLessThan(2);
+  expect(annotationBox!.y).toBeGreaterThan(closeBox!.y + closeBox!.height - 1);
+  await expect(annotationToggle).toHaveAttribute("aria-pressed", "true");
+  await annotationToggle.click();
   await expect(
-    reader.getByRole("button", { name: /Annotations \(0\)/ }),
+    reader.getByRole("complementary", { name: "Annotations" }),
+  ).toBeHidden();
+  await expect(annotationToggle).toHaveAttribute("aria-pressed", "false");
+  await annotationToggle.click();
+  await expect(
+    reader.getByRole("complementary", { name: "Annotations" }),
   ).toBeVisible();
-  await page.keyboard.press("Escape");
-  await expect(more).toHaveAttribute("aria-expanded", "false");
-  await expect(more).toBeFocused();
 
   for (const name of [
     "Previous page",
     "Next page",
     "Zoom in",
     "Zoom out",
+    "Rotate",
     "Find in PDF",
     "Annotation tools",
     "Save annotations",
-    "More options",
     "Close PDF",
   ]) {
     const button = reader.getByRole("button", { name, exact: true });
@@ -761,6 +790,21 @@ for (const theme of ["industrial", "gloss"])
       await page.getByRole("button", { name: "Live", exact: true }).click();
       const reader = await openReader(page);
       expect(await reader.evaluate(el => getComputedStyle(el).backgroundColor)).toMatch(/^rgb\(/);
+      // At narrow widths the header wraps, but the visible top row must stay
+      // aligned with Close while annotations remains underneath it.
+      const pdfClose = reader.getByRole("button", { name: "Close PDF" });
+      const pdfFind = reader.getByRole("button", { name: "Find in PDF", exact: true });
+      const pdfRotate = reader.getByRole("button", { name: "Rotate", exact: true });
+      const pdfAnnotation = reader.getByRole("button", { name: /Annotations \(\d+\)/ });
+      const closeBox = await pdfClose.boundingBox();
+      const findBox = await pdfFind.boundingBox();
+      const rotateBox = await pdfRotate.boundingBox();
+      const annotationBox = await pdfAnnotation.boundingBox();
+      for (const box of [findBox, rotateBox]) {
+        expect(Math.abs(box!.y - closeBox!.y)).toBeLessThan(2);
+      }
+      expect(Math.abs(annotationBox!.x - closeBox!.x)).toBeLessThan(2);
+      expect(annotationBox!.y).toBeGreaterThan(closeBox!.y + closeBox!.height - 1);
       const contrast = (locator: ReturnType<typeof reader.getByRole>) => locator.evaluate(el => {
         const parse = (color: string) => {
           const [r, g, b, a = 1] = color.match(/[\d.]+/g)?.map(Number) ?? [0, 0, 0, 1];
@@ -817,7 +861,6 @@ for (const theme of ["industrial", "gloss"])
       await reader
         .getByRole("button", { name: "Zoom in", exact: true })
         .click();
-      await reader.getByRole("button", { name: "More options", exact: true }).click();
       await reader.getByRole("button", { name: "Rotate", exact: true }).click();
       await reader
         .getByRole("button", { name: "Next page", exact: true })
@@ -909,20 +952,20 @@ test("PDF relinking does not leak into a later reload", async ({ page }) => {
 test("PDF icons, palette, scrolling and collapsed drafts remain usable", async ({ page }) => {
   await boot(page);
   const reader = await openReader(page);
-  for (const name of ["Zoom in", "Zoom out", "Previous page", "Next page", "Find in PDF", "Annotation tools", "More options", "Save annotations", "Close PDF"]) {
+  for (const name of ["Zoom in", "Zoom out", "Rotate", "Previous page", "Next page", "Find in PDF", "Annotation tools", "Save annotations", "Close PDF"]) {
     const button = reader.getByRole("button", { name, exact: true });
     await expect(button.locator("svg")).toBeVisible();
     await expect(button).toHaveAttribute("title", /\S/);
   }
+  const annotationToggle = reader.getByRole("button", { name: /Annotations \(0\)/ });
+  await expect(annotationToggle.locator("svg")).toBeVisible();
+  await expect(annotationToggle).toHaveAttribute("title", /\S/);
   await reader.getByRole("button", { name: "Annotation tools", exact: true }).click();
   await reader.getByRole("button", { name: "pink", exact: true }).click();
   await expect(reader.getByRole("button", { name: "pink", exact: true })).toHaveAttribute("aria-pressed", "true");
   await reader.getByRole("button", { name: "Annotation tools", exact: true }).click();
   await pointComment(page, "Unsaved comment that must survive collapsing");
-  const toggle = async () => {
-    await reader.getByRole("button", { name: "More options", exact: true }).click();
-    await reader.getByRole("button", { name: /Annotations \(1\)/ }).click();
-  };
+  const toggle = () => reader.getByRole("button", { name: /Annotations \(1\)/ }).click();
   await toggle();
   await expect(reader.getByRole("complementary", { name: "Annotations" })).toBeHidden();
   await toggle();
