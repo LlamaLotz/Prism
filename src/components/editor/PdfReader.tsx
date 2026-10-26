@@ -1137,33 +1137,73 @@ export function PdfReader({
               </button>
               {searchOpen && (
                 <div
-                  id="pdf-find-field"
-                  className="pdf-find-field"
+                  id="pdf-find"
+                  className="pdf-find-inline"
                   role="search"
                   aria-label="Find in PDF"
                 >
-                  <input
-                    ref={searchInput}
-                    aria-label="Find in PDF"
-                    placeholder="Find in PDF…"
-                    value={query}
-                    onChange={(e) => {
-                      setQuery(e.target.value);
-                      searchRun.current++;
-                      setSearching(false);
-                      setSearchDone(false);
-                    }}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") {
-                        e.preventDefault();
-                        void search();
-                      }
-                      if (e.key === "Escape") {
-                        e.preventDefault();
-                        closeSearch();
-                      }
-                    }}
-                  />
+                  <div id="pdf-find-field" className="pdf-find-field">
+                    <input
+                      ref={searchInput}
+                      aria-label="Find in PDF"
+                      placeholder="Find in PDF…"
+                      value={query}
+                      onChange={(e) => {
+                        setQuery(e.target.value);
+                        searchRun.current++;
+                        setSearching(false);
+                        setSearchDone(false);
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          void search();
+                        }
+                        if (e.key === "Escape") {
+                          e.preventDefault();
+                          closeSearch();
+                        }
+                      }}
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    className="pdf-icon-button"
+                    aria-label="Search PDF"
+                    title={searching ? "Searching…" : "Search PDF"}
+                    aria-busy={searching}
+                    disabled={searching || !query.trim()}
+                    onClick={() => void search()}
+                  >
+                    {searching ? (
+                      <Loader2
+                        size={16}
+                        className="pdf-save-spinner"
+                        aria-hidden="true"
+                      />
+                    ) : (
+                      <Search size={16} aria-hidden="true" />
+                    )}
+                  </button>
+                  {searchDone && (
+                    <div className="pdf-find-results">
+                      <span className="pdf-find-status" aria-live="polite">
+                        {matches.length
+                          ? `${matches.length} matching page${matches.length === 1 ? "" : "s"}`
+                          : "No matching pages"}
+                      </span>
+                      {matches.map((n) => (
+                        <button
+                          key={n}
+                          type="button"
+                          className="pdf-find-page"
+                          onClick={() => navigate(n)}
+                        >
+                          Page {n}
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
               )}
             </>
@@ -1180,9 +1220,7 @@ export function PdfReader({
                     searchOpen ? "Close search (Esc)" : "Find in PDF (Ctrl/Cmd+F)"
                   }
                   aria-expanded={searchOpen}
-                  aria-controls={
-                    searchOpen ? "pdf-find-field pdf-find" : undefined
-                  }
+                  aria-controls={searchOpen ? "pdf-find" : undefined}
                   onClick={searchOpen ? closeSearch : openSearch}
                 >
                   {searchOpen ? (
@@ -1298,48 +1336,6 @@ export function PdfReader({
           </div>
         </div>
       </header>
-      {searchOpen && (
-        <div
-          id="pdf-find"
-          className="pdf-find"
-          role="group"
-          aria-label="PDF search actions"
-        >
-          <button
-            type="button"
-            className="pdf-icon-button"
-            aria-label="Search PDF"
-            title={searching ? "Searching…" : "Search PDF"}
-            aria-busy={searching}
-            disabled={searching || !query.trim()}
-            onClick={() => void search()}
-          >
-            {searching ? (
-              <Loader2 size={16} className="pdf-save-spinner" aria-hidden="true" />
-            ) : (
-              <Search size={16} aria-hidden="true" />
-            )}
-          </button>
-          {searchDone && (
-            <span className="pdf-find-status" aria-live="polite">
-              {matches.length
-                ? `${matches.length} matching page${matches.length === 1 ? "" : "s"}`
-                : "No matching pages"}
-            </span>
-          )}
-          {searchDone &&
-            matches.map((n) => (
-              <button
-                key={n}
-                type="button"
-                className="pdf-find-page"
-                onClick={() => navigate(n)}
-              >
-                Page {n}
-              </button>
-            ))}
-        </div>
-      )}
       {pointMode && (
         <p className="pdf-mode-hint" aria-live="polite">
           Click a page to place a comment.

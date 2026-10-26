@@ -222,10 +222,6 @@ test("PDF find shortcut and compact menus keep every tool reachable", async ({
     name: "Close PDF",
     exact: true,
   });
-  const toolbarButtons = [rotateButton, findToggle, penButton, saveButton, closeButton];
-  const boxesBefore = await Promise.all(
-    toolbarButtons.map((button) => button.boundingBox()),
-  );
 
   // The original Find button opens and closes the field without acting as a
   // second search trigger.
@@ -249,27 +245,53 @@ test("PDF find shortcut and compact menus keep every tool reachable", async ({
   });
   expect(openFill).toBe(accentFill);
 
-  // The field is compact and occupies the gap between Rotate and Find.
+  // The compact field and submit action share one inline cluster.
   const searchField = reader.locator(".pdf-find-field");
+  const searchAction = reader.getByRole("button", {
+    name: "Search PDF",
+    exact: true,
+  });
   const fieldBox = await searchField.boundingBox();
   const inlineRotateBox = await rotateButton.boundingBox();
-  const inlineFindBox = await findToggle.boundingBox();
+  const inlineActionBox = await searchAction.boundingBox();
   expect(fieldBox!.x).toBeGreaterThanOrEqual(
     inlineRotateBox!.x + inlineRotateBox!.width,
   );
-  expect(fieldBox!.x + fieldBox!.width).toBeLessThanOrEqual(inlineFindBox!.x);
-  expect(Math.abs(fieldBox!.y - inlineFindBox!.y)).toBeLessThan(2);
+  expect(inlineActionBox!.x).toBeGreaterThanOrEqual(
+    fieldBox!.x + fieldBox!.width,
+  );
+  expect(Math.abs(inlineActionBox!.y - fieldBox!.y)).toBeLessThan(2);
   expect(fieldBox!.width).toBeGreaterThanOrEqual(150);
   expect(fieldBox!.width).toBeLessThanOrEqual(161);
 
-  // Opening the field must not move the surrounding toolbar controls.
-  const boxesOpen = await Promise.all(
-    toolbarButtons.map((button) => button.boundingBox()),
-  );
-  for (let i = 0; i < boxesBefore.length; i++) {
-    expect(Math.abs(boxesOpen[i]!.x - boxesBefore[i]!.x)).toBeLessThan(2);
-    expect(Math.abs(boxesOpen[i]!.y - boxesBefore[i]!.y)).toBeLessThan(2);
+  // Reflow is allowed, but every toolbar action must stay visible outside the
+  // cluster, with no horizontal page overflow.
+  for (const button of [
+    findToggle,
+    penButton,
+    saveButton,
+    closeButton,
+  ]) {
+    await expect(button).toBeVisible();
   }
+  const clusterBox = await reader.locator(".pdf-find-inline").boundingBox();
+  for (const box of await Promise.all(
+    [findToggle, penButton, saveButton, closeButton].map((button) =>
+      button.boundingBox(),
+    ),
+  )) {
+    const overlaps =
+      box!.x < clusterBox!.x + clusterBox!.width &&
+      box!.x + box!.width > clusterBox!.x &&
+      box!.y < clusterBox!.y + clusterBox!.height &&
+      box!.y + box!.height > clusterBox!.y;
+    expect(overlaps).toBe(false);
+  }
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBe(true);
 
   await findToggle.click();
   await expect(findInput).toHaveCount(0);
@@ -291,6 +313,36 @@ test("PDF find shortcut and compact menus keep every tool reachable", async ({
 
   // Editable fields keep paste and select-all in the reader-owned menu.
   await findInput.fill("Research");
+  await searchAction.click();
+  const status = reader.locator(".pdf-find-status");
+  await expect(status).toHaveText("1 matching page");
+  const pageChip = reader.getByRole("button", {
+    name: "Page 1",
+    exact: true,
+  });
+  const resultFieldBox = await searchField.boundingBox();
+  const resultActionBox = await searchAction.boundingBox();
+  const resultStatusBox = await status.boundingBox();
+  const pageChipBox = await pageChip.boundingBox();
+  const centerY = (box: { y: number; height: number }) =>
+    box.y + box.height / 2;
+  expect(resultFieldBox!.width).toBeGreaterThanOrEqual(150);
+  expect(resultFieldBox!.width).toBeLessThanOrEqual(161);
+  for (const box of [resultActionBox, resultStatusBox, pageChipBox]) {
+    expect(box!.x).toBeGreaterThanOrEqual(
+      resultFieldBox!.x + resultFieldBox!.width,
+    );
+    expect(
+      Math.abs(centerY(box!) - centerY(resultFieldBox!)),
+    ).toBeLessThan(2);
+  }
+  expect(resultStatusBox!.x).toBeGreaterThan(
+    resultActionBox!.x + resultActionBox!.width,
+  );
+  expect(pageChipBox!.x).toBeGreaterThan(
+    resultStatusBox!.x + resultStatusBox!.width,
+  );
+
   await findInput.click({ button: "right" });
   const fieldMenu = page.getByRole("group", { name: "PDF actions" });
   await expect(
@@ -872,8 +924,6 @@ for (const theme of ["industrial", "gloss"])
       const findBox = await pdfFind.boundingBox();
       const rotateBox = await pdfRotate.boundingBox();
       const annotationBox = await pdfAnnotation.boundingBox();
-      const penBox = await pdfPen.boundingBox();
-      const saveBox = await pdfSave.boundingBox();
       for (const box of [findBox, rotateBox]) {
         expect(Math.abs(box!.y - closeBox!.y)).toBeLessThan(2);
       }
@@ -928,34 +978,56 @@ for (const theme of ["industrial", "gloss"])
       expect(await reader.locator('.pdf-page').first().evaluate(el => parseFloat(getComputedStyle(el).borderTopLeftRadius))).toBe(0);
       await reader.getByRole('button', { name: 'Find in PDF', exact: true }).click();
       const searchField = reader.locator('.pdf-find-field');
+      const searchAction = reader.getByRole('button', { name: 'Search PDF', exact: true });
       const fieldBox = await searchField.boundingBox();
-      const searchFindBox = await pdfFind.boundingBox();
       const searchRotateBox = await pdfRotate.boundingBox();
-      const searchPenBox = await pdfPen.boundingBox();
-      const searchSaveBox = await pdfSave.boundingBox();
-      const searchCloseBox = await pdfClose.boundingBox();
+      const searchActionBox = await searchAction.boundingBox();
       expect(fieldBox!.x).toBeGreaterThanOrEqual(
         searchRotateBox!.x + searchRotateBox!.width,
       );
-      expect(fieldBox!.x + fieldBox!.width).toBeLessThanOrEqual(searchFindBox!.x);
-      expect(Math.abs(fieldBox!.y - searchFindBox!.y)).toBeLessThan(2);
+      expect(searchActionBox!.x).toBeGreaterThanOrEqual(
+        fieldBox!.x + fieldBox!.width,
+      );
+      expect(Math.abs(searchActionBox!.y - fieldBox!.y)).toBeLessThan(2);
       expect(fieldBox!.width).toBeGreaterThanOrEqual(150);
       expect(fieldBox!.width).toBeLessThanOrEqual(161);
       await expect(pdfFind).toHaveAccessibleName('Close search');
-      // Opening the compact field must not reflow the rest of the toolbar.
-      for (const [before, after] of [
-        [rotateBox, searchRotateBox],
-        [findBox, searchFindBox],
-        [penBox, searchPenBox],
-        [saveBox, searchSaveBox],
-        [closeBox, searchCloseBox],
-      ]) {
-        expect(Math.abs(after!.x - before!.x)).toBeLessThan(2);
-        expect(Math.abs(after!.y - before!.y)).toBeLessThan(2);
+      for (const control of [pdfFind, pdfPen, pdfSave, pdfClose]) {
+        await expect(control).toBeVisible();
       }
       await reader.getByRole('textbox', { name: 'Find in PDF' }).fill('Research');
-      await reader.getByRole('button', { name: 'Search PDF', exact: true }).click();
+      await searchAction.click();
       await expect(reader.getByRole('button', { name: 'Page 1', exact: true })).toBeVisible();
+      const status = reader.locator('.pdf-find-status');
+      await expect(status).toHaveText('1 matching page');
+      const pageChip = reader.getByRole('button', { name: 'Page 1', exact: true });
+      const resultFieldBox = await searchField.boundingBox();
+      const resultActionBox = await searchAction.boundingBox();
+      const resultStatusBox = await status.boundingBox();
+      const pageChipBox = await pageChip.boundingBox();
+      const centerY = (box: { y: number; height: number }) => box.y + box.height / 2;
+      expect(resultFieldBox!.width).toBeGreaterThanOrEqual(96);
+      expect(resultFieldBox!.width).toBeLessThanOrEqual(161);
+      for (const box of [resultActionBox, resultStatusBox, pageChipBox]) {
+        expect(box!.x).toBeGreaterThanOrEqual(
+          resultFieldBox!.x + resultFieldBox!.width,
+        );
+        expect(Math.abs(centerY(box!) - centerY(resultFieldBox!))).toBeLessThan(2);
+      }
+      expect(pageChipBox!.x).toBeGreaterThan(
+        resultStatusBox!.x + resultStatusBox!.width,
+      );
+      const clusterBox = await reader.locator('.pdf-find-inline').boundingBox();
+      for (const box of await Promise.all(
+        [pdfFind, pdfPen, pdfSave, pdfClose].map(control => control.boundingBox()),
+      )) {
+        const overlaps =
+          box!.x < clusterBox!.x + clusterBox!.width &&
+          box!.x + box!.width > clusterBox!.x &&
+          box!.y < clusterBox!.y + clusterBox!.height &&
+          box!.y + box!.height > clusterBox!.y;
+        expect(overlaps).toBe(false);
+      }
       await page.screenshot({ path: `/tmp/prism-pdf-${theme}-${mode}.png` });
 
       await reader

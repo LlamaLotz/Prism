@@ -1017,12 +1017,11 @@ html body .pdf-reader .pdf-annotation-heading:active:not(:disabled) {
   min-width: 40px;
   text-align: center;
 }
-/* Keep Rotate, the find field and the actions on a shared line. When the
-   header wraps, this tail moves as one unit so the field never strands the
-   search button on a different row. */
+/* Rotate, the inline find controls and the actions share this tail. The
+   actions wrap as a group when the find field plus its results need the row. */
 .pdf-toolbar-tail {
-  position: relative;
   display: flex;
+  flex-wrap: wrap;
   align-items: flex-start;
   gap: 8px 10px;
   flex: 1 1 360px;
@@ -1072,15 +1071,21 @@ html body .pdf-reader .pdf-find-toggle[aria-expanded="true"]:hover:not(:disabled
   border-color: var(--nb-selected-border) !important;
 }
 
-/* The compact field sits over the empty gap between Rotate and Find, so
-   opening it never reflows the toolbar (or pushes Close onto a new row). */
+/* The field, submit action and results form one inline cluster beside Rotate.
+   The cluster shrinks the input before allowing the toolbar actions to wrap. */
+.pdf-find-inline {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  flex: 1 1 280px;
+  min-width: 0;
+}
 .pdf-find-field {
-  position: absolute;
-  top: 0;
-  left: 44px;
   display: flex;
   align-items: center;
+  flex: 0 1 160px;
   width: 160px;
+  min-width: 96px;
   height: 34px;
   padding: 0 8px;
   background: var(--nb-overlay);
@@ -1095,12 +1100,14 @@ html body .pdf-reader .pdf-find-toggle[aria-expanded="true"]:hover:not(:disabled
   background: transparent;
   font-size: 12px;
 }
-.pdf-find {
+.pdf-find-results {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 6px;
-  max-width: 100%;
+  min-width: 0;
+  min-height: 34px;
+  flex: 1 1 auto;
 }
 .pdf-find-status {
   font-size: 11px;
@@ -1108,6 +1115,7 @@ html body .pdf-reader .pdf-find-toggle[aria-expanded="true"]:hover:not(:disabled
   white-space: nowrap;
 }
 .pdf-find-page {
+  flex: 0 0 auto;
   min-height: 26px !important;
   padding: 3px 8px !important;
   font-size: 11px !important;
