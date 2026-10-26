@@ -348,7 +348,8 @@ export function PdfReader({
     [matches, setMatches] = useState<number[]>([]),
     [searching, setSearching] = useState(false),
     [searchDone, setSearchDone] = useState(false),
-    [searchOpen, setSearchOpen] = useState(false);
+    [searchOpen, setSearchOpen] = useState(false),
+    [searchModal, setSearchModal] = useState(false);
   const [penOpen, setPenOpen] = useState(false);
   const [contextMenu, setContextMenu] =
     useState<PdfContextMenuState | null>(null);
@@ -358,6 +359,7 @@ export function PdfReader({
   const passwordCallback = useRef<((value: string) => void) | null>(null);
   const [needsPassword, setNeedsPassword] = useState(false);
   const pages = useRef<HTMLDivElement>(null),
+    reader = useRef<HTMLElement>(null),
     viewports = useRef(
       new Map<number, ReturnType<PDFPageProxy["getViewport"]>>(),
     );
@@ -384,6 +386,27 @@ export function PdfReader({
         localStorage.removeItem(draftKey(asset.documentId));
     });
   }, [asset, registerDiscard, vaultPath]);
+  // Search moves to a floating panel when the PDF pane itself gets narrow.
+  // Measure the reader rather than the window: sidebars and the AI panel can
+  // leave very little room even on a wide display.
+  useEffect(() => {
+    const element = reader.current;
+    if (!element) return;
+    const measure = () =>
+      setSearchModal(element.getBoundingClientRect().width < 720);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
+  useEffect(() => {
+    if (!searchOpen) return;
+    const frame = requestAnimationFrame(() => {
+      searchInput.current?.focus();
+      searchInput.current?.select();
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [searchModal, searchOpen]);
   useEffect(() => {
     let alive = true,
       opened: ResearchAsset | null = null,
@@ -1046,8 +1069,80 @@ export function PdfReader({
           : saveState === "saved"
             ? "Annotations saved"
             : "Opening PDF…";
+  const findPanel = searchOpen ? (
+    <div
+      id="pdf-find"
+      className={searchModal ? "pdf-find-modal" : "pdf-find-inline"}
+      role="search"
+      aria-label="Find in PDF"
+    >
+      <div id="pdf-find-field" className="pdf-find-field">
+        <input
+          ref={searchInput}
+          aria-label="Find in PDF"
+          placeholder="Find in PDF…"
+          value={query}
+          onChange={(e) => {
+            setQuery(e.target.value);
+            searchRun.current++;
+            setSearching(false);
+            setSearchDone(false);
+          }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              void search();
+            }
+            if (e.key === "Escape") {
+              e.preventDefault();
+              closeSearch();
+            }
+          }}
+        />
+        <button
+          type="button"
+          className="pdf-icon-button pdf-find-submit"
+          aria-label="Search PDF"
+          title={searching ? "Searching…" : "Search PDF"}
+          aria-busy={searching}
+          disabled={searching || !query.trim()}
+          onClick={() => void search()}
+        >
+          {searching ? (
+            <Loader2
+              size={14}
+              className="pdf-save-spinner"
+              aria-hidden="true"
+            />
+          ) : (
+            <CornerDownLeft size={15} aria-hidden="true" />
+          )}
+        </button>
+      </div>
+      {searchDone && (
+        <div className="pdf-find-results">
+          <span className="pdf-find-status" aria-live="polite">
+            {matches.length
+              ? `${matches.length} matching page${matches.length === 1 ? "" : "s"}`
+              : "No matching pages"}
+          </span>
+          {matches.map((n) => (
+            <button
+              key={n}
+              type="button"
+              className="pdf-find-page"
+              onClick={() => navigate(n)}
+            >
+              Page {n}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  ) : null;
   return (
     <section
+      ref={reader}
       inert={blocked || confirming}
       className="pdf-reader"
       data-region="pdf"
@@ -1136,77 +1231,7 @@ export function PdfReader({
               >
                 <RotateCw size={18} aria-hidden="true" />
               </button>
-              {searchOpen && (
-                <div
-                  id="pdf-find"
-                  className="pdf-find-inline"
-                  role="search"
-                  aria-label="Find in PDF"
-                >
-                  <div id="pdf-find-field" className="pdf-find-field">
-                    <input
-                      ref={searchInput}
-                      aria-label="Find in PDF"
-                      placeholder="Find in PDF…"
-                      value={query}
-                      onChange={(e) => {
-                        setQuery(e.target.value);
-                        searchRun.current++;
-                        setSearching(false);
-                        setSearchDone(false);
-                      }}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") {
-                          e.preventDefault();
-                          void search();
-                        }
-                        if (e.key === "Escape") {
-                          e.preventDefault();
-                          closeSearch();
-                        }
-                      }}
-                    />
-                    <button
-                      type="button"
-                      className="pdf-icon-button pdf-find-submit"
-                      aria-label="Search PDF"
-                      title={searching ? "Searching…" : "Search PDF"}
-                      aria-busy={searching}
-                      disabled={searching || !query.trim()}
-                      onClick={() => void search()}
-                    >
-                      {searching ? (
-                        <Loader2
-                          size={14}
-                          className="pdf-save-spinner"
-                          aria-hidden="true"
-                        />
-                      ) : (
-                        <CornerDownLeft size={15} aria-hidden="true" />
-                      )}
-                    </button>
-                  </div>
-                  {searchDone && (
-                    <div className="pdf-find-results">
-                      <span className="pdf-find-status" aria-live="polite">
-                        {matches.length
-                          ? `${matches.length} matching page${matches.length === 1 ? "" : "s"}`
-                          : "No matching pages"}
-                      </span>
-                      {matches.map((n) => (
-                        <button
-                          key={n}
-                          type="button"
-                          className="pdf-find-page"
-                          onClick={() => navigate(n)}
-                        >
-                          Page {n}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
+              {!searchModal && findPanel}
             </>
           )}
           <div className="pdf-toolbar-actions">
@@ -1429,32 +1454,35 @@ export function PdfReader({
       {pdf && (
         <>
           <div className="pdf-layout">
-            <div
-              ref={pages}
-              className="pdf-pages"
-              tabIndex={-1}
-              onMouseUp={capture}
-              onKeyUp={capture}
-            >
-              {Array.from({ length: pdf.numPages }, (_, i) => (
-                <PdfPage
-                  key={i + 1}
-                  pdf={pdf}
-                  page={i + 1}
-                  scale={scale}
-                  rotation={rotation}
-                  annotations={entries.filter((a) => a.page === i + 1)}
-                  selected={selected}
-                  register={(vp) => viewports.current.set(i + 1, vp)}
-                  fail={setError}
-                  point={
-                    pointMode
-                      ? (rect) =>
-                          add([{ page: i + 1, rects: [rect], text: "" }])
-                      : undefined
-                  }
-                />
-              ))}
+            <div className="pdf-pages-shell">
+              <div
+                ref={pages}
+                className="pdf-pages"
+                tabIndex={-1}
+                onMouseUp={capture}
+                onKeyUp={capture}
+              >
+                {Array.from({ length: pdf.numPages }, (_, i) => (
+                  <PdfPage
+                    key={i + 1}
+                    pdf={pdf}
+                    page={i + 1}
+                    scale={scale}
+                    rotation={rotation}
+                    annotations={entries.filter((a) => a.page === i + 1)}
+                    selected={selected}
+                    register={(vp) => viewports.current.set(i + 1, vp)}
+                    fail={setError}
+                    point={
+                      pointMode
+                        ? (rect) =>
+                            add([{ page: i + 1, rects: [rect], text: "" }])
+                        : undefined
+                    }
+                  />
+                ))}
+              </div>
+              {searchModal && findPanel}
             </div>
             <aside id="pdf-annotations" hidden={!annotationsOpen} className="pdf-annotations" aria-label="Annotations">
               {entries.length === 0 && <p>No annotations yet.</p>}

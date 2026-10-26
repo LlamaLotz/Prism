@@ -783,6 +783,13 @@
   min-height: 0;
   gap: 12px;
 }
+.pdf-pages-shell {
+  position: relative;
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
 .pdf-pages {
   flex: 1;
   overflow: auto;
@@ -840,9 +847,6 @@
   gap: 8px;
   align-items: center;
   flex-wrap: wrap;
-}
-.pdf-search {
-  width: 160px !important;
 }
 @media (max-width: 800px) {
   .pdf-layout {
@@ -1084,9 +1088,10 @@ html body .pdf-reader .pdf-find-toggle[aria-expanded="true"]:hover:not(:disabled
   display: flex;
   align-items: center;
   gap: 4px;
-  flex: 0 1 160px;
-  width: 160px;
+  flex: 1 1 160px;
+  width: auto;
   min-width: 96px;
+  max-width: 420px;
   height: 34px;
   padding: 0 3px 0 8px;
   background: var(--nb-overlay);
@@ -1131,7 +1136,38 @@ html body .pdf-reader .pdf-find-submit:focus-visible {
   gap: 6px;
   min-width: 0;
   min-height: 34px;
-  flex: 1 1 auto;
+  flex: 0 1 auto;
+}
+/* Below 720px of PDF pane the search controls float over the page viewport. */
+.pdf-find-modal {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 20;
+  box-sizing: border-box;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  width: min(340px, calc(100% - 16px));
+  max-height: calc(100% - 16px);
+  overflow: auto;
+  padding: 8px;
+  background: var(--nb-overlay);
+  color: var(--nb-text);
+  border: 1px solid var(--nb-border);
+  border-radius: var(--nb-radius-sm);
+  box-shadow: var(--nb-shadow);
+}
+.pdf-find-modal .pdf-find-field {
+  flex: 1 1 100%;
+  width: auto;
+  min-width: 0;
+  max-width: none;
+}
+.pdf-find-modal .pdf-find-results {
+  flex-basis: 100%;
+  min-height: 0;
 }
 .pdf-find-status {
   font-size: 11px;
