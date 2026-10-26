@@ -1053,10 +1053,7 @@ export function PdfReader({
       aria-label="PDF reader"
       onContextMenu={openContextMenu}
     >
-      <header
-        className="pdf-toolbar pdf-header"
-        data-searching={searchOpen || undefined}
-      >
+      <header className="pdf-toolbar pdf-header">
         <strong className="pdf-title">PDF reader</strong>
         {pdf && (
           <>
@@ -1177,16 +1174,22 @@ export function PdfReader({
                 <button
                   ref={findTrigger}
                   type="button"
-                  className="pdf-icon-button"
-                  aria-label="Find in PDF"
-                  title="Find in PDF (Ctrl/Cmd+F)"
+                  className="pdf-icon-button pdf-find-toggle"
+                  aria-label={searchOpen ? "Close search" : "Find in PDF"}
+                  title={
+                    searchOpen ? "Close search (Esc)" : "Find in PDF (Ctrl/Cmd+F)"
+                  }
                   aria-expanded={searchOpen}
                   aria-controls={
                     searchOpen ? "pdf-find-field pdf-find" : undefined
                   }
-                  onClick={openSearch}
+                  onClick={searchOpen ? closeSearch : openSearch}
                 >
-                  <Search size={18} aria-hidden="true" />
+                  {searchOpen ? (
+                    <X size={18} aria-hidden="true" />
+                  ) : (
+                    <Search size={18} aria-hidden="true" />
+                  )}
                 </button>
                 <PdfToolbarMenu
                   id="pdf-annotation-tools"
@@ -1316,15 +1319,6 @@ export function PdfReader({
             ) : (
               <Search size={16} aria-hidden="true" />
             )}
-          </button>
-          <button
-            type="button"
-            className="pdf-icon-button"
-            aria-label="Close search"
-            title="Close search (Esc)"
-            onClick={closeSearch}
-          >
-            <X size={16} aria-hidden="true" />
           </button>
           {searchDone && (
             <span className="pdf-find-status" aria-live="polite">

@@ -1021,6 +1021,7 @@ html body .pdf-reader .pdf-annotation-heading:active:not(:disabled) {
    header wraps, this tail moves as one unit so the field never strands the
    search button on a different row. */
 .pdf-toolbar-tail {
+  position: relative;
   display: flex;
   align-items: flex-start;
   gap: 8px 10px;
@@ -1061,13 +1062,25 @@ html body .pdf-reader .pdf-annotation-heading:active:not(:disabled) {
   color: var(--nb-secondary);
 }
 
-/* The find field itself sits in the toolbar gap. Search/close/results stay in
-   a slim row below so the field keeps the space between Rotate and Find. */
+/* Find doubles as the close control: while open it takes the user's accent so
+   the open state is visible without a second close button in the result row.
+   The extra state hooks keep the accent fill through the app-wide hover rule. */
+html body .pdf-reader .pdf-find-toggle[aria-expanded="true"],
+html body .pdf-reader .pdf-find-toggle[aria-expanded="true"]:hover:not(:disabled):not([aria-pressed="true"]):not([aria-selected="true"]) {
+  color: var(--nb-selected-ink) !important;
+  background: var(--nb-selected-bg) !important;
+  border-color: var(--nb-selected-border) !important;
+}
+
+/* The compact field sits over the empty gap between Rotate and Find, so
+   opening it never reflows the toolbar (or pushes Close onto a new row). */
 .pdf-find-field {
+  position: absolute;
+  top: 0;
+  left: 44px;
   display: flex;
   align-items: center;
-  flex: 1 1 120px;
-  min-width: 96px;
+  width: 160px;
   height: 34px;
   padding: 0 8px;
   background: var(--nb-overlay);
@@ -1257,13 +1270,6 @@ html body .pdf-reader .pdf-save-group .pdf-save-button[data-state="failed"]:hove
   position: static;
 }
 
-@media (max-width: 900px) {
-  /* Search mode needs the title's width to keep the field and Find on one row. */
-  .pdf-header[data-searching] .pdf-title {
-    display: none;
-  }
-}
-
 @media (max-width: 640px) {
   .pdf-title {
     display: none;
@@ -1271,8 +1277,5 @@ html body .pdf-reader .pdf-save-group .pdf-save-button[data-state="failed"]:hove
   .pdf-toolbar-actions {
     width: 100%;
     justify-content: flex-end;
-  }
-  .pdf-find-field {
-    flex-basis: 100%;
   }
 }

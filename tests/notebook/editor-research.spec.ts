@@ -201,36 +201,93 @@ test("PDF find shortcut and compact menus keep every tool reachable", async ({
   await boot(page);
   const reader = await openReader(page);
   const findInput = reader.getByRole("textbox", { name: "Find in PDF" });
-  const findButton = reader.getByRole("button", {
-    name: "Find in PDF",
+  const findToggle = reader.locator(".pdf-find-toggle");
+  await expect(findInput).toHaveCount(0);
+  await expect(findToggle).toHaveAccessibleName("Find in PDF");
+  await expect(findToggle).toHaveAttribute("aria-expanded", "false");
+
+  const rotateButton = reader.getByRole("button", {
+    name: "Rotate",
     exact: true,
   });
-  await expect(findInput).toHaveCount(0);
+  const penButton = reader.getByRole("button", {
+    name: "Annotation tools",
+    exact: true,
+  });
+  const saveButton = reader.getByRole("button", {
+    name: "Save annotations",
+    exact: true,
+  });
+  const closeButton = reader.getByRole("button", {
+    name: "Close PDF",
+    exact: true,
+  });
+  const toolbarButtons = [rotateButton, findToggle, penButton, saveButton, closeButton];
+  const boxesBefore = await Promise.all(
+    toolbarButtons.map((button) => button.boundingBox()),
+  );
 
-  // The reader owns the shortcut while it is open; the note search must stay shut.
-  await page.keyboard.press("Control+f");
+  // The original Find button opens and closes the field without acting as a
+  // second search trigger.
+  await findToggle.click();
   await expect(findInput).toBeVisible();
   await expect(findInput).toBeFocused();
-  await expect(findButton).toHaveAttribute("aria-expanded", "true");
-  await expect(
-    page.locator('[data-region="editor"]').getByRole("textbox", {
-      name: /Find in note/,
-    }),
-  ).toHaveCount(0);
+  await expect(findToggle).toHaveAccessibleName("Close search");
+  await expect(findToggle).toHaveAttribute("aria-expanded", "true");
 
-  // The field occupies the toolbar gap between Rotate and Find.
+  // Open state uses the shared user-accent fill.
+  const openFill = await findToggle.evaluate(
+    (el) => getComputedStyle(el).backgroundColor,
+  );
+  const accentFill = await page.evaluate(() => {
+    const probe = document.createElement("div");
+    probe.style.background = "var(--nb-selected-bg)";
+    document.body.append(probe);
+    const color = getComputedStyle(probe).backgroundColor;
+    probe.remove();
+    return color;
+  });
+  expect(openFill).toBe(accentFill);
+
+  // The field is compact and occupies the gap between Rotate and Find.
   const searchField = reader.locator(".pdf-find-field");
   const fieldBox = await searchField.boundingBox();
-  const inlineRotateBox = await reader
-    .getByRole("button", { name: "Rotate", exact: true })
-    .boundingBox();
-  const inlineFindBox = await findButton.boundingBox();
+  const inlineRotateBox = await rotateButton.boundingBox();
+  const inlineFindBox = await findToggle.boundingBox();
   expect(fieldBox!.x).toBeGreaterThanOrEqual(
     inlineRotateBox!.x + inlineRotateBox!.width,
   );
   expect(fieldBox!.x + fieldBox!.width).toBeLessThanOrEqual(inlineFindBox!.x);
   expect(Math.abs(fieldBox!.y - inlineFindBox!.y)).toBeLessThan(2);
-  expect(fieldBox!.width).toBeGreaterThan(120);
+  expect(fieldBox!.width).toBeGreaterThanOrEqual(150);
+  expect(fieldBox!.width).toBeLessThanOrEqual(161);
+
+  // Opening the field must not move the surrounding toolbar controls.
+  const boxesOpen = await Promise.all(
+    toolbarButtons.map((button) => button.boundingBox()),
+  );
+  for (let i = 0; i < boxesBefore.length; i++) {
+    expect(Math.abs(boxesOpen[i]!.x - boxesBefore[i]!.x)).toBeLessThan(2);
+    expect(Math.abs(boxesOpen[i]!.y - boxesBefore[i]!.y)).toBeLessThan(2);
+  }
+
+  await findToggle.click();
+  await expect(findInput).toHaveCount(0);
+  await expect(findToggle).toBeFocused();
+  await expect(findToggle).toHaveAccessibleName("Find in PDF");
+  await expect(findToggle).toHaveAttribute("aria-expanded", "false");
+
+  // The reader owns the shortcut while it is open; the note search must stay shut.
+  await page.keyboard.press("Control+f");
+  await expect(findInput).toBeVisible();
+  await expect(findInput).toBeFocused();
+  await expect(findToggle).toHaveAttribute("aria-expanded", "true");
+  await expect(findToggle).toHaveAccessibleName("Close search");
+  await expect(
+    page.locator('[data-region="editor"]').getByRole("textbox", {
+      name: /Find in note/,
+    }),
+  ).toHaveCount(0);
 
   // Editable fields keep paste and select-all in the reader-owned menu.
   await findInput.fill("Research");
@@ -255,8 +312,9 @@ test("PDF find shortcut and compact menus keep every tool reachable", async ({
 
   await findInput.press("Escape");
   await expect(findInput).toHaveCount(0);
-  await expect(findButton).toBeFocused();
-  await expect(findButton).toHaveAttribute("aria-expanded", "false");
+  await expect(findToggle).toBeFocused();
+  await expect(findToggle).toHaveAttribute("aria-expanded", "false");
+  await expect(findToggle).toHaveAccessibleName("Find in PDF");
 
   const tools = reader.getByRole("button", {
     name: "Annotation tools",
@@ -298,9 +356,7 @@ test("PDF find shortcut and compact menus keep every tool reachable", async ({
   const annotationBox = await annotationToggle.boundingBox();
   // The corner is taller than a single control, but every top-row control
   // must share Close's baseline. Only the annotations toggle sits below it.
-  const findBox = await reader
-    .getByRole("button", { name: "Find in PDF", exact: true })
-    .boundingBox();
+  const findBox = await findToggle.boundingBox();
   const toolsBox = await reader
     .getByRole("button", { name: "Annotation tools", exact: true })
     .boundingBox();
@@ -807,13 +863,17 @@ for (const theme of ["industrial", "gloss"])
       // At narrow widths the header wraps, but the visible top row must stay
       // aligned with Close while annotations remains underneath it.
       const pdfClose = reader.getByRole("button", { name: "Close PDF" });
-      const pdfFind = reader.getByRole("button", { name: "Find in PDF", exact: true });
+      const pdfFind = reader.locator('.pdf-find-toggle');
       const pdfRotate = reader.getByRole("button", { name: "Rotate", exact: true });
+      const pdfPen = reader.getByRole("button", { name: "Annotation tools", exact: true });
+      const pdfSave = reader.getByRole("button", { name: "Save annotations", exact: true });
       const pdfAnnotation = reader.getByRole("button", { name: /Annotations \(\d+\)/ });
       const closeBox = await pdfClose.boundingBox();
       const findBox = await pdfFind.boundingBox();
       const rotateBox = await pdfRotate.boundingBox();
       const annotationBox = await pdfAnnotation.boundingBox();
+      const penBox = await pdfPen.boundingBox();
+      const saveBox = await pdfSave.boundingBox();
       for (const box of [findBox, rotateBox]) {
         expect(Math.abs(box!.y - closeBox!.y)).toBeLessThan(2);
       }
@@ -871,12 +931,28 @@ for (const theme of ["industrial", "gloss"])
       const fieldBox = await searchField.boundingBox();
       const searchFindBox = await pdfFind.boundingBox();
       const searchRotateBox = await pdfRotate.boundingBox();
+      const searchPenBox = await pdfPen.boundingBox();
+      const searchSaveBox = await pdfSave.boundingBox();
+      const searchCloseBox = await pdfClose.boundingBox();
       expect(fieldBox!.x).toBeGreaterThanOrEqual(
         searchRotateBox!.x + searchRotateBox!.width,
       );
       expect(fieldBox!.x + fieldBox!.width).toBeLessThanOrEqual(searchFindBox!.x);
       expect(Math.abs(fieldBox!.y - searchFindBox!.y)).toBeLessThan(2);
-      expect(fieldBox!.width).toBeGreaterThan(120);
+      expect(fieldBox!.width).toBeGreaterThanOrEqual(150);
+      expect(fieldBox!.width).toBeLessThanOrEqual(161);
+      await expect(pdfFind).toHaveAccessibleName('Close search');
+      // Opening the compact field must not reflow the rest of the toolbar.
+      for (const [before, after] of [
+        [rotateBox, searchRotateBox],
+        [findBox, searchFindBox],
+        [penBox, searchPenBox],
+        [saveBox, searchSaveBox],
+        [closeBox, searchCloseBox],
+      ]) {
+        expect(Math.abs(after!.x - before!.x)).toBeLessThan(2);
+        expect(Math.abs(after!.y - before!.y)).toBeLessThan(2);
+      }
       await reader.getByRole('textbox', { name: 'Find in PDF' }).fill('Research');
       await reader.getByRole('button', { name: 'Search PDF', exact: true }).click();
       await expect(reader.getByRole('button', { name: 'Page 1', exact: true })).toBeVisible();
