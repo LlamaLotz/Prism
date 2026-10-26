@@ -78,6 +78,57 @@ html .prompt-bar textarea:focus-visible {
   flex: 1;
 }
 
+/* Icon-only companion to "Approve for me": reopens its disclaimer after the
+   automatic first showing. */
+html .prompt-bar__controls button.prompt-bar__info {
+  padding: 6px;
+}
+
+/* Approve-for-me disclaimer. It floats above the composer so it never covers
+   the message field, and it exists only while auto-approval is on — closing
+   it, pressing Escape or clicking outside dismisses it. */
+html .prompt-bar__controls .prompt-bar__notice {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(100% + 8px);
+  z-index: 30;
+  display: block;
+  padding: 11px 12px;
+  background: var(--nb-overlay);
+  border: 1px solid var(--nb-border);
+  border-radius: var(--nb-radius-sm);
+  box-shadow: var(--nb-edge), var(--nb-shadow);
+  color: var(--nb-text);
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.6;
+  white-space: normal;
+}
+.prompt-bar__notice-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+.prompt-bar__notice-head > strong {
+  font-size: 12px;
+  font-weight: 600;
+}
+.prompt-bar__notice p {
+  margin: 0;
+}
+html .prompt-bar__controls .prompt-bar__notice button {
+  min-height: 0;
+  padding: 2px 4px;
+  border: 0;
+  background: transparent !important;
+}
+html .prompt-bar__controls .prompt-bar__notice button:hover:not(:disabled) {
+  background: var(--nb-selection) !important;
+}
+
 html .prompt-bar__controls button {
   display: inline-flex;
   align-items: center;

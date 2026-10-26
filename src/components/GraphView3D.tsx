@@ -58,11 +58,19 @@ export function setGraphPalette(nodeColor: string): void {
 
 const nodeRadius = (linksCount: number) => Math.max(1.4, Math.min(9, 1.4 + linksCount * 0.55));
 const LABEL_HEIGHT = 6;
+// Link spring tension. A drag has to carry the connected nodes with it, which
+// the resting springs are too slack for, so they are stiffened for the
+// duration of a gesture (see beginNodeDrag/endNodeDrag). The centering pull
+// that keeps the resting layout tidy fights a drag just as hard, so it is
+// relaxed at the same time.
+const DRAG_LINK_STRENGTH = 0.6;
+const CENTER_STRENGTH = 0.8;
+const DRAG_CENTER_STRENGTH = 0.05;
 
 const applyForceTuning = (g: any) => {
   g.d3Force?.('charge')?.strength?.(-180);
   g.d3Force?.('link')?.distance?.(70);
-  g.d3Force?.('center')?.strength?.(0.8);
+  g.d3Force?.('center')?.strength?.(CENTER_STRENGTH);
   g.numDimensions?.(3);
 };
 
@@ -101,7 +109,17 @@ export const GraphView3D: React.FC<GraphView3DProps> = ({
   const labelCacheRef = useRef<Map<string, THREE.Sprite>>(new Map());
   const nodeGroupsRef = useRef<Set<THREE.Group>>(new Set());
   const focusRafRef = useRef<number | null>(null);
+  // Force tuning saved at drag start so it can be restored on drag end.
+  const dragTuningRef = useRef<{
+    link: any;
+    linkStrength: any;
+    center: any;
+    centerStrength: any;
+  } | null>(null);
 
+  // True while a node is being dragged. Reduce Motion freezes the engine after
+  // a single tick, so an active drag suspends that budget (see beginNodeDrag).
+  const [dragging, setDragging] = useState(false);
   const [autoRotate, setAutoRotate] = useState(autoRotateOnLoad && !prefersReducedMotion);
   // Keep the runtime control synchronized when the saved preference changes
   // while this graph instance is already mounted. Reduce Motion suppresses
@@ -598,6 +616,39 @@ export const GraphView3D: React.FC<GraphView3DProps> = ({
     }
     onSelectNoteByTitleRef.current(node.id);
   }, []);
+  // ── Drag coupling ────────────────────────────────────────────────────
+  // Dragging a node has to carry its connected nodes along. The resting
+  // springs are too slack for that, and the centring pull drags every node
+  // back toward the middle, so both are retuned for the gesture. Reduce
+  // Motion also stops the engine's countdown after a single tick, which would
+  // leave a drag with no simulation at all, so its budget is suspended until
+  // the gesture ends.
+  const beginNodeDrag = useCallback(() => {
+    if (dragTuningRef.current) return;
+    const g = graphRef.current;
+    const link = g?.d3Force?.('link');
+    if (!link?.strength) return;
+    const center = g.d3Force?.('center');
+    const linkStrength = link.strength();
+    dragTuningRef.current = { link, linkStrength, center, centerStrength: center?.strength?.() };
+    // Keep each link's own (degree-based) stiffness and raise only the slack
+    // ones, so a leaf keeps its firm spring instead of being loosened.
+    link.strength((l: any, i: number, links: any[]) =>
+      Math.max(Number(linkStrength?.(l, i, links)) || 0, DRAG_LINK_STRENGTH)
+    );
+    center?.strength?.(DRAG_CENTER_STRENGTH);
+    setDragging(true);
+  }, []);
+
+  const endNodeDrag = useCallback(() => {
+    const tuning = dragTuningRef.current;
+    if (!tuning) return;
+    dragTuningRef.current = null;
+    tuning.link.strength(tuning.linkStrength);
+    tuning.center?.strength?.(tuning.centerStrength);
+    setDragging(false);
+  }, []);
+
   const handleEngineStop = useCallback(() => {
     if (!pendingFrameRef.current) return;
     pendingFrameRef.current = false;
@@ -813,11 +864,12 @@ export const GraphView3D: React.FC<GraphView3DProps> = ({
           linkWidth={0.8} linkDirectionalParticles={prefersReducedMotion ? 0 : 2} linkDirectionalParticleSpeed={0.005}
           linkDirectionalParticleWidth={1.5} linkDirectionalParticleColor={particleColor}
           onNodeClick={handleNodeClick} onNodeHover={handleNodeHover}
+          onNodeDrag={beginNodeDrag} onNodeDragEnd={endNodeDrag}
           onBackgroundClick={() => clearFocusRef.current?.()}
           onEngineStop={handleEngineStop}
           warmupTicks={prefersReducedMotion ? 160 : 0}
-          cooldownTicks={prefersReducedMotion ? 1 : undefined}
-          cooldownTime={prefersReducedMotion ? 0 : 1200}
+          cooldownTicks={prefersReducedMotion && !dragging ? 1 : Infinity}
+          cooldownTime={prefersReducedMotion && !dragging ? 0 : 1200}
         />
         {focusOverlay}
         {tooltip && (

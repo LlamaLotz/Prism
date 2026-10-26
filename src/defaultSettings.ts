@@ -12,8 +12,10 @@ export const DEFAULT_SETTINGS: AppSettings = {
   omniRoute: {
     provider: '', // none — user picks a provider in Settings
     apiKey: '',
-    baseUrl: 'https://api.omniroute.ai/v1',
-    model: 'gpt-4o',
+    // Nothing is preconfigured: the assistant stays unconfigured ("None")
+    // until the user picks a provider, which supplies its own endpoint.
+    baseUrl: '',
+    model: '',
     temperature: 0.7,
     injectUserProfile: false,
     userProfile: '',

@@ -134,8 +134,10 @@ impl Default for OmniRouteConfig {
             provider: String::new(),
             api_key: String::new(),
             credential_ref: String::new(),
-            base_url: "https://api.omniroute.ai/v1".to_string(),
-            model: "gpt-4o".to_string(),
+            // No provider is assumed before the user picks one: an empty
+            // endpoint/model is the unconfigured state, never a silent default.
+            base_url: String::new(),
+            model: String::new(),
             temperature: 0.7,
             inject_user_profile: false,
             user_profile: String::new(),
@@ -347,6 +349,59 @@ mod tests {
         assert_eq!(std::fs::read(&path).unwrap(), before);
     }
 
+    #[test]
+    fn saved_credential_reference_resolves_without_persisting_the_secret() {
+        use std::collections::HashMap;
+
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("settings.json");
+        let mut config = RuntimeConfig::default();
+        config.omni_route.api_key = "test-secret-value".into();
+        let mut credentials = HashMap::new();
+
+        let saved = save_config_at(&path, &config, |provider| {
+            if !provider.api_key.is_empty() {
+                let reference = "test-reference".to_string();
+                credentials.insert(reference.clone(), provider.api_key.clone());
+                provider.credential_ref = reference;
+                provider.api_key.clear();
+            }
+            Ok(())
+        })
+        .unwrap();
+
+        assert_eq!(saved.omni_route.credential_ref, "test-reference");
+        assert!(saved.omni_route.api_key.is_empty());
+        let raw = std::fs::read_to_string(&path).unwrap();
+        assert!(!raw.contains("test-secret-value"));
+        assert_eq!(
+            provider_key_with(&saved.omni_route, |reference| {
+                credentials
+                    .get(reference)
+                    .cloned()
+                    .ok_or_else(|| "missing test credential".to_string())
+            })
+            .unwrap(),
+            "test-secret-value"
+        );
+    }
+
+    #[test]
+    fn unavailable_credentials_return_actionable_errors_without_secrets() {
+        let config = OmniRouteConfig {
+            credential_ref: "missing-reference".into(),
+            ..Default::default()
+        };
+        let error = provider_key_with(&config, |_| Err("backend detail".into())).unwrap_err();
+
+        assert_eq!(
+            error,
+            "Provider credential unavailable; unlock the system credential store or configure the provider again"
+        );
+        assert!(!error.contains("backend detail"));
+        assert!(!error.contains("test-secret-value"));
+    }
+
     #[cfg(unix)]
     #[test]
     fn unwritable_directory_preserves_previous_settings() {
@@ -440,12 +495,24 @@ mod tests {
 }
 
 pub fn provider_key(config: &OmniRouteConfig) -> Result<String, String> {
-    if !config.credential_ref.is_empty() {
-        keyring::Entry::new("com.prism.app.models", &config.credential_ref).map_err(|_| "Credential store unavailable")?
-            .get_password().map_err(|_| "Provider credential unavailable; unlock the credential store or configure the provider again".into())
-    } else {
-        Ok(config.api_key.clone())
+    provider_key_with(config, |reference| {
+        keyring::Entry::new("com.prism.app.models", reference)
+            .and_then(|entry| entry.get_password())
+            .map_err(|_| "credential-store lookup failed".to_string())
+    })
+}
+
+fn provider_key_with(
+    config: &OmniRouteConfig,
+    mut load_credential: impl FnMut(&str) -> Result<String, String>,
+) -> Result<String, String> {
+    if config.credential_ref.is_empty() {
+        return Ok(config.api_key.clone());
     }
+
+    load_credential(&config.credential_ref).map_err(|_| {
+        "Provider credential unavailable; unlock the system credential store or configure the provider again".into()
+    })
 }
 
 fn migrate_key(config: &mut OmniRouteConfig) -> Result<(), String> {
@@ -454,13 +521,13 @@ fn migrate_key(config: &mut OmniRouteConfig) -> Result<(), String> {
     }
     let reference = uuid::Uuid::new_v4().to_string();
     let entry = keyring::Entry::new("com.prism.app.models", &reference)
-        .map_err(|_| "Credential store unavailable")?;
+        .map_err(|_| "System credential store unavailable; unlock or enable the credential store")?;
     entry
         .set_password(&config.api_key)
-        .map_err(|_| "Cannot save provider credential")?;
+        .map_err(|_| "Cannot save provider credential to the system credential store")?;
     if entry
         .get_password()
-        .map_err(|_| "Cannot verify provider credential")?
+        .map_err(|_| "Cannot verify provider credential; unlock the system credential store")?
         != config.api_key
     {
         return Err("Credential verification failed".into());

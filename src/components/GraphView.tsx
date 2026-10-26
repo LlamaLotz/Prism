@@ -32,6 +32,17 @@ let STROKE_EXISTS = '#31A6DA'; // brand-600
 let GRID_COLOR = 'rgba(56, 189, 248, 0.05)';
 let MESH_COLOR = 'rgba(56, 189, 248, 0.18)';
 const LINK_COLOR = 'rgba(150, 147, 143, 0.35)';
+// Link spring tension. The resting graph keeps its springs soft so distant
+// nodes do not skate around, but a soft spring leaves the neighbours of a
+// dragged node behind, so the springs are stiffened for the duration of a drag
+// (see the node drag handlers).
+const LINK_STRENGTH = 0.08;
+const DRAG_LINK_STRENGTH = 0.6;
+// The centering pull that keeps the resting layout tidy also fights a drag by
+// dragging every node back toward the pane centre, so it is relaxed while a
+// node is held.
+const CENTER_STRENGTH = 0.4;
+const DRAG_CENTER_STRENGTH = 0.05;
 // Topic layer: teal nodes and links, distinct from folder purple and the
 // user-configured note palette.
 const TOPIC_COLOR = '#2dd4bf';
@@ -350,16 +361,17 @@ export const GraphView: React.FC<GraphViewProps> = ({
     });
 
     // 3. Force Physics Simulation: Strong repulsion + Collision to prevent clumping
+    const linkForce = d3.forceLink<any, any>(d3Links)
+      .id((d: any) => normalizeKey(d.id || d.title || d.path))
+      .distance(120)
+      .strength(LINK_STRENGTH);
+    const centerForce = d3.forceCenter(width / 2, height / 2).strength(CENTER_STRENGTH);
     const simulation = d3.forceSimulation<any>(d3Nodes)
       .velocityDecay(0.72) // Heavy ground friction: stops nodes from sliding/skating
       .alphaDecay(0.05)    // Fast settle
-      .force('link', d3.forceLink<any, any>(d3Links)
-        .id((d: any) => normalizeKey(d.id || d.title || d.path))
-        .distance(120)
-        .strength(0.08)   // Low spring tension: prevents distant nodes from skating
-      )
+      .force('link', linkForce)
       .force('charge', d3.forceManyBody().strength(-180)) // Gentle repulsion
-      .force('center', d3.forceCenter(width / 2, height / 2).strength(0.4))
+      .force('center', centerForce)
       .force('collision', d3.forceCollide().radius((d: any) => Math.max(22, (d.linksCount || 1) * 1.5 + 16)))
       .force('x', d3.forceX(width / 2).strength(0.02))
       .force('y', d3.forceY(height / 2).strength(0.02));
@@ -408,6 +420,11 @@ export const GraphView: React.FC<GraphViewProps> = ({
             // follow the drag as it moves — the grabbed node alone sliding
             // over a frozen graph read as "connected nodes can't move".
             if (!event.active) {
+              // Stiffen the springs: at the resting tension (0.08) the drag
+              // outruns the link force and the connected nodes are left
+              // behind on a nearly slack edge.
+              linkForce.strength(DRAG_LINK_STRENGTH);
+              centerForce.strength(DRAG_CENTER_STRENGTH);
               simulation.alphaTarget(0.3).alpha(Math.max(simulation.alpha(), 0.3)).restart();
             }
             d.fx = d.x;
@@ -418,7 +435,12 @@ export const GraphView: React.FC<GraphViewProps> = ({
             d.fy = event.y;
           })
           .on('end', (event: any, d: any) => {
-            if (!event.active) simulation.alphaTarget(0);
+            if (!event.active) {
+              simulation.alphaTarget(0);
+              // Springs return to their resting tension once the drag is over.
+              linkForce.strength(LINK_STRENGTH);
+              centerForce.strength(CENTER_STRENGTH);
+            }
             // UN-PIN node on release so it stays dynamic and never gets stuck
             // in place like a static background object — with fx/fy left set,
             // the node freezes at the drop point while the rest of the graph
@@ -618,7 +640,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
     };
 
     // Simulation Tick Update
-    simulation.on('tick', () => {
+    const renderPositions = () => {
       linkElements
         .attr('x1', (d: any) => getCoord(d.source, 'x'))
         .attr('y1', (d: any) => getCoord(d.source, 'y'))
@@ -626,7 +648,12 @@ export const GraphView: React.FC<GraphViewProps> = ({
         .attr('y2', (d: any) => getCoord(d.target, 'y'));
 
       nodeElements.attr('transform', (d: any) => `translate(${d.x || width / 2}, ${d.y || height / 2})`);
-    });
+    };
+    simulation.on('tick', renderPositions);
+    // Paint the pre-warmed layout once. With reduced motion the timer stays
+    // stopped, so no tick ever fires and the nodes would otherwise never be
+    // positioned (every group sat at the SVG origin, off-screen).
+    renderPositions();
 
     // Save positions when simulation ends
     simulation.on('end', () => {

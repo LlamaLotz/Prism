@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { openConversationMenu, toggleAgent } from './assistant-menu';
 import { RepetitionGuard,runAgentTurn } from '../../src/services/agentRunner';
 import { knowledge } from '../../src/services/knowledge';
 import { noteGraph,withFolders } from '../../src/services/folderGraph';
@@ -23,8 +24,9 @@ test('agent completes more than five productive rounds and continues after appro
 test('models belong to individual conversations and auto approval continues the task',async({page})=>{
  await page.goto('/tests/notebook/study-harness.html');await page.getByRole('button',{name:'Open notebook',exact:true}).click();
  await page.getByRole('combobox',{name:'Chat model'}).click();await page.getByRole('option',{name:/Other model/}).click();
+ await openConversationMenu(page);await page.getByRole('button',{name:'Agent ON',exact:true}).click();
  await page.getByLabel('Message',{exact:true}).fill('Hello');await page.getByRole('button',{name:'Send',exact:true}).click();await expect(page.getByText('A grounded answer from your selected sources.')).toBeVisible();
  await page.getByRole('button',{name:'New chat',exact:true}).click();await expect(page.getByRole('combobox',{name:'Chat model'})).toContainText('Fixture model');
- await page.getByRole('button',{name:'Agent OFF'}).click();await page.getByRole('button',{name:'Approve for me OFF'}).click();await page.getByLabel('Message',{exact:true}).fill('{"tool":"edit_note","input":{"noteId":"s1","operations":[]}}');await page.getByRole('button',{name:'Send',exact:true}).click();
+ await toggleAgent(page);await page.getByRole('button',{name:'Approve for me OFF'}).click();await page.getByLabel('Message',{exact:true}).fill('{"tool":"edit_note","input":{"noteId":"s1","operations":[]}}');await page.getByRole('button',{name:'Send',exact:true}).click();
  await expect(page.getByText('Agent answer using selected sources.',{exact:true})).toBeVisible();expect(await page.evaluate(()=>(window as any).fixtureCalls.filter((c:any)=>c.command==='agent_resolve_pending'&&c.args.approved).length)).toBe(1);
 });

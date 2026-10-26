@@ -1,4 +1,5 @@
 import {test,expect} from '@playwright/test';
+import { openConversationMenu, toggleAgent } from './assistant-menu';
 const url='/tests/notebook/study-harness.html';
 for(const theme of ['industrial','gloss'])for(const mode of ['light','dark'])test(`workspace and materials ${theme} ${mode}`,async({page})=>{
  await page.setViewportSize({width:1440,height:960});await page.goto(`${url}?theme=${theme}&mode=${mode}`);await page.getByRole('button',{name:'Open notebook',exact:true}).click();
@@ -42,16 +43,44 @@ test('slides, tables, maps, podcast and editing/export controls remain usable',a
  await page.getByRole('button',{name:'Tools',exact:true}).click();await page.getByRole('button',{name:'A conversation about learning',exact:false}).click();await page.getByText('Transcript',{exact:true}).click();await expect(page.getByText('A source-grounded conversation about learning.')).toBeVisible();await page.getByLabel('Material actions').filter({visible:true}).click();await expect(page.getByRole('button',{name:'Export MP3'})).toBeVisible();
 });
 test('Agent uses collection snapshot and keeps transcript when opening assistant',async({page})=>{
- await page.goto(url);await page.getByRole('button',{name:'Open notebook',exact:true}).click();await page.getByRole('button',{name:'Agent OFF'}).click();await page.getByLabel('Message',{exact:true}).fill('Compare these sources');await page.getByRole('button',{name:'Send',exact:true}).click();await expect(page.getByText('Agent answer using selected sources.',{exact:true})).toBeVisible();
+ await page.goto(url);await page.getByRole('button',{name:'Open notebook',exact:true}).click();await toggleAgent(page);await page.getByLabel('Message',{exact:true}).fill('Compare these sources');await page.getByRole('button',{name:'Send',exact:true}).click();await expect(page.getByText('Agent answer using selected sources.',{exact:true})).toBeVisible();
  const calls=await page.evaluate(()=>(window as any).fixtureCalls);expect(calls.filter((c:any)=>c.command==='execute_model')).toHaveLength(2);expect(calls.find((c:any)=>c.command==='execute_model').args.request.messages[0].content).toContain('Selected Tamil source');expect(calls.some((c:any)=>c.command==='study_chat')).toBe(false);
- await page.getByLabel('Conversation actions').click();await page.getByRole('button',{name:'Open in other view'}).click();await expect(page.getByText('Agent answer using selected sources.',{exact:true})).toBeVisible();await expect(page.getByRole('button',{name:'Agent ON'})).toBeVisible();
+ // The conversation menu no longer offers a jump to the other chat view;
+ // the same conversation still opens wherever the shared chat is mounted.
+ await openConversationMenu(page);await expect(page.getByRole('button',{name:'Open in other view'})).toHaveCount(0);await page.keyboard.press('Escape');
+ await page.getByRole('button',{name:'Switch to assistant view'}).click();await expect(page.getByText('Agent answer using selected sources.',{exact:true})).toBeVisible();await openConversationMenu(page);await expect(page.getByRole('button',{name:'Agent ON'})).toBeVisible();
+
+});
+test('new chats enable Agent while existing conversations keep their selection',async({page})=>{
+ await page.goto(url);await page.getByRole('button',{name:'Open notebook',exact:true}).click();
+ await openConversationMenu(page);await expect(page.getByRole('button',{name:'Agent ON',exact:true})).toBeVisible();
+ await page.getByRole('button',{name:'Agent ON',exact:true}).click();
+ const conversations=page.getByRole('combobox',{name:'Conversation'});
+ await page.getByRole('button',{name:'New chat',exact:true}).click();await expect.poll(()=>conversations.inputValue()).toBe('chat0');
+ await openConversationMenu(page);await expect(page.getByRole('button',{name:'Agent ON',exact:true})).toBeVisible();
+ await page.getByRole('button',{name:'Agent ON',exact:true}).click();
+ await page.getByRole('button',{name:'New chat',exact:true}).click();await expect.poll(()=>conversations.inputValue()).toBe('chat1');
+ await openConversationMenu(page);await expect(page.getByRole('button',{name:'Agent ON',exact:true})).toBeVisible();await page.keyboard.press('Escape');
+ await conversations.selectOption('chat0');await openConversationMenu(page);await expect(page.getByRole('button',{name:'Agent OFF',exact:true})).toBeVisible();
+});
+test('Notebook Default model uses global Gemini without a saved provider profile',async({page})=>{
+ await page.goto(url+'?default-model');await page.getByRole('button',{name:'Open notebook',exact:true}).click();
+ await expect(page.getByRole('combobox',{name:'Chat model'})).toContainText('Default model');
+ await page.getByLabel('Message',{exact:true}).fill('Hello Gemini');await page.getByRole('button',{name:'Send',exact:true}).click();
+ await expect(page.getByText('Agent answer using selected sources.',{exact:true})).toBeVisible();
+ const calls=await page.evaluate(()=>(window as any).fixtureCalls);
+ const saved=calls.find((call:any)=>call.command==='study_request'&&call.args.action==='setChatProvider');
+ const requests=calls.filter((call:any)=>call.command==='execute_model');
+ expect(saved.args.payload.providerId).toBe('');expect(requests.length).toBeGreaterThan(0);
+ expect(requests.every((call:any)=>call.args.request.providerId==='')).toBe(true);
+ expect(JSON.stringify([saved,requests])).not.toContain('fixture-only-key');
 });
 test('Agent preview requires approval and supports undo',async({page})=>{
- await page.goto(url);await page.getByRole('button',{name:'Open notebook',exact:true}).click();await page.getByRole('button',{name:'Agent OFF'}).click();await page.getByLabel('Message',{exact:true}).fill('{"tool":"edit_note","input":{"noteId":"s1","operations":[]}}');await page.getByRole('button',{name:'Send',exact:true}).click();await expect(page.getByRole('button',{name:'Approve',exact:true})).toBeVisible();
+ await page.goto(url);await page.getByRole('button',{name:'Open notebook',exact:true}).click();await toggleAgent(page);await page.getByLabel('Message',{exact:true}).fill('{"tool":"edit_note","input":{"noteId":"s1","operations":[]}}');await page.getByRole('button',{name:'Send',exact:true}).click();await expect(page.getByRole('button',{name:'Approve',exact:true})).toBeVisible();
  expect(await page.evaluate(()=>(window as any).fixtureCalls.some((c:any)=>c.command==='agent_resolve_pending'))).toBe(false);await page.getByRole('button',{name:'Approve',exact:true}).click();await page.getByRole('button',{name:'Undo operation'}).click();await expect(page.getByText('Undid operation on Test.md.')).toBeVisible();
 });
 test('cancel and vault change prevent subsequent Agent tool calls',async({page})=>{
- for(const action of ['cancel','vault']){await page.goto(url+'?slow');await page.getByRole('button',{name:'Open notebook',exact:true}).click();await page.getByRole('button',{name:'Agent OFF'}).click();await page.getByLabel('Message',{exact:true}).fill('Read the source');await page.getByRole('button',{name:'Send',exact:true}).click();await expect.poll(()=>page.evaluate(()=>(window as any).fixtureCalls.filter((c:any)=>c.command==='execute_model').length)).toBe(1);
+ for(const action of ['cancel','vault']){await page.goto(url+'?slow');await page.getByRole('button',{name:'Open notebook',exact:true}).click();await toggleAgent(page);await page.getByLabel('Message',{exact:true}).fill('Read the source');await page.getByRole('button',{name:'Send',exact:true}).click();await expect.poll(()=>page.evaluate(()=>(window as any).fixtureCalls.filter((c:any)=>c.command==='execute_model').length)).toBe(1);
  if(action==='cancel')await page.getByRole('button',{name:'Cancel response'}).click();else await page.getByRole('button',{name:'Switch vault'}).click();await page.waitForTimeout(1000);expect(await page.evaluate(()=>(window as any).fixtureCalls.filter((c:any)=>c.command==='agent_call_tool').length)).toBe(0);}
 });
 test('generation progress, failure and empty state',async({page})=>{
@@ -73,15 +102,15 @@ test('source picker, preview, independent scroll and collapsed panel restoration
  await page.goto(url+'?narrow');await page.getByRole('button',{name:'Open notebook',exact:true}).click();await expect(page.getByRole('navigation',{name:'Notebook areas'})).toBeVisible();
 });
 test('ordinary chat stays on its path and Agent duplicate sends and denial are safe',async({page})=>{
- await page.goto(url+'?slow');await page.getByRole('button',{name:'Open notebook',exact:true}).click();await page.getByLabel('Message',{exact:true}).fill('A normal question');await page.getByRole('button',{name:'Send',exact:true}).click();await expect(page.getByText('A grounded answer from your selected sources.')).toBeVisible();
+ await page.goto(url+'?slow');await page.getByRole('button',{name:'Open notebook',exact:true}).click();await openConversationMenu(page);await page.getByRole('button',{name:'Agent ON',exact:true}).click();await page.getByLabel('Message',{exact:true}).fill('A normal question');await page.getByRole('button',{name:'Send',exact:true}).click();await expect(page.getByText('A grounded answer from your selected sources.')).toBeVisible();
  expect(await page.evaluate(()=>(window as any).fixtureCalls.filter((c:any)=>c.command==='study_chat').length)).toBe(1);
- await page.getByRole('button',{name:'Agent OFF'}).click();await page.getByLabel('Message',{exact:true}).fill('Read the sources');await page.getByLabel('Message',{exact:true}).press('Enter');await page.getByLabel('Message',{exact:true}).fill('Do not send twice');await page.getByLabel('Message',{exact:true}).press('Enter');await expect(page.getByText('Agent answer using selected sources.',{exact:true})).toBeVisible();
+ await toggleAgent(page);await page.getByLabel('Message',{exact:true}).fill('Read the sources');await page.getByLabel('Message',{exact:true}).press('Enter');await page.getByLabel('Message',{exact:true}).fill('Do not send twice');await page.getByLabel('Message',{exact:true}).press('Enter');await expect(page.getByText('Agent answer using selected sources.',{exact:true})).toBeVisible();
  expect(await page.evaluate(()=>(window as any).fixtureCalls.filter((c:any)=>c.command==='append_chat_message'&&c.args.role==='user').length)).toBe(1);
  await page.getByLabel('Message',{exact:true}).fill('{"tool":"edit_note","input":{"noteId":"s1","operations":[]}}');await page.getByRole('button',{name:'Send',exact:true}).click();await page.getByRole('button',{name:'Deny',exact:true}).click();await expect(page.getByRole('button',{name:'Undo operation'})).not.toBeVisible();expect(await page.evaluate(()=>(window as any).fixtureCalls.find((c:any)=>c.command==='agent_resolve_pending').args.approved)).toBe(false);
 });
 test('agent history is a collapsible dropdown capped at half the chat view',async({page})=>{
  await page.setViewportSize({width:1440,height:960});await page.goto(url+'?history');await page.getByRole('button',{name:'Open notebook',exact:true}).click();
- await page.getByRole('button',{name:'Agent OFF'}).click();
+ await toggleAgent(page);
  await page.getByLabel('Message',{exact:true}).fill('{"tool":"edit_note","input":{"noteId":"s1","operations":[]}}');
  await page.getByRole('button',{name:'Send',exact:true}).click();
  const toggle=page.getByRole('button',{name:/Agent history/});const drawer=page.locator('.agent-history');const chat=page.locator('.study-chat');
@@ -101,7 +130,7 @@ test('agent history is a collapsible dropdown capped at half the chat view',asyn
 });
 for(const theme of ['industrial','gloss'])for(const mode of ['light','dark'])test(`agent history dropdown ${theme} ${mode}`,async({page})=>{
  await page.setViewportSize({width:1440,height:960});await page.goto(`${url}?theme=${theme}&mode=${mode}&history`);await page.getByRole('button',{name:'Open notebook',exact:true}).click();
- await page.getByRole('button',{name:'Agent OFF'}).click();
+ await toggleAgent(page);
  await page.getByLabel('Message',{exact:true}).fill('{"tool":"edit_note","input":{"noteId":"s1","operations":[]}}');
  await page.getByRole('button',{name:'Send',exact:true}).click();
  await expect(page.getByRole('button',{name:'Approve',exact:true})).toBeVisible();

@@ -700,7 +700,19 @@ export default function App() {
       const hadUnsafeGlassOpacity =
         safeGlassOpacity !== merged.appearance.liquidGlassOpacity;
       merged = { ...merged, appearance: migratedAppearance };
-      if (hadLegacyDefault || hadUnsafeGlassOpacity || hadGlassStyle) {
+
+      // A settings file that still carries the retired hardcoded OmniRoute
+      // endpoint/model was never actually configured (no provider was ever
+      // chosen), so clear it instead of presenting it as a saved choice.
+      const hadLegacyAiPrefill =
+        !merged.omniRoute.provider &&
+        merged.omniRoute.baseUrl === 'https://api.omniroute.ai/v1' &&
+        merged.omniRoute.model === 'gpt-4o';
+      if (hadLegacyAiPrefill) {
+        merged = { ...merged, omniRoute: { ...merged.omniRoute, baseUrl: '', model: '' } };
+      }
+
+      if (hadLegacyDefault || hadUnsafeGlassOpacity || hadGlassStyle || hadLegacyAiPrefill) {
         tauriAPI.saveRuntimeConfig(merged).catch((e) => {
           console.error('Failed to persist appearance migration:', e);
           appLogger.error('Failed to persist appearance migration', e);
@@ -977,8 +989,15 @@ export default function App() {
     const routes = settings.models?.routes ?? {};
     const providers = settings.models?.providers ?? [];
     const inherited = [settings.omniRoute.provider, settings.omniRoute.model].filter(Boolean).join(' · ');
+    // No default provider is configured (fresh install, or the user cleared
+    // it): the empty route means "no AI selected", not a hidden default.
+    const hasDefault = !!(settings.omniRoute.provider && settings.omniRoute.model);
     const options: ModelPickerOption[] = [
-      { value: '', label: 'Default model', description: inherited || 'Configured in AI settings' },
+      {
+        value: '',
+        label: hasDefault ? 'Default model' : 'None',
+        description: hasDefault ? inherited : 'No model selected',
+      },
       ...providers.filter(p => p.capabilities.includes('generation')).map((p) => ({
         value: p.id,
         label: p.name,
@@ -1713,7 +1732,6 @@ export default function App() {
               <ErrorBoundary fallbackTitle="Notebook encountered an error">
                 <StudyWorkspace config={settings.omniRoute} modelPicker={chatModelPicker} onVaultChanged={handleAgentVaultChanged} unsavedPaths={studyUnsavedPaths} key={settings.vaultPath} vaultPath={settings.vaultPath}
                   onImport={() => setIsIngestModalOpen(true)} onOpenSettings={() => openSettings('ai')}
-                  onOtherChatView={() => { setLayout('editor'); setShowAICoPilot(true); }}
                   onOpenNote={path => { const found = notes.find(n => n.relativePath === path); if (found) handleSelectNote(found); }} />
               </ErrorBoundary>
             </div>
@@ -1735,7 +1753,7 @@ export default function App() {
           <div className="ai-panel-clip">
           <MaterialSurface className="h-full ai-panel sidebar-content">
           <AssistantWorkspace expanded={expandedAI} autoExpanded={windowWidth < 1000} onExpand={toggleAIExpansion} onCollapse={closeAI} config={settings.omniRoute} modelPicker={chatModelPicker} onVaultChanged={handleAgentVaultChanged} key={settings.vaultPath} vaultPath={settings.vaultPath} openRequest={copilotOpenRequest}
-            onConsumed={() => setCopilotOpenRequest(null)} onNotebook={() => setLayout('notebook')}
+            onConsumed={() => setCopilotOpenRequest(null)}
             onOpenSettings={() => openSettings('ai')} />
         </MaterialSurface>
         </div>
