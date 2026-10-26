@@ -245,7 +245,7 @@ test("PDF find shortcut and compact menus keep every tool reachable", async ({
   });
   expect(openFill).toBe(accentFill);
 
-  // The compact field and submit action share one inline cluster.
+  // The submit action sits inside the compact field.
   const searchField = reader.locator(".pdf-find-field");
   const searchAction = reader.getByRole("button", {
     name: "Search PDF",
@@ -257,10 +257,20 @@ test("PDF find shortcut and compact menus keep every tool reachable", async ({
   expect(fieldBox!.x).toBeGreaterThanOrEqual(
     inlineRotateBox!.x + inlineRotateBox!.width,
   );
-  expect(inlineActionBox!.x).toBeGreaterThanOrEqual(
-    fieldBox!.x + fieldBox!.width,
+  expect(inlineActionBox!.x).toBeGreaterThanOrEqual(fieldBox!.x);
+  expect(
+    inlineActionBox!.x + inlineActionBox!.width,
+  ).toBeLessThanOrEqual(fieldBox!.x + fieldBox!.width);
+  expect(
+    Math.abs(
+      inlineActionBox!.y +
+        inlineActionBox!.height / 2 -
+        (fieldBox!.y + fieldBox!.height / 2),
+    ),
+  ).toBeLessThan(2);
+  await expect(searchAction.locator("svg")).toHaveClass(
+    /lucide-corner-down-left/,
   );
-  expect(Math.abs(inlineActionBox!.y - fieldBox!.y)).toBeLessThan(2);
   expect(fieldBox!.width).toBeGreaterThanOrEqual(150);
   expect(fieldBox!.width).toBeLessThanOrEqual(161);
 
@@ -328,7 +338,11 @@ test("PDF find shortcut and compact menus keep every tool reachable", async ({
     box.y + box.height / 2;
   expect(resultFieldBox!.width).toBeGreaterThanOrEqual(150);
   expect(resultFieldBox!.width).toBeLessThanOrEqual(161);
-  for (const box of [resultActionBox, resultStatusBox, pageChipBox]) {
+  expect(resultActionBox!.x).toBeGreaterThanOrEqual(resultFieldBox!.x);
+  expect(
+    resultActionBox!.x + resultActionBox!.width,
+  ).toBeLessThanOrEqual(resultFieldBox!.x + resultFieldBox!.width);
+  for (const box of [resultStatusBox, pageChipBox]) {
     expect(box!.x).toBeGreaterThanOrEqual(
       resultFieldBox!.x + resultFieldBox!.width,
     );
@@ -336,9 +350,6 @@ test("PDF find shortcut and compact menus keep every tool reachable", async ({
       Math.abs(centerY(box!) - centerY(resultFieldBox!)),
     ).toBeLessThan(2);
   }
-  expect(resultStatusBox!.x).toBeGreaterThan(
-    resultActionBox!.x + resultActionBox!.width,
-  );
   expect(pageChipBox!.x).toBeGreaterThan(
     resultStatusBox!.x + resultStatusBox!.width,
   );
@@ -985,10 +996,18 @@ for (const theme of ["industrial", "gloss"])
       expect(fieldBox!.x).toBeGreaterThanOrEqual(
         searchRotateBox!.x + searchRotateBox!.width,
       );
-      expect(searchActionBox!.x).toBeGreaterThanOrEqual(
-        fieldBox!.x + fieldBox!.width,
-      );
-      expect(Math.abs(searchActionBox!.y - fieldBox!.y)).toBeLessThan(2);
+      expect(searchActionBox!.x).toBeGreaterThanOrEqual(fieldBox!.x);
+      expect(
+        searchActionBox!.x + searchActionBox!.width,
+      ).toBeLessThanOrEqual(fieldBox!.x + fieldBox!.width);
+      expect(
+        Math.abs(
+          searchActionBox!.y +
+            searchActionBox!.height / 2 -
+            (fieldBox!.y + fieldBox!.height / 2),
+        ),
+      ).toBeLessThan(2);
+      await expect(searchAction.locator('svg')).toHaveClass(/lucide-corner-down-left/);
       expect(fieldBox!.width).toBeGreaterThanOrEqual(150);
       expect(fieldBox!.width).toBeLessThanOrEqual(161);
       await expect(pdfFind).toHaveAccessibleName('Close search');
@@ -1008,7 +1027,11 @@ for (const theme of ["industrial", "gloss"])
       const centerY = (box: { y: number; height: number }) => box.y + box.height / 2;
       expect(resultFieldBox!.width).toBeGreaterThanOrEqual(96);
       expect(resultFieldBox!.width).toBeLessThanOrEqual(161);
-      for (const box of [resultActionBox, resultStatusBox, pageChipBox]) {
+      expect(resultActionBox!.x).toBeGreaterThanOrEqual(resultFieldBox!.x);
+      expect(
+        resultActionBox!.x + resultActionBox!.width,
+      ).toBeLessThanOrEqual(resultFieldBox!.x + resultFieldBox!.width);
+      for (const box of [resultStatusBox, pageChipBox]) {
         expect(box!.x).toBeGreaterThanOrEqual(
           resultFieldBox!.x + resultFieldBox!.width,
         );

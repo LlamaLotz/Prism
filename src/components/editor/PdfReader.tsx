@@ -2,6 +2,7 @@ import {
   Check,
   ChevronLeft,
   ChevronRight,
+  CornerDownLeft,
   Highlighter,
   Loader2,
   MessageSquarePlus,
@@ -1165,26 +1166,26 @@ export function PdfReader({
                         }
                       }}
                     />
+                    <button
+                      type="button"
+                      className="pdf-icon-button pdf-find-submit"
+                      aria-label="Search PDF"
+                      title={searching ? "Searching…" : "Search PDF"}
+                      aria-busy={searching}
+                      disabled={searching || !query.trim()}
+                      onClick={() => void search()}
+                    >
+                      {searching ? (
+                        <Loader2
+                          size={14}
+                          className="pdf-save-spinner"
+                          aria-hidden="true"
+                        />
+                      ) : (
+                        <CornerDownLeft size={15} aria-hidden="true" />
+                      )}
+                    </button>
                   </div>
-                  <button
-                    type="button"
-                    className="pdf-icon-button"
-                    aria-label="Search PDF"
-                    title={searching ? "Searching…" : "Search PDF"}
-                    aria-busy={searching}
-                    disabled={searching || !query.trim()}
-                    onClick={() => void search()}
-                  >
-                    {searching ? (
-                      <Loader2
-                        size={16}
-                        className="pdf-save-spinner"
-                        aria-hidden="true"
-                      />
-                    ) : (
-                      <Search size={16} aria-hidden="true" />
-                    )}
-                  </button>
                   {searchDone && (
                     <div className="pdf-find-results">
                       <span className="pdf-find-status" aria-live="polite">

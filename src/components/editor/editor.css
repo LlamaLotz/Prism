@@ -1083,22 +1083,46 @@ html body .pdf-reader .pdf-find-toggle[aria-expanded="true"]:hover:not(:disabled
 .pdf-find-field {
   display: flex;
   align-items: center;
+  gap: 4px;
   flex: 0 1 160px;
   width: 160px;
   min-width: 96px;
   height: 34px;
-  padding: 0 8px;
+  padding: 0 3px 0 8px;
   background: var(--nb-overlay);
   color: var(--nb-text);
   border: 1px solid var(--nb-border);
   border-radius: var(--nb-radius-sm);
 }
 .pdf-find-field input {
-  width: 100%;
+  flex: 1 1 auto;
+  width: auto;
   min-width: 0;
   color: var(--nb-text);
   background: transparent;
   font-size: 12px;
+}
+/* Enter submits in place, so the field stays one compact surface. */
+html body .pdf-reader .pdf-find-submit {
+  width: 26px;
+  height: 26px;
+  min-width: 26px;
+  flex: 0 0 auto;
+  padding: 4px;
+  color: var(--nb-secondary) !important;
+  background: transparent !important;
+  border: 0 !important;
+  border-radius: calc(var(--nb-radius-sm) * 0.6) !important;
+  box-shadow: none !important;
+}
+html body .pdf-reader .pdf-find-submit:hover:not(:disabled):not([aria-pressed="true"]):not([aria-selected="true"]) {
+  color: var(--nb-text) !important;
+  background: var(--nb-hover-bg) !important;
+  border-color: transparent !important;
+}
+html body .pdf-reader .pdf-find-submit:focus-visible {
+  outline: 2px solid var(--nb-focus);
+  outline-offset: -2px;
 }
 .pdf-find-results {
   display: flex;
