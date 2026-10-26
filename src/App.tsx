@@ -440,8 +440,9 @@ export default function App() {
       e.preventDefault(); // Disables Edge / WKWebView default right-click menu
       const el = e.target as Element | null;
       const region = el?.closest('[data-region]')?.getAttribute('data-region');
-      if (region === 'graph' || region === 'topics') {
-        // No right-click menu on the graph / tags panes — swallow it.
+      if (region === 'graph' || region === 'topics' || region === 'pdf') {
+        // No app-level menu on the graph / tags panes or inside the PDF reader;
+        // the reader owns its own text/annotation context menu.
         setCtxMenu(null);
         return;
       }
