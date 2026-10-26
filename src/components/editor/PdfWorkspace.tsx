@@ -62,7 +62,7 @@ export function PdfWorkspace({
   return (
     <Suspense
       fallback={
-        <section className="pdf-reader" aria-label="PDF reader">
+        <section className="pdf-reader" data-region="pdf" aria-label="PDF reader">
           <p role="status">Opening PDF…</p>
         </section>
       }

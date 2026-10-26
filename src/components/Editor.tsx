@@ -1312,6 +1312,8 @@ export const Editor: React.FC<EditorProps> = ({
         return;
       }
       if ((e.ctrlKey || e.metaKey) && !e.altKey && e.key.toLowerCase() === 'f') {
+        // The PDF reader overlays the editor and owns Ctrl/Cmd+F while open.
+        if (document.querySelector('.pdf-reader')) return;
         e.preventDefault();
         setIsSearchOpen(true);
         requestAnimationFrame(() => {

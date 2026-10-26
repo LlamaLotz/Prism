@@ -969,3 +969,279 @@ html body .pdf-reader .pdf-annotation-heading:active:not(:disabled) {
 .pdf-mark { outline: none !important; box-shadow: none !important; }
 .pdf-annotations article[data-selected="true"] { border-color: var(--nb-focus); }
 .pdf-mark[data-selected="true"] { opacity: .45; }
+
+/* ==========================================================================
+   PDF reader refinement: compact toolbar, find popover, menus and save states.
+   These rules intentionally override the app-wide PDF button language where
+   state colour is the message (saved / unsaved / failed).
+   ========================================================================== */
+.pdf-reader .pdf-header {
+  position: static;
+  min-height: 0;
+  padding-right: 0;
+  gap: 8px 10px;
+}
+.pdf-title {
+  flex: 0 0 auto;
+  font-size: 13px;
+  font-weight: 650;
+}
+.pdf-toolbar-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.pdf-page-field {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--nb-secondary);
+  white-space: nowrap;
+}
+.pdf-page-total,
+.pdf-zoom-value {
+  font-size: 12px;
+  color: var(--nb-secondary);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.pdf-zoom-value {
+  min-width: 40px;
+  text-align: center;
+}
+.pdf-toolbar-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-left: auto;
+  flex-wrap: wrap;
+}
+.pdf-save-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.pdf-save-status {
+  font-size: 11px;
+  line-height: 1;
+  color: var(--nb-secondary);
+  white-space: nowrap;
+}
+.pdf-mode-hint {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--nb-secondary);
+}
+
+/* Find bar appears only while the dedicated search action is open. */
+.pdf-find {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  padding: 6px 8px;
+  background: var(--nb-overlay);
+  color: var(--nb-text);
+  border: 1px solid var(--nb-border);
+  border-radius: var(--nb-radius-sm);
+  box-shadow: var(--nb-shadow);
+}
+.pdf-find > svg {
+  color: var(--nb-secondary);
+  flex-shrink: 0;
+}
+.pdf-find input {
+  width: min(220px, 48vw);
+  min-width: 120px;
+  flex: 1 1 160px;
+  color: var(--nb-text);
+  background: transparent;
+  font-size: 12px;
+}
+.pdf-find-status {
+  font-size: 11px;
+  color: var(--nb-secondary);
+  white-space: nowrap;
+}
+.pdf-find-page {
+  min-height: 26px !important;
+  padding: 3px 8px !important;
+  font-size: 11px !important;
+}
+
+/* Dropdowns sit above the pages, not in a nested toolbar stacking context. */
+.pdf-menu {
+  position: relative;
+  display: inline-flex;
+  flex-shrink: 0;
+}
+.pdf-menu-surface {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 80;
+  min-width: 210px;
+  max-width: min(280px, calc(100vw - 24px));
+  max-height: min(70vh, 420px);
+  overflow: auto;
+  padding: 4px;
+  background: var(--nb-overlay);
+  color: var(--nb-text);
+  border: 1px solid var(--nb-border);
+  border-radius: var(--nb-radius-sm);
+  box-shadow: var(--nb-shadow), var(--nb-edge);
+}
+.pdf-menu-surface.pdf-context-menu {
+  position: fixed;
+  top: auto;
+  right: auto;
+  z-index: 120;
+  min-width: 190px;
+}
+.pdf-menu-item {
+  min-height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
+  padding: 6px 10px;
+  font-size: 12px;
+  font-weight: 500;
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.pdf-menu-item svg {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+}
+.pdf-menu-sep {
+  margin: 4px 2px;
+  border-top: 1px solid var(--nb-hairline);
+}
+.pdf-menu-label {
+  padding: 6px 10px 2px;
+  font-size: 11px;
+  color: var(--nb-secondary);
+}
+.pdf-menu-hint {
+  margin: 4px 10px 6px;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--nb-secondary);
+  white-space: normal;
+}
+.pdf-color-swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 2px 8px 6px;
+}
+.pdf-color-swatch-button {
+  flex: 0 0 auto;
+}
+
+/* Menu items keep flat menu geometry despite the PDF-wide button treatment. */
+html body .pdf-reader .pdf-menu-surface .pdf-menu-item {
+  width: 100%;
+  color: var(--nb-text) !important;
+  background: transparent !important;
+  border-color: transparent !important;
+  border-radius: calc(var(--nb-radius-sm) * 0.6) !important;
+  box-shadow: none !important;
+}
+html body .pdf-reader .pdf-menu-surface .pdf-menu-item:hover:not(:disabled) {
+  color: var(--nb-text) !important;
+  background: var(--nb-hover-bg, var(--nb-selection)) !important;
+  border-color: transparent !important;
+}
+html body .pdf-reader .pdf-menu-surface .pdf-menu-item[aria-pressed="true"] {
+  color: var(--nb-selected-ink) !important;
+  background: var(--nb-selected-bg) !important;
+  border-color: var(--nb-selected-border) !important;
+}
+html body .pdf-reader .pdf-menu-surface .pdf-menu-item:focus-visible {
+  outline: 2px solid var(--nb-focus);
+  outline-offset: -2px;
+}
+html body .pdf-reader .pdf-menu-surface .pdf-menu-item:disabled {
+  color: var(--nb-secondary) !important;
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+html body .pdf-reader .pdf-menu-surface .pdf-menu-item.is-danger {
+  color: #f87171 !important;
+}
+html.mode-light body .pdf-reader .pdf-menu-surface .pdf-menu-item.is-danger {
+  color: #b3261e !important;
+}
+
+/* Save state: colour communicates the result; the adjacent label stays muted. */
+html body .pdf-reader .pdf-save-group .pdf-save-button:disabled {
+  opacity: 1 !important;
+}
+html body .pdf-reader .pdf-save-group .pdf-save-button[data-state="saved"] {
+  color: #062b18 !important;
+  background: #4bc882 !important;
+  border-color: #2f9e62 !important;
+}
+html body .pdf-reader .pdf-save-group .pdf-save-button[data-state="unsaved"] {
+  color: #332600 !important;
+  background: #f5d442 !important;
+  border-color: #c9a400 !important;
+}
+html body .pdf-reader .pdf-save-group .pdf-save-button[data-state="unsaved"]:hover:not(:disabled) {
+  color: #332600 !important;
+  background: #f8df70 !important;
+  border-color: #c9a400 !important;
+}
+html body .pdf-reader .pdf-save-group .pdf-save-button[data-state="saving"] {
+  color: var(--nb-text) !important;
+  background: var(--nb-card) !important;
+  border-color: var(--nb-focus) !important;
+}
+html body .pdf-reader .pdf-save-group .pdf-save-button[data-state="failed"] {
+  color: #ffffff !important;
+  background: #b3261e !important;
+  border-color: #8c1d18 !important;
+}
+html body .pdf-reader .pdf-save-group .pdf-save-button[data-state="failed"]:hover:not(:disabled) {
+  color: #ffffff !important;
+  background: #c9362e !important;
+  border-color: #8c1d18 !important;
+}
+.pdf-save-spinner {
+  animation: pdf-save-spin 0.9s linear infinite;
+}
+@keyframes pdf-save-spin {
+  to { transform: rotate(360deg); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .pdf-save-spinner { animation: none; }
+}
+
+/* Close now participates in the toolbar flow rather than floating above it. */
+.pdf-close {
+  position: static;
+}
+
+@media (max-width: 640px) {
+  .pdf-title {
+    display: none;
+  }
+  .pdf-toolbar-actions {
+    width: 100%;
+    justify-content: flex-end;
+  }
+  .pdf-find input {
+    flex-basis: 100%;
+    width: 100%;
+  }
+}

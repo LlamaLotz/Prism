@@ -92,6 +92,9 @@ test("PDF point comments save, reopen, rotate and insert a durable quote link", 
     { timeout: 15000 },
   );
   await reader
+    .getByRole("button", { name: "Annotation tools", exact: true })
+    .click();
+  await reader
     .getByRole("button", { name: "Add point comment", exact: true })
     .click();
   await reader
@@ -101,7 +104,8 @@ test("PDF point comments save, reopen, rotate and insert a durable quote link", 
   await reader
     .getByRole("button", { name: "Save annotations", exact: true })
     .click();
-  await expect(reader.getByRole("status")).toHaveText("Annotations saved");
+  await expect(reader.getByRole("status")).toHaveText("Saved");
+  await reader.getByRole("button", { name: "More options", exact: true }).click();
   await reader.getByRole("button", { name: "Rotate", exact: true }).click();
   await expect(reader.locator(".pdf-comment-dot")).toHaveCount(1);
   await reader.getByRole("button", { name: "Insert quote into note" }).click();
@@ -139,6 +143,9 @@ test("PDF highlights capture text; save conflicts retain the draft", async ({
     el.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
   });
   await reader
+    .getByRole("button", { name: "Annotation tools", exact: true })
+    .click();
+  await reader
     .getByRole("button", { name: "Highlight selection", exact: true })
     .click();
   await expect(reader.locator(".pdf-mark")).not.toHaveCount(0);
@@ -149,7 +156,7 @@ test("PDF highlights capture text; save conflicts retain the draft", async ({
     .getByRole("button", { name: "Save annotations", exact: true })
     .click();
   await expect(reader.getByRole("alert")).toContainText("CONFLICT");
-  await expect(reader.getByRole("status")).toHaveText("Unsaved annotations");
+  await expect(reader.getByRole("status")).toHaveText("Save failed");
   await expect(reader.locator(".pdf-mark")).not.toHaveCount(0);
 });
 
@@ -171,6 +178,9 @@ const openReader = async (page: Page) => {
 const pointComment = async (page: Page, comment: string) => {
   const reader = page.getByRole("region", { name: "PDF reader" });
   await reader
+    .getByRole("button", { name: "Annotation tools", exact: true })
+    .click();
+  await reader
     .getByRole("button", { name: "Add point comment", exact: true })
     .click();
   await reader
@@ -185,6 +195,318 @@ const draft = (page: Page) =>
     );
     return key ? JSON.parse(localStorage.getItem(key)!) : null;
   });
+
+test("PDF find shortcut and compact menus keep every tool reachable", async ({
+  page,
+}) => {
+  await boot(page);
+  const reader = await openReader(page);
+  const findInput = reader.getByRole("textbox", { name: "Find in PDF" });
+  const findButton = reader.getByRole("button", {
+    name: "Find in PDF",
+    exact: true,
+  });
+  await expect(findInput).toHaveCount(0);
+
+  // The reader owns the shortcut while it is open; the note search must stay shut.
+  await page.keyboard.press("Control+f");
+  await expect(findInput).toBeVisible();
+  await expect(findInput).toBeFocused();
+  await expect(findButton).toHaveAttribute("aria-expanded", "true");
+  await expect(
+    page.locator('[data-region="editor"]').getByRole("textbox", {
+      name: /Find in note/,
+    }),
+  ).toHaveCount(0);
+
+  // Editable fields keep paste and select-all in the reader-owned menu.
+  await findInput.fill("Research");
+  await findInput.click({ button: "right" });
+  const fieldMenu = page.getByRole("group", { name: "PDF actions" });
+  await expect(
+    fieldMenu.getByRole("button", { name: "Paste", exact: true }),
+  ).toBeEnabled();
+  await expect(
+    fieldMenu.getByRole("button", {
+      name: "Highlight selection",
+      exact: true,
+    }),
+  ).toHaveCount(0);
+  await fieldMenu.getByRole("button", { name: "Select All", exact: true }).click();
+  expect(
+    await findInput.evaluate((el) => [
+      (el as HTMLInputElement).selectionStart,
+      (el as HTMLInputElement).selectionEnd,
+    ]),
+  ).toEqual([0, "Research".length]);
+
+  await findInput.press("Escape");
+  await expect(findInput).toHaveCount(0);
+  await expect(findButton).toBeFocused();
+  await expect(findButton).toHaveAttribute("aria-expanded", "false");
+
+  const tools = reader.getByRole("button", {
+    name: "Annotation tools",
+    exact: true,
+  });
+  await tools.click();
+  await expect(tools).toHaveAttribute("aria-expanded", "true");
+  await expect(
+    reader.getByRole("button", { name: "Add point comment", exact: true }),
+  ).toBeFocused();
+  await expect(
+    reader.getByRole("button", { name: "Highlight selection", exact: true }),
+  ).toBeDisabled();
+  await expect(
+    reader.getByRole("button", { name: "yellow", exact: true }),
+  ).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(tools).toHaveAttribute("aria-expanded", "false");
+  await expect(tools).toBeFocused();
+
+  const more = reader.getByRole("button", {
+    name: "More options",
+    exact: true,
+  });
+  await more.click();
+  await expect(more).toHaveAttribute("aria-expanded", "true");
+  await expect(
+    reader.getByRole("button", { name: "Rotate", exact: true }),
+  ).toBeFocused();
+  await expect(
+    reader.getByRole("button", { name: /Annotations \(0\)/ }),
+  ).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(more).toHaveAttribute("aria-expanded", "false");
+  await expect(more).toBeFocused();
+
+  for (const name of [
+    "Previous page",
+    "Next page",
+    "Zoom in",
+    "Zoom out",
+    "Find in PDF",
+    "Annotation tools",
+    "Save annotations",
+    "More options",
+    "Close PDF",
+  ]) {
+    const button = reader.getByRole("button", { name, exact: true });
+    await expect(button.locator("svg")).toBeVisible();
+    await expect(button).toHaveAttribute("title", /\S/);
+  }
+
+  const previous = reader.getByRole("button", {
+    name: "Previous page",
+    exact: true,
+  });
+  const next = reader.getByRole("button", { name: "Next page", exact: true });
+  const pageField = reader.getByRole("spinbutton", { name: "Page", exact: true });
+  await expect(previous).toBeDisabled();
+  await expect(next).toBeEnabled();
+  await next.click();
+  await expect(pageField).toHaveValue("2");
+  await expect(next).toBeDisabled();
+  await previous.click();
+  await expect(pageField).toHaveValue("1");
+});
+
+test("PDF context menu selects and copies PDF text only, then pastes into fields", async ({
+  page,
+}) => {
+  await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+  await boot(page);
+  const reader = await openReader(page);
+  const pageOne = reader.locator('[data-pdf-page="1"]');
+  await expect(reader.locator(".textLayer").nth(1)).toContainText(
+    "More evidence",
+    { timeout: 15000 },
+  );
+
+  // The reader owns Ctrl+A even if focus is still on the app behind it.
+  await page.keyboard.press("Control+a");
+  const initialSelected = await page.evaluate(
+    () => window.getSelection()?.toString() ?? "",
+  );
+  expect(initialSelected).toContain("Research evidence");
+  expect(initialSelected).not.toContain("Loose");
+  await page.evaluate(() => window.getSelection()?.removeAllRanges());
+
+  await pageOne.click({ button: "right", position: { x: 120, y: 160 } });
+  const menu = page.getByRole("group", { name: "PDF actions" });
+  await expect(menu).toBeVisible();
+  await expect(
+    menu.getByRole("button", { name: "Copy", exact: true }),
+  ).toBeDisabled();
+  await expect(
+    menu.getByRole("button", { name: "Paste", exact: true }),
+  ).toBeDisabled();
+  await menu.getByRole("button", { name: "Select All", exact: true }).click();
+  await expect(menu).toHaveCount(0);
+
+  const selected = await page.evaluate(
+    () => window.getSelection()?.toString() ?? "",
+  );
+  expect(selected).toContain("Research evidence");
+  expect(selected).toContain("More evidence");
+  expect(selected).not.toContain("PDF reader");
+  // The app chrome is present on screen but deliberately outside the selection.
+  expect(await page.locator("body").innerText()).toContain("Loose");
+  expect(selected).not.toContain("Loose");
+
+  // Ctrl+A while the pages own focus keeps the same PDF-only scope.
+  await page.keyboard.press("Control+a");
+  const keyboardSelected = await page.evaluate(
+    () => window.getSelection()?.toString() ?? "",
+  );
+  expect(keyboardSelected).toContain("Research evidence");
+  expect(keyboardSelected).not.toContain("Loose");
+
+  const firstSpan = reader
+    .locator(".textLayer")
+    .first()
+    .locator("span")
+    .first();
+  await firstSpan.click({ button: "right" });
+  const copyMenu = page.getByRole("group", { name: "PDF actions" });
+  const copy = copyMenu.getByRole("button", { name: "Copy", exact: true });
+  await expect(copy).toBeEnabled();
+  await copy.click();
+  await expect
+    .poll(() => page.evaluate(() => navigator.clipboard.readText()))
+    .toContain("Research evidence");
+  expect(await page.evaluate(() => navigator.clipboard.readText())).not.toContain(
+    "Loose",
+  );
+
+  // Paste is scoped to the annotation field the menu was opened on.
+  await reader
+    .getByRole("button", { name: "Annotation tools", exact: true })
+    .click();
+  await reader
+    .getByRole("button", { name: "Add point comment", exact: true })
+    .click();
+  await pageOne.click({ position: { x: 100, y: 150 } });
+  const comment = reader.getByLabel("Comment on page 1");
+  await comment.fill("Original");
+  await page.evaluate(() => navigator.clipboard.writeText("Inserted-"));
+  await comment.evaluate((el) => {
+    const field = el as HTMLTextAreaElement;
+    field.focus();
+    field.setSelectionRange(0, 0);
+    const rect = field.getBoundingClientRect();
+    field.dispatchEvent(
+      new MouseEvent("contextmenu", {
+        bubbles: true,
+        clientX: rect.left + 8,
+        clientY: rect.top + 8,
+      }),
+    );
+  });
+  const fieldMenu = page.getByRole("group", { name: "PDF actions" });
+  const paste = fieldMenu.getByRole("button", {
+    name: "Paste",
+    exact: true,
+  });
+  await expect(paste).toBeEnabled();
+  await paste.click();
+  await expect(comment).toHaveValue("Inserted-Original");
+});
+
+test("PDF context menu edits and deletes annotations without losing the draft", async ({
+  page,
+}) => {
+  await boot(page);
+  const reader = await openReader(page);
+  await pointComment(page, "Context target");
+  const article = reader.locator("[data-annotation-id]").first();
+  const heading = article.locator(".pdf-annotation-heading");
+
+  await heading.click({ button: "right" });
+  const menu = page.getByRole("group", { name: "PDF actions" });
+  await expect(
+    menu.getByRole("button", { name: "Edit comment", exact: true }),
+  ).toBeVisible();
+  await expect(
+    menu.getByRole("button", { name: "Insert quote into note", exact: true }),
+  ).toBeEnabled();
+  await menu
+    .getByRole("button", { name: "Edit comment", exact: true })
+    .click();
+  await expect(reader.getByLabel("Comment on page 1")).toBeFocused();
+  await expect(article).toHaveAttribute("data-selected", "true");
+
+  await heading.click({ button: "right" });
+  await page
+    .getByRole("group", { name: "PDF actions" })
+    .getByRole("button", { name: "Delete annotation", exact: true })
+    .click();
+  await expect(reader.locator(".pdf-comment-dot")).toHaveCount(0);
+  await expect(reader.getByText("No annotations yet.")).toBeVisible();
+  await expect(reader.getByRole("status")).toHaveText("Unsaved");
+  await expect
+    .poll(async () => (await draft(page))?.entries.length)
+    .toBe(0);
+});
+
+test("PDF save control reports saved, saving, unsaved and failed states", async ({
+  page,
+}) => {
+  await boot(page);
+  const reader = await openReader(page);
+  const save = reader.getByRole("button", {
+    name: "Save annotations",
+    exact: true,
+  });
+  const status = reader.getByRole("status");
+
+  await expect(status).toHaveText("Saved");
+  await expect(save).toHaveAttribute("data-state", "saved");
+  await expect(save).toBeDisabled();
+
+  await pointComment(page, "State check");
+  await expect(status).toHaveText("Unsaved");
+  await expect(save).toHaveAttribute("data-state", "unsaved");
+  await expect(save).toBeEnabled();
+
+  await page.evaluate(() => {
+    (window as any).fixtureDelayAnnotationSave = true;
+  });
+  await save.click();
+  await expect(status).toHaveText("Saving…");
+  await expect(save).toHaveAttribute("data-state", "saving");
+  await expect(save).toHaveAttribute("aria-busy", "true");
+  await expect(save.locator(".pdf-save-spinner")).toBeVisible();
+
+  // A change made while the request is in flight must never be reported saved.
+  await reader.getByLabel("Comment on page 1").fill("Edited while saving");
+  await page.evaluate(() => {
+    (window as any).fixtureDelayAnnotationSave = false;
+    (window as any).fixtureFinishAnnotationSave();
+  });
+  await expect(status).toHaveText("Unsaved");
+  await expect(save).toHaveAttribute("data-state", "unsaved");
+
+  await save.click();
+  await expect(status).toHaveText("Saved");
+  await expect(save).toHaveAttribute("data-state", "saved");
+
+  await page.evaluate(() => {
+    (window as any).fixtureAnnotationConflict = true;
+  });
+  await reader.getByLabel("Comment on page 1").fill("Conflict edit");
+  await save.click();
+  await expect(status).toHaveText("Save failed");
+  await expect(save).toHaveAttribute("data-state", "failed");
+  await expect(reader.getByRole("alert")).toContainText("CONFLICT");
+
+  await page.evaluate(() => {
+    (window as any).fixtureAnnotationConflict = false;
+  });
+  await save.click();
+  await expect(status).toHaveText("Saved");
+  await expect(reader.getByRole("alert")).toHaveCount(0);
+});
 
 test("PDF open survives a delayed reader module", async ({ page }) => {
   let releaseModule!: () => void;
@@ -268,6 +590,7 @@ test("PDF edits during save retain newer text and advance recovery revision", as
   await expect(
     reader.getByRole("button", { name: "Save annotations", exact: true }),
   ).toBeEnabled();
+  await expect(reader.getByRole("status")).toHaveText("Unsaved");
   await expect.poll(async () => (await draft(page))?.revision).toBe(1);
   expect((await draft(page)).entries[0].comment).toBe("Newer revision");
   await boot(page);
@@ -278,7 +601,7 @@ test("PDF edits during save retain newer text and advance recovery revision", as
   await reader
     .getByRole("button", { name: "Save annotations", exact: true })
     .click();
-  await expect(reader.getByRole("status")).toHaveText("Annotations saved");
+  await expect(reader.getByRole("status")).toHaveText("Saved");
   expect(await draft(page)).toBeNull();
 });
 
@@ -438,24 +761,54 @@ for (const theme of ["industrial", "gloss"])
       await page.getByRole("button", { name: "Live", exact: true }).click();
       const reader = await openReader(page);
       expect(await reader.evaluate(el => getComputedStyle(el).backgroundColor)).toMatch(/^rgb\(/);
-      const commentButton = reader.getByRole('button', { name: 'Add point comment', exact: true });
-      for (const pressed of [false, true]) {
-        if (pressed) await commentButton.click();
-        expect(await commentButton.evaluate(el => {
-          const style = getComputedStyle(el);
-          const luminance = (color: string) => {
-            const components = color.match(/[\d.]+/g)!.slice(0, 3).map(Number).map(n => {
-              const value = n / 255;
-              return value <= .04045 ? value / 12.92 : ((value + .055) / 1.055) ** 2.4;
-            });
-            return components[0] * .2126 + components[1] * .7152 + components[2] * .0722;
+      const contrast = (locator: ReturnType<typeof reader.getByRole>) => locator.evaluate(el => {
+        const parse = (color: string) => {
+          const [r, g, b, a = 1] = color.match(/[\d.]+/g)?.map(Number) ?? [0, 0, 0, 1];
+          return { r, g, b, a };
+        };
+        const luminance = ({ r, g, b }: { r: number; g: number; b: number }) => {
+          const components = [r, g, b].map(n => {
+            const value = n / 255;
+            return value <= .04045 ? value / 12.92 : ((value + .055) / 1.055) ** 2.4;
+          });
+          return components[0] * .2126 + components[1] * .7152 + components[2] * .0722;
+        };
+        // Menu rows are intentionally transparent over the menu surface, so
+        // composite the ancestor backgrounds into the true painted backdrop.
+        type Rgba = { r: number; g: number; b: number; a: number };
+        let fill: Rgba = { r: 0, g: 0, b: 0, a: 0 };
+        const layer = (top: Rgba, below: Rgba): Rgba => {
+          const a = top.a + below.a * (1 - top.a);
+          if (a === 0) return { r: 0, g: 0, b: 0, a: 0 };
+          return {
+            r: (top.r * top.a + below.r * below.a * (1 - top.a)) / a,
+            g: (top.g * top.a + below.g * below.a * (1 - top.a)) / a,
+            b: (top.b * top.a + below.b * below.a * (1 - top.a)) / a,
+            a,
           };
-          const ink = luminance(style.color), fill = luminance(style.backgroundColor);
-          return (Math.max(ink, fill) + .05) / (Math.min(ink, fill) + .05);
-        })).toBeGreaterThanOrEqual(4.5);
-      }
+        };
+        const page = parse(getComputedStyle(document.documentElement).backgroundColor);
+        fill = page.a >= .999 ? page : { r: 255, g: 255, b: 255, a: 1 };
+        const chain: Rgba[] = [];
+        for (let node: Element | null = el; node; node = node.parentElement) {
+          const bg = parse(getComputedStyle(node).backgroundColor);
+          if (bg.a > 0) chain.unshift(bg);
+        }
+        for (const bg of chain) fill = layer(bg, fill);
+        const ink = luminance(parse(getComputedStyle(el).color));
+        const backdrop = luminance(fill);
+        return (Math.max(ink, backdrop) + .05) / (Math.min(ink, backdrop) + .05);
+      });
+      const tools = reader.getByRole('button', { name: 'Annotation tools', exact: true });
+      await tools.click();
+      expect(await contrast(reader.getByRole('button', { name: 'Add point comment', exact: true }))).toBeGreaterThanOrEqual(4.5);
+      await reader.getByRole('button', { name: 'Add point comment', exact: true }).click();
+      await tools.click();
+      expect(await contrast(reader.getByRole('button', { name: 'Add point comment', exact: true }))).toBeGreaterThanOrEqual(4.5);
+      await tools.click();
 
       expect(await reader.locator('.pdf-page').first().evaluate(el => parseFloat(getComputedStyle(el).borderTopLeftRadius))).toBe(0);
+      await reader.getByRole('button', { name: 'Find in PDF', exact: true }).click();
       await reader.getByRole('textbox', { name: 'Find in PDF' }).fill('Research');
       await reader.getByRole('button', { name: 'Search PDF', exact: true }).click();
       await expect(reader.getByRole('button', { name: 'Page 1', exact: true })).toBeVisible();
@@ -464,6 +817,7 @@ for (const theme of ["industrial", "gloss"])
       await reader
         .getByRole("button", { name: "Zoom in", exact: true })
         .click();
+      await reader.getByRole("button", { name: "More options", exact: true }).click();
       await reader.getByRole("button", { name: "Rotate", exact: true }).click();
       await reader
         .getByRole("button", { name: "Next page", exact: true })
@@ -511,7 +865,7 @@ test("invalid PDF recovery remains downloadable and can be explicitly cleared", 
     .getByRole("dialog")
     .getByRole("button", { name: "OK", exact: true })
     .click();
-  await expect(reader.getByRole("status")).toHaveText("Annotations saved");
+  await expect(reader.getByRole("status")).toHaveText("Saved");
   // The confirm closes after the exit animation; poll so the reload's
   // draft cleanup lands before asserting.
   await expect.poll(() => draft(page)).toBeNull();
@@ -537,7 +891,7 @@ test("PDF relinking does not leak into a later reload", async ({ page }) => {
     .getByRole("dialog")
     .getByRole("button", { name: "OK", exact: true })
     .click();
-  await expect(reader.getByRole("status")).toHaveText("Annotations saved");
+  await expect(reader.getByRole("status")).toHaveText("Saved");
   // The reload re-open is an async effect: the status flips synchronously on
   // setDirty(false) while research.open lands a tick later. Poll instead of
   // asserting immediately so parallel-worker load can't win the race.
@@ -555,19 +909,23 @@ test("PDF relinking does not leak into a later reload", async ({ page }) => {
 test("PDF icons, palette, scrolling and collapsed drafts remain usable", async ({ page }) => {
   await boot(page);
   const reader = await openReader(page);
-  for (const name of ["Zoom in", "Zoom out", "Rotate", "Search PDF", "Close PDF"]) {
+  for (const name of ["Zoom in", "Zoom out", "Previous page", "Next page", "Find in PDF", "Annotation tools", "More options", "Save annotations", "Close PDF"]) {
     const button = reader.getByRole("button", { name, exact: true });
     await expect(button.locator("svg")).toBeVisible();
-    await expect(button).toHaveAttribute("title", name);
+    await expect(button).toHaveAttribute("title", /\S/);
   }
-  await reader.getByRole("button", { name: "Highlight color: yellow", exact: true }).click();
+  await reader.getByRole("button", { name: "Annotation tools", exact: true }).click();
   await reader.getByRole("button", { name: "pink", exact: true }).click();
-  await expect(reader.getByRole("button", { name: "Highlight color: pink", exact: true })).toBeVisible();
+  await expect(reader.getByRole("button", { name: "pink", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await reader.getByRole("button", { name: "Annotation tools", exact: true }).click();
   await pointComment(page, "Unsaved comment that must survive collapsing");
-  const toggle = reader.getByRole("button", { name: /Annotations \(1\)/ });
-  await toggle.click();
+  const toggle = async () => {
+    await reader.getByRole("button", { name: "More options", exact: true }).click();
+    await reader.getByRole("button", { name: /Annotations \(1\)/ }).click();
+  };
+  await toggle();
   await expect(reader.getByRole("complementary", { name: "Annotations" })).toBeHidden();
-  await toggle.click();
+  await toggle();
   await expect(reader.getByLabel("Comment on page 1")).toHaveValue("Unsaved comment that must survive collapsing");
   await reader.getByRole("button", { name: "Annotation color on page 1: pink" }).click();
   await reader.getByRole("button", { name: "blue", exact: true }).click();

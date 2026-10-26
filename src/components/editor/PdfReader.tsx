@@ -1,5 +1,30 @@
-import { ZoomIn, ZoomOut, RotateCw, Search, X, Check, PanelRightClose, PanelRightOpen } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import {
+  Check,
+  ChevronLeft,
+  ChevronRight,
+  EllipsisVertical,
+  Highlighter,
+  Loader2,
+  MessageSquarePlus,
+  PanelRightClose,
+  PanelRightOpen,
+  PenLine,
+  RotateCw,
+  Save,
+  Search,
+  X,
+  ZoomIn,
+  ZoomOut,
+} from "lucide-react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type MouseEvent as ReactMouseEvent,
+  type ReactNode,
+  type RefObject,
+} from "react";
 import {
   getDocument,
   GlobalWorkerOptions,
@@ -19,6 +44,10 @@ import {
   type AnnotationFile,
 } from "../../services/research";
 import { useDialog } from "../DialogProvider";
+import {
+  PdfContextMenu,
+  type PdfContextMenuState,
+} from "./PdfContextMenu";
 GlobalWorkerOptions.workerSrc = workerUrl;
 const colors: Record<string, string> = {
   yellow: "#f5d442",
@@ -26,7 +55,49 @@ const colors: Record<string, string> = {
   blue: "#65a8f5",
   pink: "#f68bcc",
 };
-function ColorPicker({ color, change, label }: { color: string; change: (color: string) => void; label: string }) {
+
+function ColorSwatches({
+  color,
+  change,
+  label,
+}: {
+  color: string;
+  change: (color: string) => void;
+  label: string;
+}) {
+  return (
+    <div className="pdf-color-swatches" role="group" aria-label={label}>
+      {Object.entries(colors).map(([name, value]) => (
+        <button
+          key={name}
+          type="button"
+          className="pdf-icon-button pdf-color-swatch-button"
+          aria-label={name}
+          title={name}
+          aria-pressed={name === color}
+          onClick={() => change(name)}
+        >
+          <span
+            className="pdf-color-swatch"
+            style={{ backgroundColor: value }}
+          >
+            {name === color && <Check size={14} color="#111" />}
+          </span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function ColorPicker({
+  color,
+  change,
+  label,
+}: {
+  color: string;
+  change: (color: string) => void;
+  label: string;
+}) {
   const [open, setOpen] = useState(false);
   const root = useRef<HTMLDivElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
@@ -38,18 +109,175 @@ function ColorPicker({ color, change, label }: { color: string; change: (color: 
     document.addEventListener("pointerdown", dismiss);
     return () => document.removeEventListener("pointerdown", dismiss);
   }, [open]);
-  return <div ref={root} className="pdf-color-picker" onKeyDown={event => {
-    if (event.key === "Escape") { event.stopPropagation(); setOpen(false); trigger.current?.focus(); }
-  }} onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget)) setOpen(false); }}>
-    <button ref={trigger} type="button" className="pdf-icon-button" aria-label={`${label}: ${color}`} title={`${label}: ${color}`} aria-expanded={open} onClick={() => setOpen(!open)}>
-      <span className="pdf-color-swatch" style={{ backgroundColor: colors[color] ?? colors.yellow }} />
-    </button>
-    {open && <div className="pdf-color-palette" role="group" aria-label={label}>
-      {Object.entries(colors).map(([name, value]) => <button key={name} type="button" className="pdf-icon-button" aria-label={name} title={name} aria-pressed={name === color} onClick={() => { change(name); setOpen(false); trigger.current?.focus(); }}>
-        <span className="pdf-color-swatch" style={{ backgroundColor: value }}>{name === color && <Check size={14} color="#111" />}</span>
-      </button>)}
-    </div>}
-  </div>;
+  return (
+    <div
+      ref={root}
+      className="pdf-color-picker"
+      onKeyDown={(event) => {
+        if (event.key === "Escape") {
+          event.stopPropagation();
+          setOpen(false);
+          trigger.current?.focus();
+        }
+      }}
+      onBlur={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget))
+          setOpen(false);
+      }}
+    >
+      <button
+        ref={trigger}
+        type="button"
+        className="pdf-icon-button"
+        aria-label={`${label}: ${color}`}
+        title={`${label}: ${color}`}
+        aria-expanded={open}
+        onClick={() => setOpen(!open)}
+      >
+        <span
+          className="pdf-color-swatch"
+          style={{ backgroundColor: colors[color] ?? colors.yellow }}
+        />
+      </button>
+      {open && (
+        <div
+          className="pdf-color-palette"
+          role="group"
+          aria-label={label}
+        >
+          {Object.entries(colors).map(([name, value]) => (
+            <button
+              key={name}
+              type="button"
+              className="pdf-icon-button pdf-color-swatch-button"
+              aria-label={name}
+              title={name}
+              aria-pressed={name === color}
+              onClick={() => {
+                change(name);
+                setOpen(false);
+                trigger.current?.focus();
+              }}
+            >
+              <span
+                className="pdf-color-swatch"
+                style={{ backgroundColor: value }}
+              >
+                {name === color && <Check size={14} color="#111" />}
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function PdfToolbarMenu({
+  id,
+  label,
+  icon,
+  triggerRef,
+  open,
+  setOpen,
+  children,
+}: {
+  id: string;
+  label: string;
+  icon: ReactNode;
+  triggerRef: RefObject<HTMLButtonElement | null>;
+  open: boolean;
+  setOpen: (open: boolean) => void;
+  children: ReactNode;
+}) {
+  const root = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const frame = requestAnimationFrame(() => {
+      root.current
+        ?.querySelector<HTMLButtonElement>(
+          ".pdf-menu-surface button:not(:disabled)",
+        )
+        ?.focus();
+    });
+    const dismiss = (event: PointerEvent) => {
+      if (!root.current?.contains(event.target as Node)) setOpen(false);
+    };
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.stopPropagation();
+        setOpen(false);
+        triggerRef.current?.focus();
+      }
+    };
+    document.addEventListener("pointerdown", dismiss);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      cancelAnimationFrame(frame);
+      document.removeEventListener("pointerdown", dismiss);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open, setOpen, triggerRef]);
+  return (
+    <div ref={root} className="pdf-menu">
+      <button
+        ref={triggerRef}
+        type="button"
+        className="pdf-icon-button"
+        aria-label={label}
+        title={label}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-controls={open ? id : undefined}
+        onClick={() => setOpen(!open)}
+      >
+        {icon}
+      </button>
+      {open && (
+        <div
+          id={id}
+          className="pdf-menu-surface"
+          role="group"
+          aria-label={label}
+          onContextMenu={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+          }}
+          onBlur={(event) => {
+            if (!event.currentTarget.contains(event.relatedTarget))
+              setOpen(false);
+          }}
+          onKeyDown={(event) => {
+            const items = Array.from(
+              event.currentTarget.querySelectorAll<HTMLButtonElement>(
+                "button:not(:disabled)",
+              ),
+            );
+            if (!items.length) return;
+            const current = items.indexOf(
+              document.activeElement as HTMLButtonElement,
+            );
+            const next =
+              event.key === "ArrowDown"
+                ? (current + 1) % items.length
+                : event.key === "ArrowUp"
+                  ? (current - 1 + items.length) % items.length
+                  : event.key === "Home"
+                    ? 0
+                    : event.key === "End"
+                      ? items.length - 1
+                      : -1;
+            if (next >= 0) {
+              event.preventDefault();
+              items[next]?.focus();
+            }
+          }}
+        >
+          {children}
+        </div>
+      )}
+    </div>
+  );
 }
 
 type SelectionPart = {
@@ -57,6 +285,25 @@ type SelectionPart = {
   rects: [number, number, number, number][];
   text: string;
 };
+
+function legacyCopy(text: string): boolean {
+  try {
+    const area = document.createElement("textarea");
+    area.value = text;
+    area.setAttribute("readonly", "");
+    area.style.position = "fixed";
+    area.style.top = "0";
+    area.style.left = "-9999px";
+    area.style.opacity = "0";
+    document.body.appendChild(area);
+    area.select();
+    const copied = document.execCommand("copy");
+    area.remove();
+    return copied;
+  } catch {
+    return false;
+  }
+}
 
 export function PdfReader({
   request,
@@ -86,8 +333,10 @@ export function PdfReader({
     [error, setError] = useState("");
   const [file, setFile] = useState<AnnotationFile | null>(null),
     [entries, setEntries] = useState<PdfAnnotation[]>([]),
-    [dirty, setDirty] = useState(false),
-    [busy, setBusy] = useState(false);
+    [dirty, setDirty] = useState(false);
+  const [savePhase, setSavePhase] = useState<"idle" | "saving" | "failed">(
+    "idle",
+  );
   const [page, setPage] = useState(request.page ?? 1),
     [scale, setScale] = useState(1),
     [rotation, setRotation] = useState(0),
@@ -98,7 +347,12 @@ export function PdfReader({
   const [query, setQuery] = useState(""),
     [matches, setMatches] = useState<number[]>([]),
     [searching, setSearching] = useState(false),
-    [searchDone, setSearchDone] = useState(false);
+    [searchDone, setSearchDone] = useState(false),
+    [searchOpen, setSearchOpen] = useState(false);
+  const [penOpen, setPenOpen] = useState(false),
+    [moreOpen, setMoreOpen] = useState(false);
+  const [contextMenu, setContextMenu] =
+    useState<PdfContextMenuState | null>(null);
   const [attempt, setAttempt] = useState(0),
     [relink, setRelink] = useState(false),
     [password, setPassword] = useState("");
@@ -109,7 +363,19 @@ export function PdfReader({
       new Map<number, ReturnType<PDFPageProxy["getViewport"]>>(),
     );
   const searchRun = useRef(0);
+  const searchInput = useRef<HTMLInputElement>(null);
+  const findTrigger = useRef<HTMLButtonElement>(null);
+  const penTrigger = useRef<HTMLButtonElement>(null);
+  const moreTrigger = useRef<HTMLButtonElement>(null);
   const currentEntries = useRef(entries);
+  const changeVersion = useRef(0);
+  const savingRef = useRef(false);
+  const contextEditable = useRef<HTMLInputElement | HTMLTextAreaElement | null>(
+    null,
+  );
+  const contextFieldRange = useRef<{ start: number; end: number } | null>(
+    null,
+  );
   currentEntries.current = entries;
   useEffect(() => {
     dirtyChanged(dirty);
@@ -130,6 +396,12 @@ export function PdfReader({
     setFile(null);
     setInvalidDraft(null);
     setNeedsPassword(false);
+    setSearchOpen(false);
+    setPenOpen(false);
+    setMoreOpen(false);
+    setContextMenu(null);
+    setSavePhase("idle");
+    setDirty(false);
     passwordCallback.current = null;
     viewports.current.clear();
     void (async () => {
@@ -196,6 +468,8 @@ export function PdfReader({
       setFile(annotations);
       setEntries(annotations.entries);
       setDirty(false);
+      setSavePhase("idle");
+      changeVersion.current = 0;
       try {
         const raw = localStorage.getItem(draftKey(a.documentId!));
         if (raw) {
@@ -274,10 +548,84 @@ export function PdfReader({
     schedule();
     return () => { observer.disconnect(); container.removeEventListener("scroll", schedule); cancelAnimationFrame(frame); };
   }, [pdf, scale, rotation]);
+
+  const openSearch = useCallback(() => {
+    setSearchOpen(true);
+    setPenOpen(false);
+    setMoreOpen(false);
+    setContextMenu(null);
+    requestAnimationFrame(() => {
+      searchInput.current?.focus();
+      searchInput.current?.select();
+    });
+  }, []);
+  const closeSearch = useCallback(() => {
+    setSearchOpen(false);
+    requestAnimationFrame(() => findTrigger.current?.focus());
+  }, []);
+  const setPenMenu = useCallback((open: boolean) => {
+    setPenOpen(open);
+    if (open) setMoreOpen(false);
+  }, []);
+  const setMoreMenu = useCallback((open: boolean) => {
+    setMoreOpen(open);
+    if (open) setPenOpen(false);
+  }, []);
+
+  // PDF search owns Ctrl/Cmd+F while the reader is open. Editor.tsx also
+  // checks for an open PDF reader before opening the note search.
+  useEffect(() => {
+    if (blocked || confirming) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (
+        (event.ctrlKey || event.metaKey) &&
+        !event.altKey &&
+        event.key.toLowerCase() === "f"
+      ) {
+        event.preventDefault();
+        openSearch();
+        return;
+      }
+      if (event.key === "Escape" && searchOpen) {
+        closeSearch();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [blocked, confirming, searchOpen, openSearch, closeSearch]);
+
+  // Ctrl/Cmd+A on the document selects PDF text only, never the app chrome.
+  useEffect(() => {
+    if (!pdf || blocked || confirming) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (
+        !(event.ctrlKey || event.metaKey) ||
+        event.altKey ||
+        event.key.toLowerCase() !== "a"
+      )
+        return;
+      const active = document.activeElement as HTMLElement | null;
+      const editingInReader =
+        !!active?.closest(".pdf-reader") &&
+        (active.tagName === "INPUT" ||
+          active.tagName === "TEXTAREA" ||
+          active.isContentEditable);
+      if (editingInReader) return;
+      // The reader owns the visible document: Ctrl/Cmd+A must never fall
+      // through to the app chrome behind it.
+      event.preventDefault();
+      selectAllPdfText();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  });
+
   const change = (next: PdfAnnotation[]) => {
+    changeVersion.current += 1;
     currentEntries.current = next;
     setEntries(next);
     setDirty(true);
+    setSavePhase((phase) => (phase === "saving" ? phase : "idle"));
     if (asset?.documentId && file)
       try {
         localStorage.setItem(
@@ -291,27 +639,45 @@ export function PdfReader({
       }
   };
   const save = async () => {
-    if (!asset || !file) return;
-    setBusy(true);
+    if (!asset || !file || savingRef.current) return;
+    const versionAtStart = changeVersion.current;
+    const snapshot = currentEntries.current;
+    savingRef.current = true;
+    setSavePhase("saving");
     setError("");
-    const snapshot = entries;
+    let next: AnnotationFile;
     try {
-      const next = await research.save(asset, file.revision, snapshot);
-      setFile(next);
-      if (currentEntries.current === snapshot) {
-        setDirty(false);
+      next = await research.save(asset, file.revision, snapshot);
+    } catch (e) {
+      setSavePhase("failed");
+      setError(String(e));
+      savingRef.current = false;
+      return;
+    }
+    setFile(next);
+    const latest = currentEntries.current;
+    if (changeVersion.current === versionAtStart) {
+      setDirty(false);
+      try {
         localStorage.removeItem(draftKey(asset.documentId!));
-      } else {
+      } catch {
+        // The save itself succeeded; a storage cleanup failure must not
+        // turn a successful save into a false "Save failed" state.
+      }
+    } else {
+      try {
         localStorage.setItem(
           draftKey(asset.documentId!),
-          JSON.stringify({ ...next, entries: currentEntries.current }),
+          JSON.stringify({ ...next, entries: latest }),
+        );
+      } catch {
+        setError(
+          "Draft recovery storage is full. Keep this PDF open until annotations are saved.",
         );
       }
-    } catch (e) {
-      setError(String(e));
-    } finally {
-      setBusy(false);
     }
+    setSavePhase("idle");
+    savingRef.current = false;
   };
   const add = (parts: SelectionPart[]) => {
     const now = Date.now();
@@ -329,9 +695,9 @@ export function PdfReader({
     window.getSelection()?.removeAllRanges();
     setPointMode(false);
   };
-  const capture = () => {
+  const readSelectionParts = (): SelectionPart[] => {
     const sel = window.getSelection();
-    if (!sel || sel.isCollapsed || !sel.rangeCount || !pages.current) return;
+    if (!sel || sel.isCollapsed || !sel.rangeCount || !pages.current) return [];
     const range = sel.getRangeAt(0);
     const parts: SelectionPart[] = [];
     for (const el of pages.current.querySelectorAll<HTMLElement>(
@@ -370,7 +736,53 @@ export function PdfReader({
           text: clipped.toString().slice(0, 100000),
         });
     }
-    setSelection(parts);
+    return parts;
+  };
+  const capture = () => setSelection(readSelectionParts());
+  const readPdfSelectionText = (): string => {
+    const sel = window.getSelection();
+    const container = pages.current;
+    if (!sel || sel.isCollapsed || !sel.rangeCount || !container) return "";
+    let text = "";
+    try {
+      const bounds = document.createRange();
+      bounds.selectNodeContents(container);
+      for (let i = 0; i < sel.rangeCount; i++) {
+        const source = sel.getRangeAt(i);
+        if (source.collapsed || !source.intersectsNode(container)) continue;
+        const clipped = source.cloneRange();
+        if (
+          source.compareBoundaryPoints(Range.START_TO_START, bounds) < 0
+        ) {
+          clipped.setStart(bounds.startContainer, bounds.startOffset);
+        }
+        if (source.compareBoundaryPoints(Range.END_TO_END, bounds) > 0) {
+          clipped.setEnd(bounds.endContainer, bounds.endOffset);
+        }
+        text += clipped.toString();
+      }
+    } catch {
+      return "";
+    }
+    return text;
+  };
+  const selectAllPdfText = () => {
+    const container = pages.current;
+    if (!container) return;
+    const layers = Array.from(
+      container.querySelectorAll<HTMLElement>(".textLayer"),
+    ).filter((layer) => layer.firstChild);
+    if (!layers.length) return;
+    const first = layers[0];
+    const last = layers[layers.length - 1];
+    const range = document.createRange();
+    range.setStart(first, 0);
+    range.setEnd(last, last.childNodes.length);
+    const selection = window.getSelection();
+    selection?.removeAllRanges();
+    selection?.addRange(range);
+    setSelection(readSelectionParts());
+    container.focus({ preventScroll: true });
   };
   const search = async () => {
     if (!pdf || !query.trim()) return;
@@ -410,29 +822,533 @@ export function PdfReader({
       }),
     );
   };
+  const hitAnnotation = (
+    target: Element,
+    clientX: number,
+    clientY: number,
+  ): string | undefined => {
+    const pageEl = target.closest<HTMLElement>("[data-pdf-page]");
+    if (!pageEl) return undefined;
+    const n = Number(pageEl.dataset.pdfPage);
+    const vp = viewports.current.get(n);
+    if (!vp) return undefined;
+    const box = pageEl.getBoundingClientRect();
+    const [x, y] = vp.convertToPdfPoint(
+      clientX - box.left,
+      clientY - box.top,
+    );
+    return entries.find(
+      (a) =>
+        a.page === n &&
+        a.rects.some(
+          (r) =>
+            x >= Math.min(r[0], r[2]) &&
+            x <= Math.max(r[0], r[2]) &&
+            y >= Math.min(r[1], r[3]) &&
+            y <= Math.max(r[1], r[3]),
+        ),
+    )?.id;
+  };
+  const openContextMenu = (event: ReactMouseEvent<HTMLElement>) => {
+    const target = event.target as Element;
+    if (target.closest(".pdf-menu-surface")) return;
+    const container = pages.current;
+    const inPages = !!target.closest(".pdf-pages");
+    const article = target.closest<HTMLElement>("[data-annotation-id]");
+    const inAnnotations = !!target.closest(".pdf-annotations");
+    const editable = target.closest<HTMLInputElement | HTMLTextAreaElement>(
+      "textarea, input, [contenteditable='true']",
+    );
+    const activeField =
+      editable &&
+      !editable.hasAttribute("disabled") &&
+      !editable.hasAttribute("readonly")
+        ? editable
+        : null;
+    if (!inPages && !inAnnotations && !activeField) {
+      setContextMenu(null);
+      return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    setPenOpen(false);
+    setMoreOpen(false);
+    contextEditable.current = activeField;
+    contextFieldRange.current = null;
+    let fieldSelection = "";
+    if (
+      editable &&
+      (editable instanceof HTMLTextAreaElement ||
+        editable instanceof HTMLInputElement) &&
+      editable.selectionStart !== null &&
+      editable.selectionEnd !== null
+    ) {
+      contextFieldRange.current = {
+        start: editable.selectionStart,
+        end: editable.selectionEnd,
+      };
+      if (editable.selectionEnd > editable.selectionStart) {
+        fieldSelection = editable.value.slice(
+          editable.selectionStart,
+          editable.selectionEnd,
+        );
+      }
+    }
+    const pdfSelection = inPages ? readPdfSelectionText() : "";
+    const area = inPages
+      ? "page"
+      : inAnnotations
+        ? "annotation"
+        : "field";
+    // Keyboard context-menu events carry 0,0; anchor the menu to the focused
+    // element instead of the top-left corner.
+    const pointer = event.clientX !== 0 || event.clientY !== 0;
+    const box = target.getBoundingClientRect();
+    const x = pointer ? event.clientX : box.left + 8;
+    const y = pointer ? event.clientY : box.top + 8;
+    const annotationId =
+      article?.dataset.annotationId ??
+      (inPages ? hitAnnotation(target, x, y) : undefined);
+    if (!container && inPages) {
+      setContextMenu(null);
+      return;
+    }
+    setContextMenu({
+      x,
+      y,
+      annotationId,
+      area,
+      editable: !!contextEditable.current,
+      hasSelection: !!(fieldSelection || pdfSelection),
+      selectionText: fieldSelection || pdfSelection,
+    });
+  };
+  const closeContextMenu = useCallback(() => setContextMenu(null), []);
+  const copyContextSelection = async () => {
+    const text = contextMenu?.selectionText ?? "";
+    if (!text) return;
+    try {
+      await navigator.clipboard.writeText(text);
+      return;
+    } catch {
+      // Fall through to the legacy copy path for WebViews without clipboard
+      // write permission.
+    }
+    if (!legacyCopy(text)) {
+      setError(
+        "Clipboard access is unavailable. Select the text and use Ctrl/Cmd+C.",
+      );
+    }
+  };
+  const pasteContextSelection = async () => {
+    const el = contextEditable.current;
+    if (!el || !el.isConnected) return;
+    let text = "";
+    try {
+      text = await navigator.clipboard.readText();
+    } catch {
+      setError(
+        "Clipboard access is unavailable. Use Ctrl/Cmd+V to paste instead.",
+      );
+      return;
+    }
+    if (!text) return;
+    el.focus();
+    if (
+      el instanceof HTMLInputElement ||
+      el instanceof HTMLTextAreaElement
+    ) {
+      const start =
+        contextFieldRange.current?.start ?? el.selectionStart ?? el.value.length;
+      const end =
+        contextFieldRange.current?.end ?? el.selectionEnd ?? start;
+      const next = el.value.slice(0, start) + text + el.value.slice(end);
+      const prototype =
+        el instanceof HTMLTextAreaElement
+          ? HTMLTextAreaElement.prototype
+          : HTMLInputElement.prototype;
+      const setter = Object.getOwnPropertyDescriptor(prototype, "value")?.set;
+      setter?.call(el, next);
+      el.setSelectionRange(start + text.length, start + text.length);
+      el.dispatchEvent(new Event("input", { bubbles: true }));
+      return;
+    }
+    try {
+      if (!document.execCommand("insertText", false, text)) {
+        setError("Could not paste into this annotation field.");
+      }
+    } catch {
+      setError("Could not paste into this annotation field.");
+    }
+  };
+  const selectAllContext = () => {
+    const el = contextEditable.current;
+    if (el) {
+      el.focus();
+      if (
+        el instanceof HTMLInputElement ||
+        el instanceof HTMLTextAreaElement
+      ) {
+        el.select();
+        return;
+      }
+      const range = document.createRange();
+      range.selectNodeContents(el);
+      const selection = window.getSelection();
+      selection?.removeAllRanges();
+      selection?.addRange(range);
+      return;
+    }
+    selectAllPdfText();
+  };
+  const editContextAnnotation = () => {
+    const a = contextMenu?.annotationId
+      ? entries.find((item) => item.id === contextMenu.annotationId)
+      : undefined;
+    if (!a) return;
+    setAnnotationsOpen(true);
+    setSelected(a.id);
+    navigate(a.page);
+    requestAnimationFrame(() => {
+      document
+        .getElementById(`pdf-annotation-${a.id}`)
+        ?.focus({ preventScroll: true });
+    });
+  };
+  const quoteContextAnnotation = () => {
+    const a = contextMenu?.annotationId
+      ? entries.find((item) => item.id === contextMenu.annotationId)
+      : undefined;
+    if (a) quote(a);
+  };
+  const deleteContextAnnotation = () => {
+    const id = contextMenu?.annotationId;
+    if (!id) return;
+    change(entries.filter((item) => item.id !== id));
+    if (selected === id) setSelected("");
+  };
+  const contextAnnotation = contextMenu?.annotationId
+    ? entries.find((item) => item.id === contextMenu.annotationId)
+    : undefined;
+  const saveState = !file
+    ? "opening"
+    : savePhase === "saving"
+      ? "saving"
+      : savePhase === "failed"
+        ? "failed"
+        : dirty
+          ? "unsaved"
+          : "saved";
+  const saveLabel =
+    saveState === "saving"
+      ? "Saving…"
+      : saveState === "failed"
+        ? "Save failed"
+        : saveState === "unsaved"
+          ? "Unsaved"
+          : saveState === "saved"
+            ? "Saved"
+            : "Opening…";
+  const saveTitle =
+    saveState === "saving"
+      ? "Saving annotations…"
+      : saveState === "failed"
+        ? "Retry saving annotations"
+        : saveState === "unsaved"
+          ? "Save annotations"
+          : saveState === "saved"
+            ? "Annotations saved"
+            : "Opening PDF…";
   return (
     <section
       inert={blocked || confirming}
       className="pdf-reader"
+      data-region="pdf"
       aria-label="PDF reader"
+      onContextMenu={openContextMenu}
     >
       <header className="pdf-toolbar pdf-header">
-        <strong>PDF reader</strong>
-        <button disabled={!dirty || busy || !file} onClick={() => void save()}>
-          {busy ? "Saving…" : "Save annotations"}
-        </button>
-        <span role="status">
-          {dirty
-            ? "Unsaved annotations"
-            : file
-              ? "Annotations saved"
-              : "Opening PDF…"}
-        </span>
-        <button className="pdf-annotations-toggle" aria-expanded={annotationsOpen} aria-controls="pdf-annotations" onClick={() => setAnnotationsOpen(value => !value)}>
-          {annotationsOpen ? <PanelRightClose size={18} /> : <PanelRightOpen size={18} />} Annotations ({entries.length})
-        </button>
-        <button className="pdf-icon-button pdf-close" aria-label="Close PDF" title="Close PDF" onClick={close}><X size={18} /></button>
+        <strong className="pdf-title">PDF reader</strong>
+        {pdf && (
+          <>
+            <div
+              className="pdf-toolbar-group"
+              role="group"
+              aria-label="Page navigation"
+            >
+              <button
+                type="button"
+                className="pdf-icon-button"
+                aria-label="Previous page"
+                title="Previous page"
+                disabled={page <= 1}
+                onClick={() => navigate(page - 1)}
+              >
+                <ChevronLeft size={18} aria-hidden="true" />
+              </button>
+              <label className="pdf-page-field">
+                Page{" "}
+                <input
+                  type="number"
+                  min={1}
+                  max={pdf.numPages}
+                  value={page}
+                  onChange={(e) => navigate(Number(e.target.value))}
+                />
+              </label>
+              <span className="pdf-page-total">of {pdf.numPages}</span>
+              <button
+                type="button"
+                className="pdf-icon-button"
+                aria-label="Next page"
+                title="Next page"
+                disabled={page >= pdf.numPages}
+                onClick={() => navigate(page + 1)}
+              >
+                <ChevronRight size={18} aria-hidden="true" />
+              </button>
+            </div>
+            <div
+              className="pdf-toolbar-group"
+              role="group"
+              aria-label="Zoom"
+            >
+              <button
+                type="button"
+                className="pdf-icon-button"
+                aria-label="Zoom out"
+                title="Zoom out"
+                onClick={() => setScale((v) => Math.max(0.4, v - 0.2))}
+              >
+                <ZoomOut size={18} aria-hidden="true" />
+              </button>
+              <span className="pdf-zoom-value">
+                {Math.round(scale * 100)}%
+              </span>
+              <button
+                type="button"
+                className="pdf-icon-button"
+                aria-label="Zoom in"
+                title="Zoom in"
+                onClick={() => setScale((v) => Math.min(3, v + 0.2))}
+              >
+                <ZoomIn size={18} aria-hidden="true" />
+              </button>
+            </div>
+          </>
+        )}
+        <div className="pdf-toolbar-actions">
+          {pdf && (
+            <>
+              <button
+                ref={findTrigger}
+                type="button"
+                className="pdf-icon-button"
+                aria-label="Find in PDF"
+                title="Find in PDF (Ctrl/Cmd+F)"
+                aria-expanded={searchOpen}
+                aria-controls={searchOpen ? "pdf-find" : undefined}
+                onClick={openSearch}
+              >
+                <Search size={18} aria-hidden="true" />
+              </button>
+              <PdfToolbarMenu
+                id="pdf-annotation-tools"
+                label="Annotation tools"
+                icon={<PenLine size={18} aria-hidden="true" />}
+                triggerRef={penTrigger}
+                open={penOpen}
+                setOpen={setPenMenu}
+              >
+                <button
+                  type="button"
+                  className="pdf-menu-item"
+                  disabled={!selection.length}
+                  onClick={() => {
+                    add(selection);
+                    setPenOpen(false);
+                  }}
+                >
+                  <Highlighter aria-hidden="true" />
+                  Highlight selection
+                </button>
+                <button
+                  type="button"
+                  className="pdf-menu-item"
+                  aria-pressed={pointMode}
+                  onClick={() => {
+                    setPointMode((value) => !value);
+                    setPenOpen(false);
+                  }}
+                >
+                  <MessageSquarePlus aria-hidden="true" />
+                  Add point comment
+                </button>
+                <div className="pdf-menu-sep" />
+                <div className="pdf-menu-label">Highlight color</div>
+                <ColorSwatches
+                  color={color}
+                  change={setColor}
+                  label="Highlight color"
+                />
+                <p className="pdf-menu-hint">
+                  {pointMode
+                    ? "Click a page to place a comment."
+                    : "Select PDF text to highlight it."}
+                </p>
+              </PdfToolbarMenu>
+              <div className="pdf-save-group">
+                <button
+                  type="button"
+                  className="pdf-icon-button pdf-save-button"
+                  data-state={saveState}
+                  aria-label="Save annotations"
+                  title={saveTitle}
+                  aria-busy={savePhase === "saving"}
+                  disabled={!file || !dirty || savePhase === "saving"}
+                  onClick={() => void save()}
+                >
+                  {savePhase === "saving" ? (
+                    <Loader2
+                      size={18}
+                      className="pdf-save-spinner"
+                      aria-hidden="true"
+                    />
+                  ) : (
+                    <Save size={18} aria-hidden="true" />
+                  )}
+                </button>
+                <span className="pdf-save-status" role="status">
+                  {saveLabel}
+                </span>
+              </div>
+              <PdfToolbarMenu
+                id="pdf-more-options"
+                label="More options"
+                icon={<EllipsisVertical size={18} aria-hidden="true" />}
+                triggerRef={moreTrigger}
+                open={moreOpen}
+                setOpen={setMoreMenu}
+              >
+                <button
+                  type="button"
+                  className="pdf-menu-item"
+                  onClick={() => {
+                    setRotation((value) => (value + 90) % 360);
+                    setMoreOpen(false);
+                    requestAnimationFrame(() => moreTrigger.current?.focus());
+                  }}
+                >
+                  <RotateCw aria-hidden="true" />
+                  Rotate
+                </button>
+                <button
+                  type="button"
+                  className="pdf-menu-item"
+                  aria-pressed={annotationsOpen}
+                  aria-controls="pdf-annotations"
+                  title="Show or hide the annotations panel"
+                  onClick={() => {
+                    setAnnotationsOpen((value) => !value);
+                    setMoreOpen(false);
+                    requestAnimationFrame(() => moreTrigger.current?.focus());
+                  }}
+                >
+                  {annotationsOpen ? (
+                    <PanelRightClose aria-hidden="true" />
+                  ) : (
+                    <PanelRightOpen aria-hidden="true" />
+                  )}
+                  Annotations ({entries.length})
+                </button>
+              </PdfToolbarMenu>
+            </>
+          )}
+          <button
+            type="button"
+            className="pdf-icon-button pdf-close"
+            aria-label="Close PDF"
+            title="Close PDF"
+            onClick={close}
+          >
+            <X size={18} aria-hidden="true" />
+          </button>
+        </div>
       </header>
+      {searchOpen && (
+        <div id="pdf-find" className="pdf-find" role="search" aria-label="Find in PDF">
+          <Search size={14} aria-hidden="true" />
+          <input
+            ref={searchInput}
+            aria-label="Find in PDF"
+            placeholder="Find in PDF…"
+            value={query}
+            onChange={(e) => {
+              setQuery(e.target.value);
+              searchRun.current++;
+              setSearching(false);
+              setSearchDone(false);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                void search();
+              }
+              if (e.key === "Escape") {
+                e.preventDefault();
+                closeSearch();
+              }
+            }}
+          />
+          <button
+            type="button"
+            className="pdf-icon-button"
+            aria-label="Search PDF"
+            title={searching ? "Searching…" : "Search PDF"}
+            aria-busy={searching}
+            disabled={searching || !query.trim()}
+            onClick={() => void search()}
+          >
+            {searching ? (
+              <Loader2 size={16} className="pdf-save-spinner" aria-hidden="true" />
+            ) : (
+              <Search size={16} aria-hidden="true" />
+            )}
+          </button>
+          <button
+            type="button"
+            className="pdf-icon-button"
+            aria-label="Close search"
+            title="Close search (Esc)"
+            onClick={closeSearch}
+          >
+            <X size={16} aria-hidden="true" />
+          </button>
+          {searchDone && (
+            <span className="pdf-find-status" aria-live="polite">
+              {matches.length
+                ? `${matches.length} matching page${matches.length === 1 ? "" : "s"}`
+                : "No matching pages"}
+            </span>
+          )}
+          {searchDone &&
+            matches.map((n) => (
+              <button
+                key={n}
+                type="button"
+                className="pdf-find-page"
+                onClick={() => navigate(n)}
+              >
+                Page {n}
+              </button>
+            ))}
+        </div>
+      )}
+      {pointMode && (
+        <p className="pdf-mode-hint" aria-live="polite">
+          Click a page to place a comment.
+        </p>
+      )}
       {error && (
         <div role="alert">
           {error}
@@ -450,6 +1366,7 @@ export function PdfReader({
                   ) {
                     localStorage.removeItem(draftKey(asset.documentId));
                     setDirty(false);
+                    setSavePhase("idle");
                     setAttempt((v) => v + 1);
                   }
                 } finally {
@@ -518,75 +1435,11 @@ export function PdfReader({
       )}
       {pdf && (
         <>
-          <nav className="pdf-toolbar" aria-label="PDF navigation">
-            <button disabled={page <= 1} onClick={() => navigate(page - 1)}>
-              Previous page
-            </button>
-            <label>
-              Page{" "}
-              <input
-                type="number"
-                min={1}
-                max={pdf.numPages}
-                value={page}
-                onChange={(e) => navigate(Number(e.target.value))}
-              />
-            </label>
-            <span>of {pdf.numPages}</span>
-            <button
-              disabled={page >= pdf.numPages}
-              onClick={() => navigate(page + 1)}
-            >
-              Next page
-            </button>
-            <button className="pdf-icon-button" aria-label="Zoom out" title="Zoom out" onClick={() => setScale((v) => Math.max(0.4, v - 0.2))}><ZoomOut size={18} /></button>
-            <span>{Math.round(scale * 100)}%</span>
-            <button className="pdf-icon-button" aria-label="Zoom in" title="Zoom in" onClick={() => setScale((v) => Math.min(3, v + 0.2))}><ZoomIn size={18} /></button>
-            <button className="pdf-icon-button" aria-label="Rotate" title="Rotate" onClick={() => setRotation((v) => (v + 90) % 360)}><RotateCw size={18} /></button>
-            <input
-              className="pdf-search"
-              aria-label="Find in PDF"
-              value={query}
-              onChange={(e) => {
-                setQuery(e.target.value);
-                searchRun.current++;
-                setSearching(false);
-                setSearchDone(false);
-              }}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") void search();
-              }}
-            />
-            <button className="pdf-icon-button" aria-label="Search PDF" title={searching ? "Searching…" : "Search PDF"} aria-busy={searching} disabled={searching} onClick={() => void search()}><Search size={18} /></button>
-            {searchDone && !matches.length && <span>No matching pages</span>}
-            {searchDone &&
-              matches.map((n) => (
-                <button key={n} onClick={() => navigate(n)}>
-                  Page {n}
-                </button>
-              ))}
-          </nav>
-          <div className="pdf-selection">
-            <ColorPicker color={color} change={setColor} label="Highlight color" />
-            <button disabled={!selection.length} onClick={() => add(selection)}>
-              Highlight selection
-            </button>
-            <button
-              aria-pressed={pointMode}
-              onClick={() => setPointMode((v) => !v)}
-            >
-              Add point comment
-            </button>
-            <span>
-              {pointMode
-                ? "Click a page to place a comment."
-                : "Select PDF text to highlight it."}
-            </span>
-          </div>
           <div className="pdf-layout">
             <div
               ref={pages}
               className="pdf-pages"
+              tabIndex={-1}
               onMouseUp={capture}
               onKeyUp={capture}
             >
@@ -613,7 +1466,7 @@ export function PdfReader({
             <aside id="pdf-annotations" hidden={!annotationsOpen} className="pdf-annotations" aria-label="Annotations">
               {entries.length === 0 && <p>No annotations yet.</p>}
               {entries.map((a) => (
-                <article key={a.id} data-selected={selected === a.id}>
+                <article key={a.id} data-annotation-id={a.id} data-selected={selected === a.id}>
                   <button className="pdf-annotation-heading"
                     onClick={() => {
                       setSelected(a.id);
@@ -625,6 +1478,7 @@ export function PdfReader({
                   <label>
                     Comment
                     <textarea
+                      id={`pdf-annotation-${a.id}`}
                       aria-label={`Comment on page ${a.page}`}
                       value={a.comment}
                       onFocus={() => setSelected(a.id)}
@@ -663,6 +1517,28 @@ export function PdfReader({
             </aside>
           </div>
         </>
+      )}
+      {contextMenu && (
+        <PdfContextMenu
+          menu={contextMenu}
+          hasAnnotation={!!contextAnnotation}
+          canQuote={!!notePath && !!contextAnnotation}
+          onClose={closeContextMenu}
+          onCopy={() => void copyContextSelection()}
+          onPaste={() => void pasteContextSelection()}
+          onSelectAll={selectAllContext}
+          onHighlight={() => {
+            const parts = readSelectionParts();
+            if (parts.length) add(parts);
+          }}
+          onAddPoint={() => {
+            setPointMode(true);
+            setContextMenu(null);
+          }}
+          onEditComment={editContextAnnotation}
+          onQuote={quoteContextAnnotation}
+          onDelete={deleteContextAnnotation}
+        />
       )}
     </section>
   );
