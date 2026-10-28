@@ -21,11 +21,17 @@ test('agent completes more than five productive rounds and continues after appro
  knowledge.agentCall=async tool=>({tool,requiresApproval:tool==='edit_note',approvalId:tool==='edit_note'?'approval':null,preview:'change',result:{page:++calls},error:null});
  try{let round=0;await runAgentTurn({messages:[{role:'user',content:'Do the task'}],complete:async()=>++round<=8?'```json\n'+JSON.stringify({tool:round===3?'edit_note':'read_note',input:{page:round}})+'\n```':'Done',post:text=>{posts.push(text);},approval:async()=>({approved:true})});expect(calls).toBe(8);expect(posts.at(-1)).toBe('Done');}finally{knowledge.agentCall=previous;}
 });
-test('tool calls parse fenced and whole-message JSON but not prose examples',()=>{
+test('tool calls parse fenced and whole-message JSON in nested or flat shapes',()=>{
  const call={tool:'create_note',input:{path:'A.md',content:'x'}};
  expect(extractToolCalls(JSON.stringify(call))).toEqual([call]);
  expect(extractToolCalls('```json\n'+JSON.stringify(call)+'\n```')).toEqual([call]);
  expect(extractToolCalls(JSON.stringify([call,call]))).toEqual([call,call]);
+ const flat={tool:'read_note',noteId:'AI for Humans.md'};
+ expect(extractToolCalls(JSON.stringify(flat))).toEqual([{tool:'read_note',input:{noteId:'AI for Humans.md'}}]);
+ expect(extractToolCalls('```json\n'+JSON.stringify(flat)+'\n```')).toEqual([{tool:'read_note',input:{noteId:'AI for Humans.md'}}]);
+ expect(extractToolCalls('{"tool":"read_note","arguments":"{\\"noteId\\":\\"A.md\\"}"}')).toEqual([{tool:'read_note',input:{noteId:'A.md'}}]);
+ expect(extractToolCalls('{"tool":"vault_overview"}')).toEqual([{tool:'vault_overview',input:{}}]);
+ expect(extractToolCalls('{"tool":"read_note","input":{"noteId":"A.md"},"noteId":"B.md"}')).toEqual([{tool:'read_note',input:{noteId:'A.md'}}]);
  expect(extractToolCalls('For example, {"tool":"create_note","input":{}} is the shape.')).toEqual([]);
  expect(extractToolCalls('Here you go:\n'+JSON.stringify(call))).toEqual([]);
 });
@@ -38,6 +44,56 @@ test('bare JSON create_note calls are approved instead of posted as text',async(
   await runAgentTurn({messages:[{role:'user',content:'create me a note'}],complete:async()=>++round===1?JSON.stringify(request):'Done',post:text=>{posts.push(text);},approval:async response=>{approved.push(response);return {approved:true};}});
   expect(calls).toEqual([request]);
   expect(approved).toHaveLength(1);
+  expect(posts.at(-1)).toBe('Done');
+  expect(posts.some(text=>text.includes('"tool"'))).toBe(false);
+ }finally{knowledge.agentCall=previous;}
+});
+test('pasted flat tool JSON is normalized before dispatch',async()=>{
+ const previous=knowledge.agentCall;const calls:Array<{tool:string;input:unknown}>=[];let completions=0;
+ knowledge.agentCall=async(tool,input)=>{calls.push({tool,input});return {tool,requiresApproval:false,approvalId:null,preview:null,result:{content:'ok'},error:null};};
+ try{
+  await runAgentTurn({messages:[{role:'user',content:'{"tool":"read_note","noteId":"AI for Humans.md"}'}],complete:async()=>{completions++;return 'Done';},post:()=>{},approval:async()=>({approved:true})});
+  expect(calls).toEqual([{tool:'read_note',input:{noteId:'AI for Humans.md'}}]);
+  expect(completions).toBe(1);
+ }finally{knowledge.agentCall=previous;}
+});
+test('flat read_note calls continue into approved edits',async()=>{
+ const previous=knowledge.agentCall;const calls:Array<{tool:string;input:unknown}>=[];const posts:string[]=[];
+ knowledge.agentCall=async(tool,input)=>{
+  calls.push({tool,input});
+  return tool==='edit_note'
+   ?{tool,requiresApproval:true,approvalId:'flat-edit',preview:'edit',result:null,error:null}
+   :{tool,requiresApproval:false,approvalId:null,preview:null,result:{content:'# AI for Humans'},error:null};
+ };
+ try{
+  const operation={op:'append',text:'\n\n## Plagiarism\n\nGive credit.'};
+  const replies=[
+   JSON.stringify({tool:'read_note',noteId:'AI for Humans.md'}),
+   JSON.stringify({tool:'edit_note',noteId:'AI for Humans.md',operations:[operation]}),
+   'Done',
+  ];
+  let round=0;
+  await runAgentTurn({messages:[{role:'user',content:'edit that note to add plagiarism'}],complete:async()=>replies[Math.min(round++,2)],post:text=>{posts.push(text);},approval:async()=>({approved:true})});
+  expect(calls).toEqual([
+   {tool:'read_note',input:{noteId:'AI for Humans.md'}},
+   {tool:'edit_note',input:{noteId:'AI for Humans.md',operations:[operation]}},
+  ]);
+  expect(posts.at(-1)).toBe('Done');
+  expect(posts.some(text=>text.includes('"tool"'))).toBe(false);
+ }finally{knowledge.agentCall=previous;}
+});
+test('malformed tool JSON is repaired instead of posted as the answer',async()=>{
+ const previous=knowledge.agentCall;const calls:Array<{tool:string;input:unknown}>=[];const posts:string[]=[];
+ knowledge.agentCall=async(tool,input)=>{calls.push({tool,input});return {tool,requiresApproval:false,approvalId:null,preview:null,result:{ok:true},error:null};};
+ try{
+  const replies=[
+   '{"tool":"read_note","noteId":"AI for Humans.md"',
+   JSON.stringify({tool:'read_note',input:{noteId:'AI for Humans.md'}}),
+   'Done',
+  ];
+  let round=0;
+  await runAgentTurn({messages:[{role:'user',content:'read the note'}],complete:async()=>replies[Math.min(round++,2)],post:text=>{posts.push(text);},approval:async()=>({approved:true})});
+  expect(calls).toEqual([{tool:'read_note',input:{noteId:'AI for Humans.md'}}]);
   expect(posts.at(-1)).toBe('Done');
   expect(posts.some(text=>text.includes('"tool"'))).toBe(false);
  }finally{knowledge.agentCall=previous;}

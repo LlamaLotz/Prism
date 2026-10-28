@@ -76,6 +76,7 @@ ${lines.join('\n')}
 
 Protocol:
 - To act, reply with one or more fenced \`\`\`json blocks, each holding exactly one call: {"tool": "<name>", "input": {...}}.
+- Always put tool arguments inside "input"; never place them beside "tool". For example, {"tool":"read_note","noteId":"Note.md"} is invalid — use {"tool":"read_note","input":{"noteId":"Note.md"}}.
 - You may also include plain-text explanation outside the blocks.
 - Read first when you need grounding (search_vault, read_note); then call write tools with concrete operations.
 - Write tools prepare previews. Only claim a change was applied after a successful approval result. Approval can be manual or automatic for this conversation. Continue the task after a resolution; do not repeat denied changes.

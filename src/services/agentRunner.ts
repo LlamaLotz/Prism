@@ -1,25 +1,45 @@
 import { knowledge, type AgentToolResponse } from './knowledge';
 export type AgentMessage = { role: 'system' | 'user' | 'assistant'; content: string };
 type ToolCall = { tool: string; input: unknown };
-function collectToolCalls(value: unknown, calls: ToolCall[]) {
- for(const item of Array.isArray(value)?value:[value]){
-  if(!item||typeof item!=='object'||Array.isArray(item))continue;
-  const candidate=item as {tool?:unknown;input?:unknown};
-  if(typeof candidate.tool==='string'&&candidate.input!==undefined)calls.push({tool:candidate.tool,input:candidate.input});
+function normalizeToolCall(value: unknown): ToolCall | null {
+ if(!value||typeof value!=='object'||Array.isArray(value))return null;
+ const record=value as Record<string,unknown>;
+ if(typeof record.tool!=='string')return null;
+ if(record.input!==undefined)return {tool:record.tool,input:record.input};
+ let input:unknown;
+ if(typeof record.arguments==='string'){
+  try{input=JSON.parse(record.arguments);}catch{/* Fall back to flat arguments. */}
+ }else if(record.arguments!==undefined){
+  input=record.arguments;
  }
+ if(input===undefined){
+  const flat:Record<string,unknown>={};
+  for(const [key,field] of Object.entries(record))if(key!=='tool'&&key!=='arguments')flat[key]=field;
+  input=flat;
+ }
+ return {tool:record.tool,input};
+}
+function toolCallsFromValue(value: unknown): ToolCall[] {
+ const calls:ToolCall[]=[];
+ for(const item of Array.isArray(value)?value:[value]){
+  const call=normalizeToolCall(item);
+  if(call)calls.push(call);
+ }
+ return calls;
 }
 export function extractToolCalls(text: string): ToolCall[] {
  const calls:ToolCall[]=[];
  for(const match of text.matchAll(/```(?:json)?\s*([\s\S]*?)```/gi)){
-  try{collectToolCalls(JSON.parse(match[1]),calls);}catch{/* Prose code. */}
+  try{calls.push(...toolCallsFromValue(JSON.parse(match[1])));}catch{/* Prose code. */}
  }
  if(calls.length)return calls;
  // Some providers (Gemini in particular) ignore the fenced-block protocol and
  // return the call as bare JSON. Only accept a whole-message JSON document so
  // examples quoted inside prose are never executed.
- try{collectToolCalls(JSON.parse(text.trim()),calls);}catch{/* Natural language. */}
+ try{return toolCallsFromValue(JSON.parse(text.trim()));}catch{/* Natural language. */}
  return calls;
 }
+function looksLikeToolCall(text:string):boolean{return /^\s*(?:\{\s*"tool"\s*:|\[\s*\{\s*"tool"\s*:)/.test(text);}
 function canonical(value:unknown):string {if(Array.isArray(value))return `[${value.map(canonical).join(',')}]`;if(value&&typeof value==='object')return `{${Object.entries(value).sort(([a],[b])=>a.localeCompare(b)).map(([k,v])=>`${JSON.stringify(k)}:${canonical(v)}`).join(',')}}`;return JSON.stringify(value)??'null';}
 /** Repeated reads/errors count only when they supply no new evidence. Writes reset progress. */
 export class RepetitionGuard {
@@ -45,12 +65,20 @@ export async function runAgentTurn({messages,complete,post,approval,onTool,check
  check?:()=>void;onTool?:(name:string)=>void;now?:()=>number;
 }):Promise<AgentMessage[]|undefined>{
  const work=[...messages];const guard=new RepetitionGuard();const writeTools=new Set(['create_note','edit_note','rename_note','delete_note','create_folder','move_folder','add_wikilink','add_tag','remove_tag','format_note']);
- let manual:string|undefined;let failedWrite:string|undefined;
- try{const value=JSON.parse(work.at(-1)?.content??'');if(typeof value.tool==='string'&&value.input!==undefined)manual='```json\n'+JSON.stringify(value)+'\n```';}catch{/* Natural language request. */}
+ let manual:string|undefined;let failedWrite:string|undefined;let malformed=0;
+ try{
+  const pasted=toolCallsFromValue(JSON.parse(work.at(-1)?.content??''));
+  if(pasted.length)manual=pasted.map(call=>'```json\n'+JSON.stringify(call)+'\n```').join('\n');
+ }catch{/* Natural language request. */}
  while(true){
   check();compactAgentContext(work);const text=manual??await complete(work);manual=undefined;check();
   work.push({role:'assistant',content:text});const calls=extractToolCalls(text);
   if(!calls.length){
+   if(malformed<2&&looksLikeToolCall(text)){
+    malformed++;
+    work.push({role:'user',content:'That reply looked like a tool call but could not be parsed. Re-emit it as {"tool":"<name>","input":{...}} with every argument nested under "input". Do not place arguments beside "tool".'});
+    continue;
+   }
    const final=failedWrite?`${text}\n\n> The vault change was not applied: ${failedWrite}`:text;
    await post(final);return;
   }
