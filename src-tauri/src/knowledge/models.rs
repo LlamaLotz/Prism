@@ -345,13 +345,61 @@ fn reqwest_error(error: &reqwest::Error) -> String {
     }
 }
 
-fn status_error(status: reqwest::StatusCode) -> String {
-    match status.as_u16() {
-        408 | 504 => format!("TIMEOUT: Provider timed out ({status})"),
-        429 => "RATE_LIMITED: Provider rate limited the request".into(),
-        401 | 403 => format!("AUTHENTICATION: Provider request failed ({status})"),
-        404 => format!("MODEL_OR_ENDPOINT_MISSING: Provider request failed ({status})"),
-        _ => format!("PROVIDER_ERROR: Provider request failed ({status})"),
+fn provider_detail(body: &str) -> Option<String> {
+    let value: serde_json::Value = serde_json::from_str(body).ok()?;
+    let message = value
+        .get("error")
+        .and_then(|error| error.get("message"))
+        .and_then(|message| message.as_str())
+        .or_else(|| value.get("message").and_then(|message| message.as_str()))
+        .or_else(|| value.get("error").and_then(|error| error.as_str()))?;
+    let mut detail = message.split_whitespace().collect::<Vec<_>>().join(" ");
+    if detail.len() > 240 {
+        detail.truncate(240);
+        detail.push('…');
+    }
+    (!detail.is_empty()).then_some(detail)
+}
+
+fn status_error(status: reqwest::StatusCode, body: &str) -> String {
+    let detail = provider_detail(body);
+    let code = status.as_u16();
+    if code == 408 || code == 504 {
+        return match detail {
+            Some(detail) => format!("TIMEOUT: Provider timed out ({code}): {detail}"),
+            None => format!("TIMEOUT: Provider timed out ({code})"),
+        };
+    }
+
+    let lower = body.to_lowercase();
+    let authentication = lower.contains("api_key_invalid")
+        || lower.contains("api key not valid")
+        || lower.contains("invalid api key")
+        || lower.contains("unauthenticated")
+        || lower.contains("permission denied");
+    let missing = lower.contains("not found")
+        || lower.contains("does not exist")
+        || lower.contains("unsupported model")
+        || lower.contains("not supported for");
+    let limited = lower.contains("resource_exhausted")
+        || lower.contains("rate limit")
+        || lower.contains("quota");
+    let (kind, headline) = if code == 401 || code == 403 || authentication {
+        ("AUTHENTICATION", "Provider rejected the credentials")
+    } else if code == 404 || missing {
+        (
+            "MODEL_OR_ENDPOINT_MISSING",
+            "Provider could not find the model or endpoint",
+        )
+    } else if code == 429 || limited {
+        ("RATE_LIMITED", "Provider rate limited the request")
+    } else {
+        ("PROVIDER_ERROR", "Provider request failed")
+    };
+
+    match detail {
+        Some(detail) => format!("{kind}: {headline} ({code}): {detail}"),
+        None => format!("{kind}: {headline} ({code})"),
     }
 }
 
@@ -480,7 +528,12 @@ async fn execute_inner(app: &tauri::AppHandle, request: ModelRequest, callback: 
         let mut response = polled(req.send()).await?;
         let status = response.status();
         if !status.is_success() {
-            return Err(status_error(status));
+            let detail = tokio::time::timeout(Duration::from_secs(10), response.text())
+                .await
+                .ok()
+                .and_then(Result::ok)
+                .unwrap_or_default();
+            return Err(status_error(status, &detail));
         }
         phase("Waiting for model");
         if let Some(callback) = callback {
@@ -501,7 +554,10 @@ async fn execute_inner(app: &tauri::AppHandle, request: ModelRequest, callback: 
                         if let Some(data)=line.trim().strip_prefix("data:") {
                             let data=data.trim();if data=="[DONE]"{complete=true;continue;}
                             let item:serde_json::Value=serde_json::from_str(data).map_err(|_|"Invalid provider stream")?;
-                            if item.get("error").is_some(){return Err("PROVIDER_ERROR: Provider reported an error while streaming".into());}
+                            if let Some(error)=item.get("error"){
+                                let detail=error.get("message").and_then(|message|message.as_str()).unwrap_or("Provider reported an error while streaming");
+                                return Err(format!("PROVIDER_ERROR: {detail}"));
+                            }
                             if item["type"]=="message_stop" || !item["choices"][0]["finish_reason"].is_null(){complete=true;}
                             let delta=if is_anthropic {item["delta"]["text"].as_str()}else{item["choices"][0]["delta"]["content"].as_str()};
                             if let Some(delta)=delta {text.push_str(delta);callback(&text);}
@@ -681,6 +737,36 @@ mod tests {
             policy(&PrivacyMode::CloudAllowed, false, false),
             PolicyDecision::Allow
         );
+    }
+
+    #[test]
+    fn provider_errors_surface_actionable_details() {
+        let auth = status_error(
+            reqwest::StatusCode::BAD_REQUEST,
+            r#"{"error":{"code":400,"message":"API key not valid. Please pass a valid API key.","status":"INVALID_ARGUMENT"}}"#,
+        );
+        assert!(auth.starts_with("AUTHENTICATION:"));
+        assert!(auth.contains("API key not valid"));
+
+        let missing = status_error(
+            reqwest::StatusCode::NOT_FOUND,
+            r#"{"error":{"message":"models/gemini-3.8-flash is not found"}}"#,
+        );
+        assert!(missing.starts_with("MODEL_OR_ENDPOINT_MISSING:"));
+        assert!(missing.contains("models/gemini-3.8-flash"));
+
+        let limited = status_error(
+            reqwest::StatusCode::TOO_MANY_REQUESTS,
+            r#"{"error":{"message":"Resource exhausted"}}"#,
+        );
+        assert!(limited.starts_with("RATE_LIMITED:"));
+
+        let generic = status_error(
+            reqwest::StatusCode::BAD_REQUEST,
+            r#"{"error":{"message":"Bad   request"}}"#,
+        );
+        assert!(generic.starts_with("PROVIDER_ERROR:"));
+        assert!(generic.contains("Bad request"));
     }
 }
 

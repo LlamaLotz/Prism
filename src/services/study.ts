@@ -35,7 +35,7 @@ export const study = {
  }
 };
 // App-wide, vault-keyed state survives either surface unmounting. Never replays a request.
-export type RequestFailureKind='timeout'|'cancelled'|'connection'|'provider'|'auth'|'failed';
+export type RequestFailureKind='timeout'|'cancelled'|'connection'|'provider'|'model'|'rate_limit'|'auth'|'failed';
 export interface RequestActivity {id:string;sessionId:string;started:number;ended?:number;status:'running'|'done'|'failed'|'cancelled'|'timeout';events:{label:string;at:number}[]}
 /** Map backend model failure prefixes to stable UI states. */
 export function classifyRequestError(error:string):RequestFailureKind{
@@ -45,23 +45,38 @@ export function classifyRequestError(error:string):RequestFailureKind{
  if(upper.includes('CANCELLED:')||/cancelled|canceled|aborted/i.test(message))return 'cancelled';
  if(upper.includes('AUTHENTICATION:'))return 'auth';
  if(upper.includes('CONNECTION_LOST:')||upper.includes('SERVICE_UNAVAILABLE:'))return 'connection';
- if(upper.includes('PROVIDER_ERROR:')||upper.includes('RATE_LIMITED:')||upper.includes('MODEL_OR_ENDPOINT_MISSING:'))return 'provider';
+ if(upper.includes('MODEL_OR_ENDPOINT_MISSING:'))return 'model';
+ if(upper.includes('RATE_LIMITED:'))return 'rate_limit';
+ if(upper.includes('PROVIDER_ERROR:'))return 'provider';
  return 'failed';
 }
 export function requestFailureLabel(kind:RequestFailureKind,elapsed=0):string{
  if(kind==='timeout')return elapsed>0?`The AI request timed out after ${elapsed}s.`:'The AI request timed out.';
  if(kind==='cancelled')return 'The AI request was cancelled.';
  if(kind==='connection')return 'The AI service connection was lost. Retry when the provider is reachable.';
- if(kind==='provider')return 'The AI provider could not complete the request. Retry or choose another model.';
+ if(kind==='model')return 'The selected model is not available from this provider. Choose another model in AI settings.';
+ if(kind==='rate_limit')return 'The provider rate limit was reached. Wait a moment and retry.';
+ if(kind==='provider')return 'The AI provider rejected the request. Retry, or check the model and API key in settings.';
  if(kind==='auth')return 'The AI provider rejected the credentials. Check the API key in settings.';
  return 'The AI request failed.';
+}
+/** Keep the provider's safe error message, dropping the transport prefix. */
+function providerDetail(raw:string):string{
+ const match=raw.match(/(?:MODEL_OR_ENDPOINT_MISSING|RATE_LIMITED|PROVIDER_ERROR|AUTHENTICATION):\s*([\s\S]*)/i);
+ return match?.[1]?.replace(/\s+/g,' ').trim().slice(0,300)??'';
 }
 function friendlyError(error:unknown,elapsed=0):string{
  const raw=String(error??'');
  const marker=raw.includes('PERSISTENCE:')?'PERSISTENCE:':raw.includes('CONFLICT:')?'CONFLICT:':null;
  if(marker)return raw.slice(raw.indexOf(marker)+marker.length).trim()||(marker==='PERSISTENCE:'?'The change was not saved.':'The change could not be applied.');
  const kind=classifyRequestError(raw);
- return kind==='failed'&&raw?`${requestFailureLabel(kind,elapsed)} ${raw}`:requestFailureLabel(kind,elapsed);
+ const label=requestFailureLabel(kind,elapsed);
+ if(kind==='failed')return raw?`${label} ${raw}`:label;
+ if(kind==='model'||kind==='rate_limit'||kind==='provider'||kind==='auth'){
+  const detail=providerDetail(raw);
+  return detail?`${label} ${detail}`:label;
+ }
+ return label;
 }
 function settledStatus(vault:string,id:string,kind:RequestFailureKind){change(vault,s=>{const a=s.activity[id];if(!a)return s;const status=kind==='timeout'?'timeout':kind==='cancelled'?'cancelled':a.status==='timeout'||a.status==='cancelled'?a.status:'running';return status===a.status?s:{...s,activity:{...s.activity,[id]:{...a,status}}};});}
 interface SharedState {autoApprove:Record<string,boolean>;paused:Record<string,boolean>;inputs:Record<string,string>;activity:Record<string,RequestActivity>;active:string|null;details:Record<string,ChatDetail>;running:Record<string,boolean>;drafts:Record<string,string>;errors:Record<string,string>;agentModes:Record<string,boolean>;phases:Record<string,AiPhase>}
@@ -159,7 +174,7 @@ export const sharedStudy={
 
   }catch(error){
    const kind=controller.signal.aborted?'cancelled':classifyRequestError(String(error));
-   event(vault,id,kind==='timeout'?'Request timed out':kind==='cancelled'?'Request cancelled':kind==='connection'?'Connection lost':kind==='auth'?'Authentication failed':kind==='provider'?'Provider error':'Request failed');
+   event(vault,id,kind==='timeout'?'Request timed out':kind==='cancelled'?'Request cancelled':kind==='connection'?'Connection lost':kind==='auth'?'Authentication failed':kind==='model'?'Model unavailable':kind==='rate_limit'?'Rate limited':kind==='provider'?'Provider error':'Request failed');
    change(vault,s=>({...s,errors:{...s.errors,[id]:friendlyError(error,Math.floor((Date.now()-started)/1000))}}));
    settledStatus(vault,id,kind);
   }

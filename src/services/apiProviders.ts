@@ -159,7 +159,7 @@ export const API_PROVIDERS: ApiProvider[] = [
     keyPrefixes: ['AIza', 'AQ.'],
     keyPlaceholder: 'AIza... or AQ...',
     needsKey: true,
-    defaultModel: 'gemma-4-31b-it',
+    defaultModel: 'gemini-3.8-flash',
     // Native Gemini SDK path (see apiService.ts) — always uses Google's
     // endpoint, so the base URL is fixed like the other direct providers.
     note: 'Google Gemini via OpenAI-compatible endpoint. Free tier: ~1,500 req/day. Keys from aistudio.google.com.',

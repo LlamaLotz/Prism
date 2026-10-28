@@ -11,6 +11,7 @@ import {
   MIN_LIQUID_GLASS_OPACITY,
   MIN_LIQUID_GLASS_PANEL_OPACITY,
 } from './defaultSettings';
+import { migrateLegacyGoogleModel } from './services/settingsMigration';
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { APP_PAGES, type AppPage } from './types';
 import { Sidebar } from './components/Sidebar';
@@ -712,7 +713,12 @@ export default function App() {
         merged = { ...merged, omniRoute: { ...merged.omniRoute, baseUrl: '', model: '' } };
       }
 
-      if (hadLegacyDefault || hadUnsafeGlassOpacity || hadGlassStyle || hadLegacyAiPrefill) {
+      // Google stopped serving the old Gemma default on its hosted endpoint.
+      // Migrate both the global config and saved generation profiles once.
+      const googleMigration = migrateLegacyGoogleModel(merged);
+      merged = googleMigration.settings;
+
+      if (hadLegacyDefault || hadUnsafeGlassOpacity || hadGlassStyle || hadLegacyAiPrefill || googleMigration.changed) {
         tauriAPI.saveRuntimeConfig(merged).catch((e) => {
           console.error('Failed to persist appearance migration:', e);
           appLogger.error('Failed to persist appearance migration', e);

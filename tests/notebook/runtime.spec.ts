@@ -1,7 +1,31 @@
 import {test,expect} from '@playwright/test';
+import { DEFAULT_SETTINGS } from '../../src/defaultSettings';
+import { DEFAULT_GEMINI_MODEL, migrateLegacyGoogleModel } from '../../src/services/settingsMigration';
 
 test.beforeEach(async ({page})=>{
  page.on('pageerror',error=>{throw error;});
+});
+
+test('legacy Google model migrates in global settings and saved profiles',()=>{
+ const settings=JSON.parse(JSON.stringify(DEFAULT_SETTINGS)) as typeof DEFAULT_SETTINGS;
+ const googleConfig={provider:'google',apiKey:'',baseUrl:'https://generativelanguage.googleapis.com/v1beta/openai/',model:'gemma-4-31b-it',temperature:0.7,injectUserProfile:false,userProfile:''};
+ settings.omniRoute={...googleConfig};
+ settings.models={...settings.models!,providers:[
+  {id:'google-profile',name:'google: gemma-4-31b-it',capabilities:['generation'],config:{...googleConfig}},
+  {id:'local-gemma',name:'local gemma',capabilities:['generation'],config:{...googleConfig,baseUrl:'http://localhost:1234/v1'}},
+  {id:'renamed-google',name:'google: gemma-4-31b-it',capabilities:['generation'],config:{...googleConfig,model:'gemini-3.8-flash'}},
+ ]};
+ const migratedResult=migrateLegacyGoogleModel(settings);
+ expect(migratedResult.changed).toBe(true);
+ expect(migratedResult.settings.omniRoute.model).toBe(DEFAULT_GEMINI_MODEL);
+ expect(migratedResult.settings.models!.providers![0].config.model).toBe(DEFAULT_GEMINI_MODEL);
+ expect(migratedResult.settings.models!.providers![0].name).toBe(`google: ${DEFAULT_GEMINI_MODEL}`);
+ expect(migratedResult.settings.models!.providers![1].config.model).toBe('gemma-4-31b-it');
+ expect(migratedResult.settings.models!.providers![2].config.model).toBe(DEFAULT_GEMINI_MODEL);
+ expect(migratedResult.settings.models!.providers![2].name).toBe(`google: ${DEFAULT_GEMINI_MODEL}`);
+ const again=migrateLegacyGoogleModel(migratedResult.settings);
+ expect(again.changed).toBe(false);
+ expect(again.settings).toBe(migratedResult.settings);
 });
 
 test('cloud approval is explicit, scoped, and deny is focused',async({page})=>{

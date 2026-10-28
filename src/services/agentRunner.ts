@@ -1,8 +1,23 @@
 import { knowledge, type AgentToolResponse } from './knowledge';
 export type AgentMessage = { role: 'system' | 'user' | 'assistant'; content: string };
-export function extractToolCalls(text: string): Array<{ tool: string; input: unknown }> {
- const calls:Array<{tool:string;input:unknown}>=[];
- for(const match of text.matchAll(/```(?:json)?\s*([\s\S]*?)```/gi)){try{const parsed=JSON.parse(match[1]);for(const item of Array.isArray(parsed)?parsed:[parsed])if(typeof item?.tool==='string'&&item.input!==undefined)calls.push(item);}catch{/* Prose code. */}}
+type ToolCall = { tool: string; input: unknown };
+function collectToolCalls(value: unknown, calls: ToolCall[]) {
+ for(const item of Array.isArray(value)?value:[value]){
+  if(!item||typeof item!=='object'||Array.isArray(item))continue;
+  const candidate=item as {tool?:unknown;input?:unknown};
+  if(typeof candidate.tool==='string'&&candidate.input!==undefined)calls.push({tool:candidate.tool,input:candidate.input});
+ }
+}
+export function extractToolCalls(text: string): ToolCall[] {
+ const calls:ToolCall[]=[];
+ for(const match of text.matchAll(/```(?:json)?\s*([\s\S]*?)```/gi)){
+  try{collectToolCalls(JSON.parse(match[1]),calls);}catch{/* Prose code. */}
+ }
+ if(calls.length)return calls;
+ // Some providers (Gemini in particular) ignore the fenced-block protocol and
+ // return the call as bare JSON. Only accept a whole-message JSON document so
+ // examples quoted inside prose are never executed.
+ try{collectToolCalls(JSON.parse(text.trim()),calls);}catch{/* Natural language. */}
  return calls;
 }
 function canonical(value:unknown):string {if(Array.isArray(value))return `[${value.map(canonical).join(',')}]`;if(value&&typeof value==='object')return `{${Object.entries(value).sort(([a],[b])=>a.localeCompare(b)).map(([k,v])=>`${JSON.stringify(k)}:${canonical(v)}`).join(',')}}`;return JSON.stringify(value)??'null';}

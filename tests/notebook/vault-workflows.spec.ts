@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { openConversationMenu, toggleAgent } from './assistant-menu';
-import { RepetitionGuard,runAgentTurn } from '../../src/services/agentRunner';
+import { RepetitionGuard,extractToolCalls,runAgentTurn } from '../../src/services/agentRunner';
 import { knowledge } from '../../src/services/knowledge';
 import { noteGraph,withFolders } from '../../src/services/folderGraph';
 test('folder graph keeps path identities, empty folders and original note degrees',()=>{
@@ -20,6 +20,27 @@ test('agent completes more than five productive rounds and continues after appro
  const previous=knowledge.agentCall;let calls=0;const posts:string[]=[];
  knowledge.agentCall=async tool=>({tool,requiresApproval:tool==='edit_note',approvalId:tool==='edit_note'?'approval':null,preview:'change',result:{page:++calls},error:null});
  try{let round=0;await runAgentTurn({messages:[{role:'user',content:'Do the task'}],complete:async()=>++round<=8?'```json\n'+JSON.stringify({tool:round===3?'edit_note':'read_note',input:{page:round}})+'\n```':'Done',post:text=>{posts.push(text);},approval:async()=>({approved:true})});expect(calls).toBe(8);expect(posts.at(-1)).toBe('Done');}finally{knowledge.agentCall=previous;}
+});
+test('tool calls parse fenced and whole-message JSON but not prose examples',()=>{
+ const call={tool:'create_note',input:{path:'A.md',content:'x'}};
+ expect(extractToolCalls(JSON.stringify(call))).toEqual([call]);
+ expect(extractToolCalls('```json\n'+JSON.stringify(call)+'\n```')).toEqual([call]);
+ expect(extractToolCalls(JSON.stringify([call,call]))).toEqual([call,call]);
+ expect(extractToolCalls('For example, {"tool":"create_note","input":{}} is the shape.')).toEqual([]);
+ expect(extractToolCalls('Here you go:\n'+JSON.stringify(call))).toEqual([]);
+});
+test('bare JSON create_note calls are approved instead of posted as text',async()=>{
+ const previous=knowledge.agentCall;const calls:Array<{tool:string;input:unknown}>=[];const approved:unknown[]=[];const posts:string[]=[];
+ knowledge.agentCall=async(tool,input)=>{calls.push({tool,input});return {tool,requiresApproval:true,approvalId:'raw-approval',preview:'note',result:null,error:null};};
+ try{
+  const request={tool:'create_note',input:{path:'Equitable AI Use.md',content:'# Equitable Use'}};
+  let round=0;
+  await runAgentTurn({messages:[{role:'user',content:'create me a note'}],complete:async()=>++round===1?JSON.stringify(request):'Done',post:text=>{posts.push(text);},approval:async response=>{approved.push(response);return {approved:true};}});
+  expect(calls).toEqual([request]);
+  expect(approved).toHaveLength(1);
+  expect(posts.at(-1)).toBe('Done');
+  expect(posts.some(text=>text.includes('"tool"'))).toBe(false);
+ }finally{knowledge.agentCall=previous;}
 });
 test('models belong to individual conversations and auto approval continues the task',async({page})=>{
  await page.goto('/tests/notebook/study-harness.html');await page.getByRole('button',{name:'Open notebook',exact:true}).click();
