@@ -126,10 +126,7 @@ pub fn is_hidden(path: &Path) -> bool {
 }
 
 fn is_markdown(path: &Path) -> bool {
-    matches!(
-        path.extension().and_then(|e| e.to_str()),
-        Some("md") | Some("markdown")
-    )
+    crate::path_util::is_markdown_path(path)
 }
 
 /// Streams the vault directory into a sorted list of markdown paths. Only the

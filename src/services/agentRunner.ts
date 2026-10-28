@@ -29,25 +29,44 @@ export async function runAgentTurn({messages,complete,post,approval,onTool,check
  approval:(response:AgentToolResponse)=>unknown|Promise<unknown>;
  check?:()=>void;onTool?:(name:string)=>void;now?:()=>number;
 }):Promise<AgentMessage[]|undefined>{
- const work=[...messages];const guard=new RepetitionGuard();
- let manual:string|undefined;
+ const work=[...messages];const guard=new RepetitionGuard();const writeTools=new Set(['create_note','edit_note','rename_note','delete_note','create_folder','move_folder','add_wikilink','add_tag','remove_tag','format_note']);
+ let manual:string|undefined;let failedWrite:string|undefined;
  try{const value=JSON.parse(work.at(-1)?.content??'');if(typeof value.tool==='string'&&value.input!==undefined)manual='```json\n'+JSON.stringify(value)+'\n```';}catch{/* Natural language request. */}
  while(true){
   check();compactAgentContext(work);const text=manual??await complete(work);manual=undefined;check();
   work.push({role:'assistant',content:text});const calls=extractToolCalls(text);
-  if(!calls.length){await post(text);return;}
+  if(!calls.length){
+   const final=failedWrite?`${text}\n\n> The vault change was not applied: ${failedWrite}`:text;
+   await post(final);return;
+  }
   await post(`Using ${calls.map(c=>c.tool.replaceAll('_',' ')).join(', ')}…`,true);
   for(const request of calls){
-   check();onTool?.(request.tool);let evidence:unknown;let changed=false;
-   try{
-    const result=await knowledge.agentCall(request.tool,request.input);check();
-    if(result.requiresApproval&&result.approvalId){
-     const started=now();evidence=await approval(result);check();guard.excludeWait(now()-started);
-     // Older surfaces may still only prepare a preview; never claim that it was applied.
-     if(evidence===undefined){await post('The change is ready for approval.');return;}
-     changed=!!(evidence as {approved?:boolean}).approved;
-    }else evidence=result.error?{error:result.error}:result.result;
-   }catch(error){check();evidence={error:String(error)};}
+   check();onTool?.(request.tool);let evidence:unknown;let changed=false;const write=writeTools.has(request.tool);let result:AgentToolResponse;
+   try{result=await knowledge.agentCall(request.tool,request.input);check();}
+   catch(error){
+    check();if(write)failedWrite=String(error);evidence={error:String(error)};
+    const failedJson=JSON.stringify(evidence)??'null';
+    work.push({role:'user',content:`Tool ${request.tool} (${canonical(request.input)}) result:\n${failedJson.slice(0,6000)}${failedJson.length>6000?'\n[truncated; request a narrower page]':''}\nContinue from this result or answer the user. Do not repeat denied changes.`});
+    if(guard.observe(request.tool,request.input,evidence,now(),false)){
+     await post('Paused because the agent repeated the same work for two minutes without making progress. You can continue or give it new instructions.');return work;
+    }
+    continue;
+   }
+   if(result.requiresApproval&&result.approvalId){
+    const started=now();
+    try{evidence=await approval(result);}
+    catch(error){if(write)failedWrite=String(error);throw error;}
+    check();guard.excludeWait(now()-started);
+    // Older surfaces may still only prepare a preview; never claim that it was applied.
+    if(evidence===undefined){await post('The change is ready for approval.');return;}
+    const outcome=evidence as {approved?:boolean;error?:string};
+    changed=outcome?.approved===true;
+    if(changed)failedWrite=undefined;
+    else failedWrite=outcome?.error?String(outcome.error):`The proposed ${request.tool.replaceAll('_',' ')} change was denied.`;
+   }else{
+    evidence=result.error?{error:result.error}:result.result;
+    if(result.error&&write)failedWrite=String(result.error);
+   }
    const json=JSON.stringify(evidence)??'null';
    work.push({role:'user',content:`Tool ${request.tool} (${canonical(request.input)}) result:\n${json.slice(0,6000)}${json.length>6000?'\n[truncated; request a narrower page]':''}\nContinue from this result or answer the user. Do not repeat denied changes.`});
    if(guard.observe(request.tool,request.input,evidence,now(),changed)){

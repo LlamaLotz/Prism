@@ -16,6 +16,8 @@ export interface ChatModelPicker { disabled?:boolean; value: string; options: Mo
 export function SharedChat({vaultPath,collectionId=null,onOpenSettings,config,modelPicker,onVaultChanged,onSources}: {vaultPath:string;collectionId?:string|null;onOpenSettings?:()=>void;config:OmniRouteConfig;modelPicker?:ChatModelPicker;onVaultChanged?:()=>void;onSources?:()=>void}){
  const dialogs=useDialog();const [draftAgent,setDraftAgent]=useState(true);const sending=useRef(false);const scroll=useRef<HTMLDivElement>(null);const sticky=useRef(true);
  const shared=useSharedStudy(vaultPath);const id=shared.active;const detail=id?shared.details[id]:null;
+ const conversation=useRef<string|null>(id);const creating=useRef<Promise<string>|null>(null);
+ useEffect(()=>{conversation.current=id;},[id]);
  const draftKey=id??'new';const input=shared.inputs[draftKey]??'';const setInput=(value:string|((previous:string)=>string))=>sharedStudy.setInput(vaultPath,draftKey,typeof value==='function'?value(input):value);const [sessions,setSessions]=useState<ChatLibrarySession[]>([]);const [error,setError]=useState('');const [collections,setCollections]=useState<Collection[]>([]);
  const refresh=()=>knowledge.listChats(null,null,200).then(setSessions).catch(e=>setError(String(e)));
  useEffect(()=>{void refresh();void study.request<Collection[]>(vaultPath,'collections').then(setCollections).catch(()=>{});},[vaultPath,id,detail?.messages.length]);
@@ -32,10 +34,14 @@ export function SharedChat({vaultPath,collectionId=null,onOpenSettings,config,mo
  // Choosing a model persists it for this conversation only: the conversation is
  // materialised on demand (like Approve for me), and a failed save propagates to
  // the picker, which surfaces the error and retains the previous selection.
- const createChat=async()=>{const target=await sharedStudy.create(vaultPath,collectionId);sharedStudy.setAgent(vaultPath,target,true);return target;};
- const conversationModel=modelPicker?{...modelPicker,value:provider,onChange:async(value:string)=>{let target=id;if(!target)target=await createChat();await sharedStudy.setProvider(vaultPath,target,value);}}:undefined;
+ const createChat=async(agent=true)=>{const target=await sharedStudy.create(vaultPath,collectionId);sharedStudy.setAgent(vaultPath,target,agent);conversation.current=target;return target;};
+ // One creation path for sends, model selection and auto-approval. Without the
+ // shared promise/ref, two handlers started before React re-rendered could each
+ // create a chat and the auto-approval flag could land on the abandoned one.
+ const ensureConversation=async(agent=true)=>{const current=conversation.current??id;if(current)return current;creating.current??=createChat(agent);try{return await creating.current;}finally{creating.current=null;}};
+ const conversationModel=modelPicker?{...modelPicker,value:provider,onChange:async(value:string)=>{const target=await ensureConversation();await sharedStudy.setProvider(vaultPath,target,value);}}:undefined;
  const [retryText,setRetryText]=useState('');  const run=async(fn:()=>Promise<unknown>)=>{try{setError('');await fn();await refresh();}catch(e){setError(String(e));}};
- const send=async()=>{if(!input.trim()||sending.current||(id&&shared.running[id]))return;sending.current=true;try{let target=id;if(!target){target=await sharedStudy.create(vaultPath,collectionId);sharedStudy.setAgent(vaultPath,target,draftAgent);}if(unavailable)throw new Error('Choose an available model before sending.');
+ const send=async()=>{if(!input.trim()||sending.current||(id&&shared.running[id]))return;sending.current=true;try{const target=await ensureConversation(draftAgent);if(unavailable)throw new Error('Choose an available model before sending.');
  if(unconfigured)throw new Error('Configure an AI provider and model before sending.');if(shared.details[target]?.providerId==null)await sharedStudy.setProvider(vaultPath,target,provider);const text=input;setInput('');setRetryText(text);sticky.current=true;const accepted=await (sharedStudyMode(target)?sharedStudy.sendAgent(vaultPath,target,text,config,provider):sharedStudy.send(vaultPath,target,text,provider));if(accepted===false)setInput(current=>current||text);}finally{sending.current=false;}};
  const sharedStudyMode=(target:string)=>shared.agentModes[target]??draftAgent;
  const agent=id?!!shared.agentModes[id]:draftAgent;
@@ -45,7 +51,7 @@ export function SharedChat({vaultPath,collectionId=null,onOpenSettings,config,mo
  const [noticeOpen,setNoticeOpen]=useState(false);const noticeRef=useRef<HTMLDivElement>(null);
  // Auto-approval is a consent change, so enabling it surfaces the disclaimer
  // in a popover instead of leaving it parked under the composer.
- const toggleAutoApprove=()=>void run(async()=>{let target=id;if(!target){target=await sharedStudy.create(vaultPath,collectionId);sharedStudy.setAgent(vaultPath,target,true);}const enabled=!shared.autoApprove[target];sharedStudy.setAutoApprove(vaultPath,target,enabled);setNoticeOpen(enabled);});
+ const toggleAutoApprove=()=>void run(async()=>{const target=await ensureConversation();const enabled=!shared.autoApprove[target];sharedStudy.setAutoApprove(vaultPath,target,enabled);setNoticeOpen(enabled);});
  // The disclaimer only makes sense while auto-approval is on. Switching
  // conversations closes it explicitly (below) rather than by watching the
  // conversation id, which also changes when enabling it creates a draft chat.

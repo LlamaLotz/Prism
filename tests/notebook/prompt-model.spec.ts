@@ -81,9 +81,10 @@ test('AI thinking status reflects real request phases and clears when done', asy
   await toggleAgent(page);
   await page.getByLabel('Message', { exact: true }).fill('Compare these sources');
   await page.getByRole('button', { name: 'Send', exact: true }).click();
-  await expect(page.locator('.ai-status-line__label').filter({hasText:'Generating…'})).toBeVisible();
+  await expect(page.locator('.ai-status-line__label').filter({hasText:'Waiting for model…'})).toBeVisible();
   await expect(page.getByText('Agent answer using selected sources.', { exact: true })).toBeVisible();
-  await expect(page.locator('.ai-status-line__label').filter({hasText:'Generating…'})).toHaveCount(0);
+  await expect(page.locator('.ai-status-line__label').filter({hasText:'Waiting for model…'})).toHaveCount(0);
+  await expect(page.locator('.ai-status-line__label').filter({hasText:/Completed in \d+s/})).toBeVisible();
 });
 
 test('tool runs report per-task status and failed runs offer retry', async ({ page }) => {

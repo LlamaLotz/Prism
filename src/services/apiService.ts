@@ -6,7 +6,10 @@ import type { RetrievalPlan } from './knowledge';
 function truncateForPrompt(content: string): string {
   return content.length <= MAX_NOTE_CONTEXT_CHARS ? content : `${content.slice(0, MAX_NOTE_CONTEXT_CHARS)}\n...[note truncated]`;
 }
-async function executeModel(request: { providerId?:string; task: string; messages: Array<{ role: string; content: string }> }): Promise<string> {
+/** Correlates a model call with the conversation activity that can cancel it. */
+export type ModelProgress = { requestId: string; vaultPath: string; sessionId: string };
+
+async function executeModel(request: { providerId?:string; task: string; messages: Array<{ role: string; content: string }>; requestId?:string; vaultPath?:string; sessionId?:string }): Promise<string> {
   try { return await invoke<string>('execute_model', { request }); }
   catch (error) {
     if (String(error).includes('SERVICE_UNAVAILABLE:') && await requestServiceRecovery(request.task)) {
@@ -20,8 +23,9 @@ export async function sendChatMessage(
   messages: Array<{ role: 'user' | 'assistant' | 'system'; content: string }>,
   task = 'CHAT',
   providerId?:string,
+  progress?: ModelProgress,
 ): Promise<string> {
-  const result = await executeModel({ task, messages, providerId });
+  const result = await executeModel({ task, messages, providerId, ...progress });
   return result.replace(/<thought>[\s\S]*?<\/thought>\s*/gi, '').trim();
 }
 
@@ -33,6 +37,7 @@ export async function sendChatMessageWithRetrieval(
   /** High-level processing phases, for the AI thinking indicator. */
   onPhase?: (phase: 'Reading context…' | 'Generating…') => void,
   providerId?:string,
+  progress?: ModelProgress,
 ): Promise<{ text: string; retrieval: RetrievalPlan | null }> {
   const userQuery = [...messages].reverse().find((m) => m.role === 'user')?.content ?? '';
   let retrieval: RetrievalPlan | null = null;
@@ -64,7 +69,7 @@ export async function sendChatMessageWithRetrieval(
     }
   }
   onPhase?.('Generating…');
-  const result = await executeModel({ task, messages: injected, providerId });
+  const result = await executeModel({ task, messages: injected, providerId, ...progress });
   return { text: result.replace(/<thought>[\s\S]*?<\/thought>\s*/gi, '').trim(), retrieval };
 }
 

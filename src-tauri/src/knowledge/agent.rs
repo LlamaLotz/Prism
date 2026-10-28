@@ -938,10 +938,34 @@ fn create_pending(
     })
 }
 
-fn store_pending(pending: PendingEdit) -> String {
+/// Identity used to collapse repeated write previews for the same pending work.
+/// `create_note` is one pending per destination regardless of content; every
+/// other write keeps distinct content edits so retries are not silently merged.
+fn pending_dedupe_key(p: &PendingEdit) -> (String, String, String, String, Option<String>) {
+    let content = (p.tool != "create_note").then(|| super::blocks::hash(&p.new_content));
+    (
+        p.vault_id.clone(),
+        p.generation.clone(),
+        p.tool.clone(),
+        crate::path_util::path_id(Path::new(&p.note_path)),
+        content,
+    )
+}
+
+fn store_pending(pending: PendingEdit) -> (String, String) {
+    let key = pending_dedupe_key(&pending);
+    let now = Instant::now();
+    let mut map = pending_map().lock().unwrap();
+    if let Some(existing) = map
+        .values()
+        .find(|p| p.expires > now && pending_dedupe_key(p) == key)
+    {
+        return (existing.id.clone(), existing.preview.clone());
+    }
     let id = pending.id.clone();
-    pending_map().lock().unwrap().insert(id.clone(), pending);
-    id
+    let preview = pending.preview.clone();
+    map.insert(id.clone(), pending);
+    (id, preview)
 }
 
 // edit_note preview
@@ -1028,8 +1052,7 @@ fn preview_create_note(
         .get("path")
         .or_else(|| input.get("relativePath"))
         .and_then(|v| v.as_str())
-        .ok_or("create_note requires path")?
-        .to_string();
+        .ok_or("create_note requires path")?;
     let content = input
         .get("content")
         .and_then(|v| v.as_str())
@@ -1038,27 +1061,15 @@ fn preview_create_note(
     if content.len() as u64 > super::note_io::MAX_NOTE_BYTES {
         return Err("NOTE_TOO_LARGE: Notes are limited to 50 MiB.".into());
     }
-    let abs = ensure_inside_vault(&scope, Path::new(&rel))?;
+    // Agent input may include one leading slash; everything else follows the
+    // same Markdown/depth rules as frontend-created files so it is indexable.
+    let relative = crate::path_util::normalize_note_path(rel, true)?;
+    let abs = ensure_inside_vault(&scope, &relative)?;
     if abs.exists() {
         return Err(format!(
             "A file already exists at {}",
             vault_relative(&scope, &abs.to_string_lossy())
         ));
-    }
-    // Validate folder depth like lib.rs create_file
-    let rel_path = crate::path_util::relative_to(&scope.root, &abs)
-        .unwrap_or_else(|| abs.clone())
-        .to_string_lossy()
-        .to_string();
-    let depth = Path::new(&rel_path)
-        .components()
-        .filter(|part| matches!(part, std::path::Component::Normal(_)))
-        .count();
-    if depth > 6 {
-        return Err("Folders can be nested up to 5 levels deep".into());
-    }
-    if rel_path.contains("..") || rel_path.contains('\0') || rel_path.contains(':') {
-        return Err("Invalid vault path".into());
     }
     create_pending(
         &app,
@@ -1119,11 +1130,11 @@ fn preview_rename_note(
         .or_else(|| input.get("new_path"))
         .or_else(|| input.get("target"))
         .and_then(|v| v.as_str())
-        .ok_or("rename_note requires newPath")?
-        .to_string();
+        .ok_or("rename_note requires newPath")?;
+    let new_rel = crate::path_util::normalize_note_path(new_rel, true)?;
     let (note_id, old_path) = resolve_note(&conn, &scope.vault_id, &note_ref)?;
     ensure_inside_vault(&scope, Path::new(&old_path))?;
-    let new_abs = ensure_inside_vault(&scope, Path::new(&new_rel))?;
+    let new_abs = ensure_inside_vault(&scope, &new_rel)?;
     if new_abs.exists() {
         return Err("A note already exists at the destination".into());
     }
@@ -1358,6 +1369,58 @@ fn validate_approval(
     Ok(())
 }
 
+const INDEX_VERIFICATION_FAILED: &str =
+    "PERSISTENCE: The change was written but could not be indexed. Recheck the operation.";
+
+fn verify_indexed(
+    conn: &rusqlite::Connection,
+    scope: &super::Scope,
+    mutation: &super::operations::Mutation,
+    target: &str,
+) -> Result<(), String> {
+    let fail = || INDEX_VERIFICATION_FAILED.to_string();
+    match mutation.tool.as_str() {
+        // Delete intentionally removes the file and tombstones its index row.
+        "delete_note" => {
+            let path = crate::path_util::path_id(Path::new(target));
+            let deleted: Option<i64> = conn
+                .query_row(
+                    "SELECT deleted FROM knowledge_notes WHERE vault_id=?1 AND path=?2",
+                    params![scope.vault_id, path],
+                    |r| r.get(0),
+                )
+                .optional()
+                .map_err(|_| fail())?;
+            if deleted != Some(1) {
+                return Err(fail());
+            }
+        }
+        // Folder operations have no single note row; verify the folder itself.
+        "create_folder" | "move_folder" => {
+            if !Path::new(target).is_dir() {
+                return Err(fail());
+            }
+        }
+        _ => {
+            if !Path::new(target).is_file() {
+                return Err(fail());
+            }
+            let path = crate::path_util::path_id(Path::new(target));
+            let indexed: bool = conn
+                .query_row(
+                    "SELECT EXISTS(SELECT 1 FROM knowledge_notes WHERE vault_id=?1 AND path=?2 AND deleted=0)",
+                    params![scope.vault_id, path],
+                    |r| r.get(0),
+                )
+                .map_err(|_| fail())?;
+            if !indexed {
+                return Err(fail());
+            }
+        }
+    }
+    Ok(())
+}
+
 fn apply_pending(
     app: &tauri::AppHandle,
     pending: PendingEdit,
@@ -1376,12 +1439,13 @@ fn apply_pending(
         .ok_or("CONFLICT: Generate a fresh preview")?;
     let conn = crate::db::init_db(app)?;
     let id = super::operations::apply(&conn, &scope, &mutation)?;
+    let target = mutation.destination.as_deref().unwrap_or(&mutation.source);
+    verify_indexed(&conn, &scope, &mutation, target)?;
     super::emit(app, &conn, &scope.vault_id, "agent_applied", &id).map_err(|e| {
         format!("PERSISTENCE: Operation {id} applied but its event could not be saved: {e}")
     })?;
-    let target = mutation.destination.as_deref().unwrap_or(&mutation.source);
     Ok(
-        serde_json::json!({"operationId":id,"undoAvailable":true,"notePath":target,"newPath":mutation.destination,"relativePath":vault_relative(&scope,target),"preview":pending.preview}),
+        serde_json::json!({"operationId":id,"undoAvailable":true,"indexed":true,"notePath":target,"newPath":mutation.destination,"relativePath":vault_relative(&scope,target),"preview":pending.preview}),
     )
 }
 
@@ -1424,7 +1488,7 @@ pub async fn agent_call_tool(
                     let path=crate::path_util::relative_to(&scope.root,entry.path()).ok_or("Path is outside the active vault")?.to_string_lossy().replace('\\',"/");
                     if !folder.is_empty() && path!=folder && !path.starts_with(&(folder.clone()+"/")){continue;}
                     let is_folder=entry.file_type().is_dir();
-                    if !is_folder && entry.path().extension().and_then(|s|s.to_str()).is_none_or(|s|!s.eq_ignore_ascii_case("md")){continue;}
+                    if !is_folder && !crate::path_util::is_markdown_path(entry.path()){continue;}
                     entries.push(serde_json::json!({"path":path,"kind":if is_folder {"folder"}else{"note"},"name":entry.file_name().to_string_lossy()}));
                 }
                 let total=entries.len();let page=entries.into_iter().skip(offset).take(limit).collect::<Vec<_>>();
@@ -1594,8 +1658,7 @@ pub async fn agent_call_tool(
                 })
                 .await
                 .map_err(|e| e.to_string())??;
-            let preview = pending.preview.clone();
-            let id = store_pending(pending);
+            let (id, preview) = store_pending(pending);
             // Emit knowledge-event for UI to refresh pending list
             if let Ok(conn) = crate::db::init_db(&app) {
                 if let Ok(scope) = super::current(&app) {
@@ -1859,6 +1922,82 @@ mod tests {
             matches!(op, EditOp::ReplaceBlock { block_id, text } if block_id == "a" && text == "hi")
         );
     }
+
+    fn pending_fixture(
+        vault_id: &str,
+        tool: &str,
+        path: &str,
+        new_content: &str,
+        preview: &str,
+    ) -> PendingEdit {
+        PendingEdit {
+            mutation: None,
+            id: uuid::Uuid::new_v4().to_string(),
+            tool: tool.into(),
+            vault_id: vault_id.into(),
+            generation: "test-generation".into(),
+            note_path: path.into(),
+            note_id: None,
+            preview: preview.into(),
+            old_content: String::new(),
+            new_content: new_content.into(),
+            expires: Instant::now() + Duration::from_secs(60),
+            created_at: 0,
+            input: serde_json::json!({}),
+        }
+    }
+
+    #[test]
+    fn pending_dedupe_returns_existing_preview_and_separates_distinct_edits() {
+        let vault = format!("dedupe-{}", uuid::Uuid::new_v4());
+        let (create_id, create_preview) = store_pending(pending_fixture(
+            &vault,
+            "create_note",
+            "/vault/Note.md",
+            "first",
+            "Create preview",
+        ));
+        let (same_id, same_preview) = store_pending(pending_fixture(
+            &vault,
+            "create_note",
+            "/vault/Note.md",
+            "second",
+            "Different preview",
+        ));
+        assert_eq!(create_id, same_id);
+        assert_eq!(create_preview, "Create preview");
+        assert_eq!(same_preview, create_preview);
+
+        let (edit_id, _) = store_pending(pending_fixture(
+            &vault,
+            "edit_note",
+            "/vault/Note.md",
+            "edit a",
+            "edit a",
+        ));
+        let (other_edit_id, _) = store_pending(pending_fixture(
+            &vault,
+            "edit_note",
+            "/vault/Note.md",
+            "edit b",
+            "edit b",
+        ));
+        let (repeat_edit_id, repeat_preview) = store_pending(pending_fixture(
+            &vault,
+            "edit_note",
+            "/vault/Note.md",
+            "edit a",
+            "different preview for same edit",
+        ));
+        assert_ne!(edit_id, other_edit_id);
+        assert_eq!(edit_id, repeat_edit_id);
+        assert_eq!(repeat_preview, "edit a");
+
+        let mut map = pending_map().lock().unwrap();
+        map.remove(&create_id);
+        map.remove(&edit_id);
+        map.remove(&other_edit_id);
+    }
 }
 
 
@@ -1903,7 +2042,7 @@ pub async fn prepare_ai_enhancement(app: tauri::AppHandle, task: String, path: S
     let response = super::models::execute_model(app.clone(), super::models::ModelRequest { provider_id: None, task: task.clone(), messages: vec![
         super::models::Message { role: "system".into(), content: instruction.into() },
         super::models::Message { role: "user".into(), content: serde_json::json!({"note": expected_content, "candidates": candidates}).to_string() },
-    ] }).await?;
+    ], request_id: None, vault_path: None, session_id: None }).await?;
     if response.len() > 200_000 { return Err("Invalid enhancement: response too large".into()); }
     let output: EnhancementOutput = serde_json::from_str(&response).map_err(|_| "Invalid enhancement: expected structured JSON")?;
     let operations = match task.as_str() {

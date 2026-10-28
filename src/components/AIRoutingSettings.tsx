@@ -5,19 +5,23 @@ import './runtime.css';
 
 type ModelSettings = NonNullable<AppSettings['models']>;
 const FEATURES = { CHAT: 'Chat', SUMMARIZE: 'Summarize', TAG: 'Tag', CLASSIFY: 'Classify', LINK_SUGGEST: 'Link suggestions', FORMAT: 'AI formatting', AI_SCAN: 'AI scan' };
+const DEFAULT_TIMEOUT_SECONDS = 180;
+const clampTimeout = (value: number) => Number.isFinite(value) ? Math.min(3600, Math.max(10, Math.round(value))) : DEFAULT_TIMEOUT_SECONDS;
 
 export function AIRoutingSettings({ draft, setDraft }: {
   draft: AppSettings;
   setDraft: Dispatch<SetStateAction<AppSettings>>;
 }) {
   const update = (change: (current: ModelSettings) => Partial<ModelSettings>) => setDraft(previous => {
-    const current: ModelSettings = { privacy: 'ask_before_cloud', idleSeconds: 300, routes: {}, ...previous.models };
+    const current: ModelSettings = { privacy: 'ask_before_cloud', idleSeconds: 300, routes: {}, requestTimeoutMode: 'until_failure', requestTimeoutSeconds: DEFAULT_TIMEOUT_SECONDS, ...previous.models };
     return { ...previous, models: { ...current, ...change(current) } };
   });
+  const timeoutMode = draft.models?.requestTimeoutMode ?? 'until_failure';
+  const timeoutSeconds = draft.models?.requestTimeoutSeconds ?? DEFAULT_TIMEOUT_SECONDS;
   const saveProvider = () => setDraft(previous => ({
     ...previous,
     models: {
-      privacy: 'ask_before_cloud', idleSeconds: 300, routes: {}, ...previous.models,
+      privacy: 'ask_before_cloud', idleSeconds: 300, routes: {}, requestTimeoutMode: 'until_failure', requestTimeoutSeconds: DEFAULT_TIMEOUT_SECONDS, ...previous.models,
       providers: [...(previous.models?.providers ?? []), {
         id: crypto.randomUUID(), name: `${previous.omniRoute.provider}: ${previous.omniRoute.model}`,
         config: { ...previous.omniRoute }, capabilities: ['generation'],
@@ -34,6 +38,35 @@ export function AIRoutingSettings({ draft, setDraft }: {
         <option value="cloud_allowed">Cloud Allowed</option>
       </select>
     </label>
+    <fieldset className="runtime-local">
+      <legend>Request timeout</legend>
+      <label>
+        <input type="radio" name="request-timeout-mode" value="until_failure" checked={timeoutMode === 'until_failure'} onChange={() => update(() => ({ requestTimeoutMode: 'until_failure' }))}/>
+        Until the AI request fails
+      </label>
+      <p>No application deadline. The provider or network decides when the request fails.</p>
+      <label>
+        <input type="radio" name="request-timeout-mode" value="custom" checked={timeoutMode === 'custom'} onChange={() => update(current => ({ requestTimeoutMode: 'custom', requestTimeoutSeconds: clampTimeout(current.requestTimeoutSeconds ?? DEFAULT_TIMEOUT_SECONDS) }))}/>
+        Custom timeout
+      </label>
+      <label>
+        Timeout in seconds
+        <input
+          type="number"
+          aria-label="Custom timeout in seconds"
+          min={10}
+          max={3600}
+          step={1}
+          value={timeoutSeconds}
+          disabled={timeoutMode !== 'custom'}
+          // Keep intermediate keystrokes (typing "30" must not clamp to 10
+          // after the first digit); validation happens on blur and in Rust.
+          onChange={e => update(() => ({ requestTimeoutSeconds: e.target.value === '' ? 0 : Number(e.target.value) }))}
+          onBlur={e => update(() => ({ requestTimeoutSeconds: clampTimeout(Number(e.target.value)) }))}
+        />
+      </label>
+      <p>10–3600 seconds.</p>
+    </fieldset>
     <h3>Saved providers and models</h3>
     <p>Save several connections, then choose a model separately in each conversation.</p>
     <button type="button" className="runtime-button" onClick={saveProvider}>Add current provider and model</button>

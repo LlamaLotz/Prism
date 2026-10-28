@@ -589,11 +589,7 @@ fn reconcile(c: &Connection, scope: &Scope, m: &Mutation, undo: bool) -> Result<
             } else {
                 Path::new(root).join(rel)
             };
-            if e.data.is_none()
-                || !path
-                    .extension()
-                    .is_some_and(|s| s.eq_ignore_ascii_case("md"))
-            {
+            if e.data.is_none() || !crate::path_util::is_markdown_path(&path) {
                 continue;
             }
             let data = STANDARD.decode(e.data.unwrap()).map_err(persistence)?;
@@ -638,7 +634,7 @@ pub(crate) fn verify_approval(c: &Connection, scope: &Scope, m: &Mutation) -> Re
     }
     if m.tool == "create_note"
         && c.query_row(
-            "SELECT EXISTS(SELECT 1 FROM knowledge_notes WHERE vault_id=?1 AND path=?2)",
+            "SELECT EXISTS(SELECT 1 FROM knowledge_notes WHERE vault_id=?1 AND path=?2 AND deleted=0)",
             params![scope.vault_id, m.source],
             |r| r.get::<_, bool>(0),
         )
@@ -665,10 +661,7 @@ pub(crate) fn apply_named(
         } else {
             Path::new(&m.source).join(relative)
         };
-        if path
-            .extension()
-            .is_some_and(|e| e.eq_ignore_ascii_case("md"))
-        {
+        if crate::path_util::is_markdown_path(&path) {
             if let Some(data) = &entry.data {
                 let bytes = STANDARD.decode(data).map_err(persistence)?;
                 let text = std::str::from_utf8(&bytes).map_err(persistence)?;
@@ -1077,6 +1070,27 @@ mod tests {
         assert_eq!(std::fs::read_to_string(&p).unwrap(), "before");
         assert!(undo(&db.conn, &s, &id).is_err());
     }
+    #[test]
+    fn deleted_note_path_can_be_recreated() {
+        let (_dir, db, s) = fixture();
+        let p = note(&db.conn, &s, "a.md", "old");
+        let deleted = capture(&db.conn, &s, "delete_note", &p, None, "old", "").unwrap();
+        apply(&db.conn, &s, &deleted).unwrap();
+        let created = capture(&db.conn, &s, "create_note", &p, None, "", "new").unwrap();
+        apply(&db.conn, &s, &created).unwrap();
+        assert_eq!(std::fs::read_to_string(&p).unwrap(), "new");
+        assert_eq!(
+            db.conn
+                .query_row(
+                    "SELECT deleted FROM knowledge_notes WHERE path=?1",
+                    [&p],
+                    |r| r.get::<_, i64>(0)
+                )
+                .unwrap(),
+            0
+        );
+    }
+
     #[test]
     fn stale_approvals_and_competing_writes_are_rejected() {
         let (_dir, db, s) = fixture();

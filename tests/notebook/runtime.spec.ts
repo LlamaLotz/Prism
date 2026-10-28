@@ -117,3 +117,25 @@ test('feature routes preserve saved providers and explain execution boundaries',
  await expect(page.getByText('uses the configured generation provider',{exact:false})).toBeVisible();
  await expect(page.getByText('A localhost provider may forward to cloud',{exact:false})).toBeVisible();
 });
+test('request timeout mode and seconds survive a settings round trip',async({page})=>{
+ await page.goto('/tests/notebook/runtime-harness.html?noapproval&settings&collapsed');
+ const until=page.getByLabel('Until the AI request fails');
+ await expect(until).toBeChecked();
+ await expect(page.getByLabel('Custom timeout in seconds')).toBeDisabled();
+ await expect(page.getByLabel('Custom timeout in seconds')).toHaveValue('180');
+ await page.getByLabel('Custom timeout',{exact:true}).check();
+ const seconds=page.getByLabel('Custom timeout in seconds');
+ await expect(seconds).toBeEnabled();
+ await expect(seconds).toHaveValue('180');
+ await seconds.fill('9999');await seconds.blur();await expect(seconds).toHaveValue('3600');
+ await seconds.fill('5');await seconds.blur();await expect(seconds).toHaveValue('10');
+ await seconds.fill('45');
+ await page.getByRole('button',{name:'Save settings'}).click();
+ const saved=await page.evaluate(()=>JSON.parse(localStorage.getItem('runtime-settings')!));
+ expect(saved.models.requestTimeoutMode).toBe('custom');
+ expect(saved.models.requestTimeoutSeconds).toBe(45);
+ await page.reload();
+ await expect(page.getByLabel('Custom timeout',{exact:true})).toBeChecked();
+ await expect(page.getByLabel('Custom timeout in seconds')).toBeEnabled();
+ await expect(page.getByLabel('Custom timeout in seconds')).toHaveValue('45');
+});

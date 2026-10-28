@@ -98,7 +98,16 @@ export interface ReconstructedVersion {
 }
 
 export interface AppSettings {
-  models?: { privacy: 'strict_local' | 'ask_before_cloud' | 'hybrid' | 'cloud_allowed'; idleSeconds: number; routes: Record<string, string>; providers?: Array<{ id: string; name: string; config: OmniRouteConfig; capabilities: string[] }> };
+  models?: {
+    privacy: 'strict_local' | 'ask_before_cloud' | 'hybrid' | 'cloud_allowed';
+    idleSeconds: number;
+    routes: Record<string, string>;
+    providers?: Array<{ id: string; name: string; config: OmniRouteConfig; capabilities: string[] }>;
+    /** 'until_failure' has no application deadline; 'custom' uses requestTimeoutSeconds. */
+    requestTimeoutMode?: 'until_failure' | 'custom';
+    /** Custom model-request deadline in seconds (10..3600). */
+    requestTimeoutSeconds?: number;
+  };
   vaultPath: string;
   ingestionScript: string;
   ingestionEngine: 'python' | 'rust';

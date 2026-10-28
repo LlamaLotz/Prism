@@ -29,4 +29,43 @@ test('models belong to individual conversations and auto approval continues the 
  await page.getByRole('button',{name:'New chat',exact:true}).click();await expect(page.getByRole('combobox',{name:'Chat model'})).toContainText('Fixture model');
  await toggleAgent(page);await page.getByRole('button',{name:'Approve for me OFF'}).click();await page.getByLabel('Message',{exact:true}).fill('{"tool":"edit_note","input":{"noteId":"s1","operations":[]}}');await page.getByRole('button',{name:'Send',exact:true}).click();
  await expect(page.getByText('Agent answer using selected sources.',{exact:true})).toBeVisible();expect(await page.evaluate(()=>(window as any).fixtureCalls.filter((c:any)=>c.command==='agent_resolve_pending'&&c.args.approved).length)).toBe(1);
+ await page.locator('.ai-status-line summary').click();await expect(page.getByText('Applied Test.md',{exact:true})).toBeVisible();
+});
+test('auto-approved apply failures are surfaced and mark the turn failed',async({page})=>{
+ await page.goto('/tests/notebook/study-harness.html?applyFailure');await page.getByRole('button',{name:'Open notebook',exact:true}).click();await toggleAgent(page);
+ await page.getByRole('button',{name:'Approve for me OFF'}).click();await page.getByLabel('Message',{exact:true}).fill('{"tool":"edit_note","input":{"noteId":"s1","operations":[]}}');await page.getByRole('button',{name:'Send',exact:true}).click();
+ await expect(page.getByRole('alert').filter({hasText:'could not be indexed'})).toBeVisible();
+ await expect(page.getByText(/Failed in \d+s/)).toBeVisible();
+ await expect(page.getByText(/Completed in \d+s/)).toHaveCount(0);
+});
+test('manual approval waits for the reviewer and applies the change',async({page})=>{
+ await page.goto('/tests/notebook/study-harness.html');await page.getByRole('button',{name:'Open notebook',exact:true}).click();await toggleAgent(page);
+ await page.getByLabel('Message',{exact:true}).fill('{"tool":"edit_note","input":{"noteId":"s1","operations":[]}}');await page.getByRole('button',{name:'Send',exact:true}).click();
+ await expect(page.getByRole('button',{name:'Approve',exact:true})).toBeVisible();
+ expect(await page.evaluate(()=>(window as any).fixtureCalls.filter((c:any)=>c.command==='agent_resolve_pending').length)).toBe(0);
+ await page.getByRole('button',{name:'Approve',exact:true}).click();
+ await expect(page.getByText('Agent answer using selected sources.',{exact:true})).toBeVisible();
+ await expect(page.getByText(/Completed in \d+s/)).toBeVisible();
+ expect(await page.evaluate(()=>(window as any).fixtureCalls.filter((c:any)=>c.command==='agent_resolve_pending'&&c.args.approved).length)).toBe(1);
+});
+test('timeout ends in Timed out and removes the running dots',async({page})=>{
+ await page.goto('/tests/notebook/study-harness.html?timeout');await page.getByRole('button',{name:'Open notebook',exact:true}).click();await toggleAgent(page);
+ await page.getByLabel('Message',{exact:true}).fill('Check the selected sources');await page.getByRole('button',{name:'Send',exact:true}).click();
+ await expect(page.getByText(/Timed out in \d+s/)).toBeVisible();
+ await expect(page.locator('.ai-status-line__dots')).toHaveCount(0);
+ await expect(page.getByRole('alert').filter({hasText:'timed out'})).toBeVisible();
+});
+test('running dots exist only while a slow model request is in flight',async({page})=>{
+ await page.goto('/tests/notebook/study-harness.html?slow');await page.getByRole('button',{name:'Open notebook',exact:true}).click();await toggleAgent(page);
+ await page.getByLabel('Message',{exact:true}).fill('Check the selected sources');await page.getByRole('button',{name:'Send',exact:true}).click();
+ const dots=page.locator('.ai-status-line__dots');await expect(dots).toBeVisible();
+ await expect(page.getByText('Agent answer using selected sources.',{exact:true})).toBeVisible();
+ await expect(dots).toHaveCount(0);await expect(page.locator('.ai-status-line__glyph')).toBeVisible();
+});
+test('reduced motion keeps status dots legible without animation',async({page})=>{
+ await page.emulateMedia({reducedMotion:'reduce'});await page.goto('/tests/notebook/study-harness.html?slow');await page.getByRole('button',{name:'Open notebook',exact:true}).click();await toggleAgent(page);
+ await page.getByLabel('Message',{exact:true}).fill('Check the selected sources');await page.getByRole('button',{name:'Send',exact:true}).click();
+ const dots=page.locator('.ai-status-line__dots');await expect(dots).toBeVisible();
+ expect(await dots.locator('i').first().evaluate(el=>getComputedStyle(el).animationName)).toBe('none');
+ await expect(page.getByText('Agent answer using selected sources.',{exact:true})).toBeVisible();
 });

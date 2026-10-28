@@ -41,6 +41,13 @@ export const DEFAULT_SETTINGS: AppSettings = {
     liquidGlassOpacity: 0.93,
     backgroundEnvironment: 'none',
   },
+  models: {
+    privacy: 'ask_before_cloud',
+    idleSeconds: 300,
+    routes: {},
+    requestTimeoutMode: 'until_failure',
+    requestTimeoutSeconds: 180,
+  },
   editor: {
     defaultMode: 'live',
     autosaveDebounceMs: 800,

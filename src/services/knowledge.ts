@@ -34,7 +34,7 @@ export interface AgentToolResponse { tool: string; requiresApproval: boolean; ap
 export interface AgentPending { id: string; tool: string; vaultId: string; notePath: string; noteId: string | null; preview: string; createdAt: number; input: unknown }
 
 export interface AgentOperation { id: string; tool: string; notePath: string; state: string; undoAvailable: boolean; error: string | null }
-export interface AgentWriteResult { operationId: string; undoAvailable: boolean; notePath: string; newPath?: string; relativePath: string; preview: string }
+export interface AgentWriteResult { operationId: string; undoAvailable: boolean; notePath: string; newPath?: string; relativePath: string; preview: string; indexed?: boolean }
 export interface AgentUndoResult { operationId: string; notePath: string; relativePath: string; restoredVersion: number | null; preview: string }
 
 /** One entry in the unified chat library (Co-Pilot + Notebook history). */
@@ -80,6 +80,7 @@ export const knowledge = {
   agentOperations: () => invoke<AgentOperation[]>('agent_list_operations'),
   agentUndoOperation: (operationId: string) => invoke<AgentUndoResult>('agent_undo_operation', { operationId }),
   agentUndo: (notePath: string) => invoke<{ notePath: string; relativePath: string; restoredVersion: number | null; preview: string }>('agent_undo_last', { notePath }),
+  cancelModelRequest: (requestId: string) => invoke<void>('cancel_model_request', { requestId }),
   createChat: (title: string, origin: ChatOrigin) => invoke<ChatLibrarySession>('create_chat_session', { title, origin }),
   listChats: (query?: string | null, origin?: ChatOrigin | null, limit?: number) => invoke<ChatLibrarySession[]>('list_chat_sessions', { query: query ?? null, origin: origin ?? null, limit: limit ?? 100 }),
   renameChat: (id: string, title: string) => invoke<ChatLibrarySession>('rename_chat_session', { id, title }),

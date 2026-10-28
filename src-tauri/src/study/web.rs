@@ -28,6 +28,9 @@ pub(super) async fn evidence(
     messages: &[Message],
     phase: &impl Fn(&str),
     check: &impl Fn() -> Result<(), String>,
+    request_id: Option<String>,
+    vault_path: Option<String>,
+    session_id: Option<String>,
 ) -> Result<String, String> {
     phase("Checking web sources");
     // Only conversational turns reach the planner; vault excerpts stay out of
@@ -49,6 +52,9 @@ pub(super) async fn evidence(
             provider_id,
             task: "CHAT".into(),
             messages: planning,
+            request_id,
+            vault_path,
+            session_id,
         },
         |_| {},
     )

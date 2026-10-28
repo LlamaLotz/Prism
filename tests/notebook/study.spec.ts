@@ -107,6 +107,7 @@ test('ordinary chat stays on its path and Agent duplicate sends and denial are s
  await toggleAgent(page);await page.getByLabel('Message',{exact:true}).fill('Read the sources');await page.getByLabel('Message',{exact:true}).press('Enter');await page.getByLabel('Message',{exact:true}).fill('Do not send twice');await page.getByLabel('Message',{exact:true}).press('Enter');await expect(page.getByText('Agent answer using selected sources.',{exact:true})).toBeVisible();
  expect(await page.evaluate(()=>(window as any).fixtureCalls.filter((c:any)=>c.command==='append_chat_message'&&c.args.role==='user').length)).toBe(1);
  await page.getByLabel('Message',{exact:true}).fill('{"tool":"edit_note","input":{"noteId":"s1","operations":[]}}');await page.getByRole('button',{name:'Send',exact:true}).click();await page.getByRole('button',{name:'Deny',exact:true}).click();await expect(page.getByRole('button',{name:'Undo operation'})).not.toBeVisible();expect(await page.evaluate(()=>(window as any).fixtureCalls.find((c:any)=>c.command==='agent_resolve_pending').args.approved)).toBe(false);
+ await expect(page.getByText(/The vault change was not applied: The proposed edit note change was denied\./)).toBeVisible();
 });
 test('agent history is a collapsible dropdown capped at half the chat view',async({page})=>{
  await page.setViewportSize({width:1440,height:960});await page.goto(url+'?history');await page.getByRole('button',{name:'Open notebook',exact:true}).click();

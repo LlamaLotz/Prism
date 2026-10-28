@@ -31,6 +31,90 @@ fn strip_verbatim(path: &Path) -> PathBuf {
     path.to_path_buf()
 }
 
+/// Vault notes are Markdown. Anything else would be written to disk but never
+/// indexed, so agent/frontend paths are normalized before publication.
+pub const MAX_NOTE_FOLDER_DEPTH: usize = 5;
+pub const NOTES_MUST_BE_MARKDOWN: &str = "NOTES_MUST_BE_MARKDOWN: Prism notes must use .md";
+
+/// True for a Windows drive/UNC absolute spelling, independent of the host
+/// platform. `Path::is_absolute()` alone misses these on macOS/Linux.
+fn has_windows_prefix(path: &str) -> bool {
+    let bytes = path.as_bytes();
+    (bytes.len() >= 2 && bytes[0].is_ascii_alphabetic() && bytes[1] == b':')
+        || path.starts_with("//")
+}
+
+/// Normalizes a vault-relative note path to a relative Markdown path.
+///
+/// `allow_leading_slash` is for agent tool input: a single leading `/` is
+/// stripped and the remainder is treated as vault-relative. Frontend file
+/// commands must pass `false` so an absolute path is still rejected.
+pub fn normalize_note_path(input: &str, allow_leading_slash: bool) -> Result<PathBuf, String> {
+    let trimmed = input.trim();
+    if trimmed.is_empty() {
+        return Err("Path must not be empty".into());
+    }
+    if trimmed.contains('\0') {
+        return Err("Invalid vault path".into());
+    }
+    let mut normalized = trimmed.replace('\\', "/");
+    if has_windows_prefix(&normalized) {
+        return Err("Path must be relative to the vault".into());
+    }
+    if allow_leading_slash {
+        if let Some(rest) = normalized.strip_prefix('/') {
+            normalized = rest.to_owned();
+        }
+        // `/C:/...` and `//server/share/...` remain absolute after stripping.
+        if has_windows_prefix(&normalized) {
+            return Err("Path must be relative to the vault".into());
+        }
+    } else if normalized.starts_with('/') || Path::new(trimmed).is_absolute() {
+        return Err("Path must be relative to the vault".into());
+    }
+
+    let parts: Vec<&str> = normalized
+        .split('/')
+        .filter(|part| !part.is_empty())
+        .collect();
+    if parts.is_empty() {
+        return Err("Path must not be empty".into());
+    }
+    if parts
+        .iter()
+        .any(|part| *part == "." || *part == ".." || part.contains('\0') || part.contains(':'))
+    {
+        return Err("Invalid vault path".into());
+    }
+    if parts.len() - 1 > MAX_NOTE_FOLDER_DEPTH {
+        return Err(format!(
+            "Folders can be nested up to {MAX_NOTE_FOLDER_DEPTH} levels deep"
+        ));
+    }
+
+    let filename = *parts.last().expect("checked non-empty");
+    let mut path = PathBuf::from(parts.join("/"));
+    match Path::new(filename).extension().and_then(|ext| ext.to_str()) {
+        None => {
+            path.set_extension("md");
+        }
+        Some(ext) if ext.eq_ignore_ascii_case("md") => {}
+        Some(ext) if ext.eq_ignore_ascii_case("markdown") => {
+            path.set_extension("md");
+        }
+        Some(_) => return Err(NOTES_MUST_BE_MARKDOWN.into()),
+    }
+    Ok(path)
+}
+
+/// Whether `path` names a Markdown note. Used by the index/reconcile paths so
+/// `.markdown` and mixed-case extensions stay consistent with agent creation.
+pub fn is_markdown_path(path: &Path) -> bool {
+    path.extension()
+        .and_then(|ext| ext.to_str())
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("md") || ext.eq_ignore_ascii_case("markdown"))
+}
+
 /// Returns the canonical database identity for a filesystem path.
 ///
 /// `components().collect()` collapses repeated separators and rewrites mixed
@@ -122,6 +206,60 @@ pub fn relative_to(root: &Path, path: &Path) -> Option<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn note_paths_gain_a_markdown_extension() {
+        assert_eq!(
+            normalize_note_path("Note", true).unwrap(),
+            PathBuf::from("Note.md")
+        );
+        assert_eq!(
+            normalize_note_path("Folder/Note.markdown", true).unwrap(),
+            PathBuf::from("Folder/Note.md")
+        );
+        assert_eq!(
+            normalize_note_path("Folder/Note.MD", true).unwrap(),
+            PathBuf::from("Folder/Note.MD")
+        );
+    }
+
+    #[test]
+    fn agent_paths_allow_one_leading_slash_but_frontend_paths_do_not() {
+        assert_eq!(
+            normalize_note_path("/Folder/Note", true).unwrap(),
+            PathBuf::from("Folder/Note.md")
+        );
+        assert!(normalize_note_path("/Folder/Note.md", false).is_err());
+    }
+
+    #[test]
+    fn note_paths_reject_windows_absolute_traversal_and_non_markdown() {
+        assert!(normalize_note_path(r"C:\Vault\Note.md", true).is_err());
+        assert!(normalize_note_path(r"\\server\share\Note.md", true).is_err());
+        assert!(normalize_note_path("Folder/../Note.md", true).is_err());
+        assert!(normalize_note_path("Folder/./Note.md", true).is_err());
+        assert!(normalize_note_path("Note.txt", true)
+            .unwrap_err()
+            .starts_with("NOTES_MUST_BE_MARKDOWN:"));
+    }
+
+    #[test]
+    fn note_paths_enforce_depth_and_collapse_separators() {
+        assert!(normalize_note_path("a/b/c/d/e/f.md", true).is_ok());
+        assert!(normalize_note_path("a/b/c/d/e/f/g.md", true).is_err());
+        assert_eq!(
+            normalize_note_path(r"a//b\\c.md", true).unwrap(),
+            PathBuf::from("a/b/c.md")
+        );
+    }
+
+    #[test]
+    fn markdown_detection_accepts_both_extensions_case_insensitively() {
+        assert!(is_markdown_path(Path::new("Note.md")));
+        assert!(is_markdown_path(Path::new("Note.MARKDOWN")));
+        assert!(!is_markdown_path(Path::new("Note.txt")));
+        assert!(!is_markdown_path(Path::new("Note")));
+    }
 
     #[test]
     fn strips_windows_verbatim_prefix() {

@@ -726,7 +726,7 @@ fn write_file(
     if content.len() as u64 > knowledge::note_io::MAX_NOTE_BYTES {
         return Err("NOTE_TOO_LARGE: Notes are limited to 50 MiB.".into());
     }
-    if !matches!(path.extension().and_then(|ext| ext.to_str()), Some("md" | "markdown")) {
+    if !path_util::is_markdown_path(path) {
         return Err("Unsupported note file type".into());
     }
     if path.is_file() && fs::metadata(path).map_err(|e| e.to_string())?.len() > 1024 * 1024 {
@@ -843,17 +843,8 @@ fn create_file(
 ) -> Result<String, String> {
     let _mutation = knowledge::operations::lock()?;
     let root = Path::new(&vault_path);
-    let validated_relative_path = validate_vault_relative_path(&relative_path, true)?;
-    let mut file_path = root.join(validated_relative_path);
-
-    // Ensure extension is .md
-    if let Some(ext) = file_path.extension() {
-        if ext != "md" && ext != "markdown" {
-            file_path.set_extension("md");
-        }
-    } else {
-        file_path.set_extension("md");
-    }
+    let validated_relative_path = path_util::normalize_note_path(&relative_path, false)?;
+    let file_path = root.join(validated_relative_path);
 
     if let Some(parent) = file_path.parent() {
         if !parent.exists() {
@@ -1071,11 +1062,7 @@ fn rename_file(
     let conn = db::init_db(&app_handle)?;
     knowledge::move_path(&conn, &old_path, &new_path)?;
     knowledge::publish_path_change(&app_handle, &conn, &new_path)?;
-    if new
-        .extension()
-        .and_then(|ext| ext.to_str())
-        .is_some_and(|ext| ext.eq_ignore_ascii_case("md"))
-    {
+    if path_util::is_markdown_path(new) {
         knowledge::sync_file(
             &app_handle,
             new,
@@ -2335,6 +2322,7 @@ pub fn run() {
             knowledge::jobs::cancel_knowledge_job,
             knowledge::agent::prepare_ai_enhancement,
             knowledge::models::execute_model,
+            knowledge::models::cancel_model_request_command,
             knowledge::note_io::read_note_chunk,
             knowledge::note_io::begin_note_save,
             knowledge::note_io::append_note_save,
