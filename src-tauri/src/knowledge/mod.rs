@@ -7,6 +7,7 @@ pub mod jobs;
 pub mod models;
 pub mod note_io;
 pub mod operations;
+pub mod research;
 pub mod retrieval;
 pub mod schema;
 pub mod search;

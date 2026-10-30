@@ -372,3 +372,68 @@ export class SettingsApplyError extends Error {
     this.name = 'SettingsApplyError';
   }
 }
+
+// --- Research runtime -------------------------------------------------------
+// Mirrors the Rust research contract exactly; the backend owns the scoring and
+// extraction, the UI only selects and files the resulting sources.
+export type ResearchDepth = 'discover' | 'deep';
+
+export interface ResearchRelevance {
+  lexical: number;
+  domain: number;
+  freshness: number;
+  graphProximity: number;
+  finalScore: number;
+}
+
+export interface ResearchCandidate {
+  key: string;
+  title: string;
+  url: string;
+  domain: string;
+  snippet: string;
+  extractedChars: number;
+  relevance: ResearchRelevance;
+  duplicateOf: string | null;
+  why: string;
+}
+
+export interface ResearchSession {
+  sessionId: string;
+  jobId: string;
+  query: string;
+  depth: ResearchDepth;
+  includeWeb: boolean;
+  useSources: boolean;
+  collectionId: string | null;
+  status: 'queued' | 'running' | 'done' | 'failed' | 'cancelled';
+  phase: string;
+  progress: number;
+  candidates: ResearchCandidate[];
+  addedKeys: string[];
+  error: string | null;
+  created: number;
+}
+
+export interface ResearchStartArgs {
+  vaultPath: string;
+  collectionId?: string;
+  query: string;
+  depth: ResearchDepth;
+  includeWeb: boolean;
+  useSources: boolean;
+  requestId?: string;
+}
+
+export interface ResearchPhaseEvent {
+  jobId: string;
+  sessionId: string;
+  phase: string;
+  progress: number;
+}
+
+export interface ResearchCandidatesEvent {
+  jobId: string;
+  sessionId: string;
+  candidates: ResearchCandidate[];
+}

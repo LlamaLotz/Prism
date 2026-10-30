@@ -16,7 +16,7 @@ export const STUDY_TOOLS: {kind:ToolKind;label:string}[] = [{kind:'table',label:
 /** High-level AI processing phases surfaced by the thinking indicator. */
 export type AiPhase = '' | 'Thinking…' | 'Reading context…' | 'Waiting for model…' | 'Generating…' | 'Using tool…' | 'Finalizing…' | 'Searching…';
 export interface Collection {id:string;title:string;sourceIds:string[];revision:number;cover?:string}
-export interface StudySource {id:string;title:string;path:string;hash:string;text:string;missing:boolean}
+export interface StudySource {id:string;title:string;path:string;hash:string;text:string;missing:boolean;kind?:string;url?:string;retrievedAt?:number}
 export interface StudySnapshot {id:string;sources:StudySource[];context:string;excerpts:boolean;created:number}
 export interface Artifact {id:string;collectionId:string;kind:ToolKind;title:string;version:number;parentId:string|null;snapshotId:string;body:Record<string,any>;created:number}
 export interface ArtifactDetail {artifact:Artifact;snapshot:StudySnapshot;sourcesChanged:boolean;reviews:{cardId:string;intervalDays:number;due:number}[];attempts:{score:number;total:number;created:number}[]}

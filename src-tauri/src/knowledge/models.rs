@@ -418,7 +418,7 @@ async fn polled<T>(
 }
 
 async fn execute_inner(app: &tauri::AppHandle, request: ModelRequest, callback: Option<&(dyn Fn(&str) + Send + Sync)>) -> Result<String, String> {
-    if !["CHAT", "SUMMARIZE", "TAG", "FORMAT", "CLASSIFY", "LINK_SUGGEST", "AI_SCAN"].contains(&request.task.as_str()) {
+    if !["CHAT", "SUMMARIZE", "TAG", "FORMAT", "CLASSIFY", "LINK_SUGGEST", "AI_SCAN", "RESEARCH"].contains(&request.task.as_str()) {
         return Err("Model capability is not available for this task".into());
     }
     let task = request.task.clone();

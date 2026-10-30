@@ -10,8 +10,9 @@ import '../ui/notebook-tokens.css';
 import { NotebookLibrary } from './NotebookLibrary';
 import { StudyPanels, type StudyPane } from './StudyPanels';
 import { StatusMark, type StatusState } from '../ui/StatusMark';
-import { Plus, ArrowLeft, FileText, MoreHorizontal, Table2, ListChecks, Layers, Headphones, Presentation, Network, SlidersHorizontal } from 'lucide-react';
-import type { OmniRouteConfig } from '../../types';
+import { Plus, ArrowLeft, FileText, MoreHorizontal, Table2, ListChecks, Layers, Headphones, Presentation, Network, SlidersHorizontal, ChevronDown, Search, Telescope, Globe } from 'lucide-react';
+import type { OmniRouteConfig, ResearchDepth } from '../../types';
+import { ResearchPanel } from '../research/ResearchPanel';
 
 /** One study-tool generation run with its own lifecycle status. */
 interface GenerationTask { id: string; jobId?:string; progress?:number; collectionId: string; instructions: string; artifactId?: string; kind: ToolKind; parentId: string | null; status: 'preparing' | 'generating' | 'done' | 'failed' | 'cancelled'; error?: string }
@@ -26,10 +27,20 @@ export function StudyWorkspace({vaultPath,onImport,onOpenNote,onOpenSettings,uns
  const [pendingArtifact,setPendingArtifact]=useState('');
  const [revealRevision,setRevealRevision]=useState(0);
  const [adding,setAdding]=useState(false);const [configure,setConfigure]=useState<ToolKind|null>(null);const generationDialog=useRef<HTMLDialogElement>(null);
+ const [research,setResearch]=useState<{key:number;query:string;depth:ResearchDepth}|null>(null);const [researchMenu,setResearchMenu]=useState(false);const researchMenuRoot=useRef<HTMLDivElement>(null);const researchTrigger=useRef<HTMLButtonElement>(null);
+ useEffect(()=>{
+  if(!researchMenu)return;
+  const outside=(event:PointerEvent)=>{if(!researchMenuRoot.current?.contains(event.target as Node))setResearchMenu(false);};
+  const escape=(event:KeyboardEvent)=>{if(event.key==='Escape'){setResearchMenu(false);researchTrigger.current?.focus();}};
+  document.addEventListener('pointerdown',outside);document.addEventListener('keydown',escape);
+  return()=>{document.removeEventListener('pointerdown',outside);document.removeEventListener('keydown',escape);};
+ },[researchMenu]);
+ const isWebSource=(source:StudySource)=>source.kind==='web'||source.id.startsWith('web:');
  useEffect(()=>{if(configure){generationDialog.current?.showModal();return()=>generationDialog.current?.close();}},[configure]);
  const alive=useRef(true);const current=useRef(selected);current.current=selected;const operation=useRef(0);const previewOperation=useRef(0);const notesRevision=useRef(0);
  useEffect(()=>{alive.current=true;return()=>{alive.current=false;operation.current++;};},[]);
  const active=collections.find(c=>c.id===selected);
+ const openResearchRun=(depth:ResearchDepth)=>{setResearchMenu(false);setResearch({key:Date.now(),query:active?.title??'',depth});setPane('sources');};
  const lastSession=useRef<string|null>(null);useEffect(()=>{const session=shared.active;if(session&&session!==lastSession.current){const linked=shared.details[session]?.collectionId;if(linked){setSelected(linked);setLibrary(false);}lastSession.current=session;}},[shared.active,shared.details]);
  const loadCollections=useCallback(async()=>{const rows=await study.request<Collection[]>(vaultPath,'collections');if(alive.current){setCollections(rows);}},[vaultPath]);
  useEffect(()=>{void study.request<Artifact[]>(vaultPath,'artifacts').then(setAllMaterials).catch(()=>{});void loadCollections().catch(e=>setError(String(e)));},[loadCollections]);
@@ -70,11 +81,21 @@ export function StudyWorkspace({vaultPath,onImport,onOpenNote,onOpenSettings,uns
   <header className="study-header"><div className="study-toolbar"><button onClick={()=>setLibrary(true)}><ArrowLeft size={15}/> Back to notebooks</button><div className="study-heading"><span className="study-eyebrow">NOTEBOOK</span><select aria-label="Collection" value={selected} onChange={e=>setSelected(e.target.value)}><option value="">Select collection</option>{collections.map(c=><option key={c.id} value={c.id}>{c.title}</option>)}</select></div><button disabled={busy} onClick={()=>void create()}><Plus size={15}/> New notebook</button><details className="study-menu"><summary aria-label="Notebook actions"><MoreHorizontal size={18}/></summary><div className="study-menu-body"><button onClick={onImport}>Import content</button><button disabled={!active} onClick={()=>void run(async()=>{const title=await dialogs.prompt('Collection name',{initialValue:active?.title});if(title?.trim()&&active)await saveCollection(active.sourceIds,title.trim());})}>Rename collection</button></div></details></div>{error&&<p role="alert">{error}<button onClick={()=>setError('')}>Dismiss</button><button onClick={onOpenSettings}>AI settings</button></p>}</header>
   <StudyPanels revealRevision={revealRevision} vaultPath={vaultPath} active={pane} onActive={setPane}
    sources={<div className="study-sources">
-    {preview?<><div className="study-toolbar"><button onClick={()=>setPreview(null)}><ArrowLeft size={14}/> Sources</button><button disabled={preview.missing} onClick={()=>onOpenNote(preview.path)}>Open in Notes</button></div><h3>{preview.title}</h3><pre className="study-source-preview">{preview.missing?'This note is unavailable.':preview.text}</pre></>:<>
-    <button className="study-add-source" disabled={!active} onClick={()=>setAdding(v=>!v)}><Plus size={16}/> {adding?'Done adding sources':'Add sources'}</button>
+    {preview?<><div className="study-toolbar"><button onClick={()=>setPreview(null)}><ArrowLeft size={14}/> Sources</button>{isWebSource(preview)?(preview.url&&<a className="study-toolbar-link" href={preview.url} target="_blank" rel="noreferrer">Open page</a>):<button disabled={preview.missing} onClick={()=>onOpenNote(preview.path)}>Open in Notes</button>}</div><h3>{preview.title}</h3><pre className="study-source-preview">{preview.missing?'This note is unavailable.':preview.text}</pre></>:<>
+    <div className="study-source-actions">
+     <button className="study-add-source" disabled={!active} onClick={()=>setAdding(v=>!v)}><Plus size={16}/> {adding?'Done adding sources':'Add sources'}</button>
+     <div className="study-research-menu" ref={researchMenuRoot}>
+      <button ref={researchTrigger} type="button" aria-haspopup="menu" aria-expanded={researchMenu} disabled={!active} onClick={()=>setResearchMenu(v=>!v)}>Research <ChevronDown size={14} aria-hidden="true"/></button>
+      {researchMenu&&<div className="study-research-menu-body" role="menu" aria-label="Research options">
+       <button type="button" role="menuitem" onClick={()=>openResearchRun('discover')}><Search size={15} aria-hidden="true"/> Discover</button>
+       <button type="button" role="menuitem" onClick={()=>openResearchRun('deep')}><Telescope size={15} aria-hidden="true"/> Deep Research</button>
+      </div>}
+     </div>
+    </div>
+    {research&&<ResearchPanel key={research.key} vaultPath={vaultPath} collectionId={selected||null} initialQuery={research.query} initialDepth={research.depth} includeWebDefault useSourcesDefault onClose={()=>setResearch(null)} onAdded={async collection=>{setCollections(rows=>rows.map(c=>c.id===collection.id?collection:c));await refreshSelection();}}/>}
     {adding?<div className="study-source-picker"><label className="study-field">Find vault notes<input autoFocus value={query} onChange={e=>{setQuery(e.target.value);setOffset(0);}} placeholder="Search your vault…"/></label><button onClick={onImport}>Import content</button>{notes.map(note=><label className="study-source" key={note.id}><input type="checkbox" disabled={!active||busy} checked={active?.sourceIds.includes(note.id)??false} onChange={e=>{if(active)void run(()=>saveCollection(e.target.checked?[...active.sourceIds,note.id]:active.sourceIds.filter(id=>id!==note.id)));}}/><span>{note.title}<small>{note.path}</small></span></label>)}<div className="study-toolbar"><button disabled={offset===0} onClick={()=>setOffset(o=>Math.max(0,o-100))}>Previous</button><button disabled={next===null} onClick={()=>setOffset(next!)}>Next</button></div></div>:<>
     <p className="study-muted">{sources.length} selected source{sources.length===1?'':'s'}</p>
-    {active?sources.length?sources.map((source,i)=><div className="study-source" key={source.id}><FileText size={17}/><button className="study-source-title" onClick={()=>void run(()=>previewSource(source.id))}>{source.title}<small title={source.path}>{source.path}</small>{source.missing&&<strong>Unavailable</strong>}{unsavedPaths.some(p=>p===source.path||p.endsWith('/'+source.path))&&<strong>Unsaved edits excluded</strong>}</button><details className="study-menu"><summary aria-label={`Actions for ${source.title}`}><MoreHorizontal size={16}/></summary><div className="study-menu-body"><button disabled={busy||i===0} onClick={()=>move(i,-1)}>Move up</button><button disabled={busy||i===sources.length-1} onClick={()=>move(i,1)}>Move down</button><button disabled={busy} onClick={()=>void run(()=>saveCollection(active.sourceIds.filter(id=>id!==source.id)))}>Remove source</button></div></details></div>):<div className="study-empty"><FileText size={28}/><h3>Add your first source</h3><p>Select saved notes from your vault to start learning.</p></div>:<div className="study-empty"><h3>Create a collection</h3><p>Bring your notes together in a notebook.</p></div>}
+    {active?sources.length?sources.map((source,i)=><div className="study-source" key={source.id}>{isWebSource(source)?<><Globe size={17} aria-hidden="true"/><span className="study-source-badge" title="Web source">Web</span></>:<FileText size={17}/>}<button className="study-source-title" onClick={()=>void run(()=>previewSource(source.id))}>{source.title}<small title={source.path}>{source.path}</small>{source.missing&&<strong>Unavailable</strong>}{unsavedPaths.some(p=>p===source.path||p.endsWith('/'+source.path))&&<strong>Unsaved edits excluded</strong>}</button><details className="study-menu"><summary aria-label={`Actions for ${source.title}`}><MoreHorizontal size={16}/></summary><div className="study-menu-body"><button disabled={busy||i===0} onClick={()=>move(i,-1)}>Move up</button><button disabled={busy||i===sources.length-1} onClick={()=>move(i,1)}>Move down</button><button disabled={busy} onClick={()=>void run(()=>saveCollection(active.sourceIds.filter(id=>id!==source.id)))}>Remove source</button></div></details></div>):<div className="study-empty"><FileText size={28}/><h3>Add your first source</h3><p>Select saved notes from your vault to start learning.</p></div>:<div className="study-empty"><h3>Create a collection</h3><p>Bring your notes together in a notebook.</p></div>}
     </>}
     {!!newImports.length&&<div className="study-notice" role="status"><p>{newImports.length} imported notes are ready.</p><button disabled={busy||!active} onClick={()=>void run(async()=>{await saveCollection([...new Set([...(active?.sourceIds??[]),...newImports.map(n=>n.id)])]);setNewImports([]);})}>Add to collection</button><button onClick={()=>setNewImports([])}>Dismiss</button></div>}
     </>}

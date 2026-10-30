@@ -34,8 +34,30 @@ let previewToken='token-1',refreshed=false;
 const documentOutputs=()=>Array.from({length:query.has('paged')?101:importOptions.splitLevel?3:1},(_,i)=>({key:i===0?'root':`section-${i}`,name:`${importOptions.name}${i?` - Section ${i}`:''}.md`,path:`/vault/${importOptions.folder}/${importOptions.name}${i?` - Section ${i}`:''}.md`,markdown:i===0?'# Research 日本\n\nOriginal excerpt 🦀\n\n| Source | Evidence |\n| --- | --- |\n| A | Preserved |':'## Section '+i+'\n\nSection body.',totalChars:query.has('longpreview')?9000:110,conflict:query.has('importconflict')&&!importOptions.separateCopy?'CONFLICT: Generated note was edited. '+ 'long-path/'.repeat(25):null})).filter(o=>!importOptions.excludedOutputs.includes(o.key));
 Object.assign(window,{fixtureCalls:calls});
 Object.defineProperty(window,'__TAURI_EVENT_PLUGIN_INTERNALS__',{value:{unregisterListener:()=>{}}});
-Object.defineProperty(window,'__TAURI_INTERNALS__',{value:{transformCallback:()=>1,unregisterCallback:()=>{},invoke:async(command:string,args:Record<string,unknown>={})=>{
+const eventCallbacks:Record<number,(event:any)=>void>={};const eventHandlers:Record<string,Set<number>>={};let callbackId=0;let researchSession:any=null;
+const emitEvent=(event:string,payload:unknown)=>{for(const id of eventHandlers[event]??[])eventCallbacks[id]?.({event,id,payload});};
+Object.assign(window,{fixtureEmit:emitEvent,fixtureEventCount:(event:string)=>eventHandlers[event]?.size??0,fixtureResearch:()=>researchSession});
+Object.defineProperty(window,'__TAURI_INTERNALS__',{value:{transformCallback:(callback:(event:any)=>void)=>{const id=++callbackId;eventCallbacks[id]=callback;return id;},unregisterCallback:(id:number)=>{delete eventCallbacks[id];},invoke:async(command:string,args:Record<string,unknown>={})=>{
  calls.push({command,args});
+ if(command==='plugin:event|listen'){const {event,handler}=args as any;(eventHandlers[event]??=new Set()).add(handler);return handler;}
+ if(command==='plugin:event|unlisten'){const {event,eventId}=args as any;eventHandlers[event]?.delete(eventId);return;}
+ if(command==='research_start'){
+  if(args.depth==='deep')throw new Error('NOT_AVAILABLE: Deep research requires the local research service.');
+  researchSession={sessionId:'ses1',jobId:'job1',query:args.query,depth:args.depth,includeWeb:args.includeWeb,useSources:args.useSources,collectionId:args.collectionId??null,status:'running',phase:'planning',progress:0,candidates:[],addedKeys:[],error:null,created:1};
+  return {jobId:'job1',sessionId:'ses1'};
+ }
+ if(command==='research_get')return structuredClone(researchSession);
+ if(command==='research_cancel'){if(researchSession)researchSession.status='cancelled';return;}
+ if(command==='research_add_sources')return {id:args.collectionId,title:'Research notebook',sourceIds:args.keys,revision:2};
+ if(command==='research_add_url')return {id:args.collectionId,title:'Research notebook',sourceIds:[args.url],revision:2};
+ if(command==='research_preview')return {title:`Preview ${args.key}`,text:`Extracted text for ${args.key}.`,url:'https://example.com/preview',chars:32};
+ if(command==='study_request'){
+  const payload=args.payload as any;
+  if(args.action==='collections')return [{id:'c1',title:'Research notebook',sourceIds:[],revision:1}];
+  if(args.action==='setChatProvider')return true;
+  if(args.action==='chat')return {session:{id:payload.id},collectionId:null,managed:true,providerId:null,messages:[]};
+  return true;
+ }
  if(command==='list_document_imports')return query.has('documents')&&!['imported','cancelled','undone'].includes(importState)?[{id:'import-1',title:importOptions.name,state:query.has('recovery')?'recovery_required':importState,revision:'revision-1',outputs:documentOutputs().length,needsRefresh:query.has('restart')&&!refreshed}]:[];
  if(command==='get_document_preview'){const offset=Number(args.offset||0);const all=documentOutputs();return {id:'import-1',token:previewToken,options:structuredClone(importOptions),outputs:all.slice(offset,offset+Number(args.limit||100)).map(o=>({...o,markdown:args.contentOffset?'Remaining source text':o.markdown})),offset,total:all.length,warnings:['Some original source locations are unavailable.'],retained:query.has('retained')?['/vault/Previous section.md']:[],skipped:importOptions.excludedOutputs.map((key:string)=>[key,`Excluded ${key}.md`]),needsRefresh:query.has('restart')&&!refreshed};}
  if(command==='update_document_import'){importOptions=structuredClone(args.options);localStorage.setItem('document-options',JSON.stringify(importOptions));previewToken='token-2';refreshed=true;return;}
@@ -85,7 +107,7 @@ function Fixture(){
  const [collapsed,setCollapsed]=useState(query.has('collapsed'));
  return <DocumentImports onPublished={()=>calls.push({command:"refresh_vault"})}><RuntimeActivity><ModelServiceRecovery/><div style={{display:'flex',minHeight:'100vh',background:'var(--color-base)',color:'var(--color-text-hi)'}}>
  <nav aria-label="Navigation" style={{width:collapsed?44:240,flexShrink:0,padding:8,display:'flex',alignItems:'start',alignContent:'flex-start',flexDirection:collapsed?'column':'row',gap:8,flexWrap:'wrap',background:'var(--color-panel)'}}><button className="runtime-button" onClick={()=>setCollapsed(!collapsed)} aria-label="Toggle navigation">☰</button><JobsButton/></nav>
- <main style={{padding:16,minWidth:0,flex:1}}>{query.has('agent')?<div style={{width:'100%',maxWidth:360,height:700}}><AISidebar note={null} allNotes={[]} config={draft.omniRoute} onOpenSettings={()=>{}} onInsertText={()=>{}} onOpenSource={async source=>{calls.push({command:'navigate_source',source});}}/></div>:query.has('settings')?<><AIRoutingSettings draft={draft} setDraft={setDraft}/><button className="runtime-button" onClick={()=>localStorage.setItem('runtime-settings',JSON.stringify(draft))}>Save settings</button></>:<><h1>Workspace</h1>{query.has("enhancements")&&<AIEnhancements path="/vault/note.md" content="Original" onChanged={async()=>{}}/>}{query.has("documents")&&<DocumentSourcesButton path="/vault/Imported.md"/>}</>}</main>
+ <main style={{padding:16,minWidth:0,flex:1}}>{query.has('agent')?<div style={{width:'100%',maxWidth:360,height:700}}><AISidebar note={null} allNotes={[]} vaultPath={query.has('research')?'/vault':undefined} config={draft.omniRoute} onOpenSettings={()=>{}} onInsertText={()=>{}} onOpenSource={async source=>{calls.push({command:'navigate_source',source});}}/></div>:query.has('settings')?<><AIRoutingSettings draft={draft} setDraft={setDraft}/><button className="runtime-button" onClick={()=>localStorage.setItem('runtime-settings',JSON.stringify(draft))}>Save settings</button></>:<><h1>Workspace</h1>{query.has("enhancements")&&<AIEnhancements path="/vault/note.md" content="Original" onChanged={async()=>{}}/>}{query.has("documents")&&<DocumentSourcesButton path="/vault/Imported.md"/>}</>}</main>
  </div></RuntimeActivity></DocumentImports>;
 }
 createRoot(document.getElementById('root')!).render(<ChatLibraryProvider><DialogProvider><Fixture/></DialogProvider></ChatLibraryProvider>);

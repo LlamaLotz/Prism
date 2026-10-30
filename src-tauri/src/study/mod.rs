@@ -35,29 +35,71 @@ fn migrate(c:&Connection)->Result<(),String>{
     if v>1{return Err("Study library requires a newer Prism version".into());}
     c.execute_batch("PRAGMA foreign_keys=ON; CREATE TABLE IF NOT EXISTS collections(id TEXT PRIMARY KEY,title TEXT NOT NULL,sources TEXT NOT NULL DEFAULT '[]',revision INTEGER NOT NULL DEFAULT 1); CREATE TABLE IF NOT EXISTS collection_covers(id TEXT PRIMARY KEY,cover TEXT NOT NULL); CREATE TABLE IF NOT EXISTS snapshots(id TEXT PRIMARY KEY,body TEXT NOT NULL); CREATE TABLE IF NOT EXISTS artifacts(id TEXT PRIMARY KEY,collection_id TEXT NOT NULL,kind TEXT NOT NULL,title TEXT NOT NULL,version INTEGER NOT NULL,parent_id TEXT,snapshot_id TEXT NOT NULL,body TEXT NOT NULL,created INTEGER NOT NULL); CREATE TABLE IF NOT EXISTS chat_preferences(id TEXT PRIMARY KEY,provider_id TEXT NOT NULL); CREATE TABLE IF NOT EXISTS sessions(id TEXT PRIMARY KEY,collection_id TEXT); CREATE TABLE IF NOT EXISTS reviews(artifact_id TEXT NOT NULL,card_id TEXT NOT NULL,interval_days INTEGER NOT NULL,due INTEGER NOT NULL,PRIMARY KEY(artifact_id,card_id)); CREATE TABLE IF NOT EXISTS review_events(id TEXT PRIMARY KEY,artifact_id TEXT NOT NULL,card_id TEXT NOT NULL,rating TEXT NOT NULL,reviewed INTEGER NOT NULL,due INTEGER NOT NULL); CREATE TABLE IF NOT EXISTS attempts(id TEXT PRIMARY KEY,artifact_id TEXT NOT NULL,answers TEXT NOT NULL,score INTEGER NOT NULL,total INTEGER NOT NULL,created INTEGER NOT NULL); PRAGMA user_version=1;").map_err(error)
 }
+fn default_kind()->String{"note".into()}
 #[derive(Clone,Serialize,Deserialize,Debug)]
 #[serde(rename_all="camelCase")]
-pub struct Source { pub id:String, pub title:String, pub path:String, pub hash:String, pub text:String, pub missing:bool }
+pub struct Source {
+    pub id:String, pub title:String, pub path:String, pub hash:String, pub text:String, pub missing:bool,
+    #[serde(default="default_kind")] pub kind:String,
+    #[serde(default)] pub url:Option<String>,
+    #[serde(default,rename="retrievedAt")] pub retrieved_at:Option<i64>,
+}
 #[derive(Clone,Serialize,Deserialize)]
 #[serde(rename_all="camelCase")]
 pub struct Snapshot {pub id:String,pub sources:Vec<Source>,pub context:String,pub excerpts:bool,pub created:i64}
-fn collection(c:&Connection,id:&str)->Result<Value,String>{
+/// Source IDs are namespaced by kind. Legacy collections stored bare note IDs;
+/// they keep working and are normalized on read/save.
+pub(crate) fn normalize_key(key:&str)->String{
+    let key=key.trim();
+    if key.starts_with("note:") || key.starts_with("web:") || key.starts_with("doc:") { key.to_string() }
+    else { format!("note:{key}") }
+}
+fn key_parts(key:&str)->(&str,&str){
+    for kind in ["note:","web:","doc:"] { if let Some(rest)=key.strip_prefix(kind){return(kind.trim_end_matches(':'),rest);} }
+    ("note",key)
+}
+pub(crate) fn collection(c:&Connection,id:&str)->Result<Value,String>{
     c.query_row("SELECT id,title,sources,revision,COALESCE((SELECT cover FROM collection_covers WHERE id=collections.id),'accent') FROM collections WHERE id=?1",[id],|r|{
         let raw:String=r.get(2)?; Ok(json!({"id":r.get::<_,String>(0)?,"title":r.get::<_,String>(1)?,"sourceIds":serde_json::from_str::<Value>(&raw).unwrap_or(json!([])),"revision":r.get::<_,i64>(3)?,"cover":r.get::<_,String>(4)?}))
     }).map_err(error)
 }
-fn source_ids(c:&Connection,id:&str)->Result<Vec<String>,String>{serde_json::from_value(collection(c,id)?["sourceIds"].clone()).map_err(error)}
-fn resolve(c:&Connection,s:&Scope,id:&str)->Result<Source,String>{
-
-    let row:Option<(String,String,i64)>=c.query_row("SELECT title,path,deleted FROM knowledge_notes WHERE vault_id=?1 AND id=?2",params![s.vault_id,id],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?))).optional().map_err(error)?;
-    let Some((title,path,deleted))=row else{return Ok(Source{id:id.into(),title:"Unavailable note".into(),path:String::new(),hash:String::new(),text:String::new(),missing:true})};
+pub(crate) fn source_ids(c:&Connection,id:&str)->Result<Vec<String>,String>{
+    let raw:Vec<String>=serde_json::from_value(collection(c,id)?["sourceIds"].clone()).map_err(error)?;
+    Ok(raw.iter().map(|key|normalize_key(key)).collect())
+}
+pub(crate) fn resolve(c:&Connection,s:&Scope,id:&str)->Result<Source,String>{
+    let normalized=normalize_key(id);
+    let (kind,key)=key_parts(&normalized);
+    if kind=="web"{
+        let Some((meta,text))=crate::knowledge::research::store::snapshot_source(&s.root,key) else{
+            return Ok(Source{id:normalized,title:"Unavailable web source".into(),path:String::new(),hash:String::new(),text:String::new(),missing:true,kind:"web".into(),url:None,retrieved_at:None});
+        };
+        return Ok(Source{id:normalized,title:meta.title,path:meta.url.clone(),hash:meta.hash,text,missing:false,kind:"web".into(),url:Some(meta.url),retrieved_at:Some(meta.fetched_at)});
+    }
+    if kind=="doc"{
+        return Ok(Source{id:normalized,title:"Unavailable document".into(),path:String::new(),hash:String::new(),text:String::new(),missing:true,kind:"doc".into(),url:None,retrieved_at:None});
+    }
+    let row:Option<(String,String,i64)>=c.query_row("SELECT title,path,deleted FROM knowledge_notes WHERE vault_id=?1 AND id=?2",params![s.vault_id,key],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?))).optional().map_err(error)?;
+    let Some((title,path,deleted))=row else{return Ok(Source{id:normalized,title:"Unavailable note".into(),path:String::new(),hash:String::new(),text:String::new(),missing:true,kind:"note".into(),url:None,retrieved_at:None})};
     let relative=crate::path_util::relative_to(&s.root,Path::new(&path)).ok_or("Source is outside vault")?.to_string_lossy().to_string();
-    let mut source=Source{id:id.into(),title,path:relative,hash:String::new(),text:String::new(),missing:deleted!=0};
+    let mut source=Source{id:normalized,title,path:relative,hash:String::new(),text:String::new(),missing:deleted!=0,kind:"note".into(),url:None,retrieved_at:None};
     if deleted!=0 || !Path::new(&path).is_file(){source.missing=true;return Ok(source)}
     operations::validate(&s.root,Path::new(&path))?;
     if std::fs::metadata(&path).map_err(error)?.len()>32*1024*1024{return Err(format!("{} is larger than the 32 MB study source limit",source.title));}
     source.text=std::fs::read_to_string(path).map_err(error)?;
     source.hash=knowledge::blocks::hash(&source.text); Ok(source)
+}
+/// Appends source keys and bumps the collection revision exactly once.
+pub(crate) fn append_source_ids(c:&Connection,id:&str,keys:&[String])->Result<Value,String>{
+    let mut ids=source_ids(c,id)?;let before=ids.len();
+    for key in keys{let key=normalize_key(key);if !ids.contains(&key){ids.push(key);}}
+    if ids.len()>500{return Err("Select at most 500 sources per collection".into());}
+    // Appending only known keys is a no-op; it must not invalidate an
+    // optimistic-concurrency revision the caller is holding.
+    if ids.len()==before{return collection(c,id);}
+    let updated=c.execute("UPDATE collections SET sources=?2,revision=revision+1 WHERE id=?1",params![id,json!(ids).to_string()]).map_err(error)?;
+    if updated==0{return Err("Notebook no longer exists".into());}
+    collection(c,id)
 }
 /// Rank only paragraphs from the explicitly selected source; never search other notes.
 pub fn context(sources:&[Source],query:&str,budget:usize)->(String,bool){
@@ -117,11 +159,11 @@ pub async fn study_request(app:tauri::AppHandle,vault_path:String,action:String,
                 let id=payload["id"].as_str().map(String::from).unwrap_or_else(||uuid::Uuid::new_v4().to_string());
                 if !id.starts_with("legacy-chat:") && id.parse::<uuid::Uuid>().is_err(){return Err("Invalid collection ID".into());}
                 library::unique_title(&c,&id,title)?;
-                let ids:Vec<String>=serde_json::from_value(payload["sourceIds"].clone()).map_err(error)?;
+                let ids:Vec<String>=serde_json::from_value::<Vec<String>>(payload["sourceIds"].clone()).map_err(error)?.into_iter().map(|key|normalize_key(&key)).collect();
                 if ids.len()>500 || ids.iter().collect::<HashSet<_>>().len()!=ids.len(){return Err("Select up to 500 distinct notes".into());}
                 let old=collection(&c,&id).ok();
                 if payload["id"].is_string() && old.is_none(){return Err("Notebook no longer exists".into());}
-                for note in &ids {if old.as_ref().is_some_and(|v|v["sourceIds"].as_array().is_some_and(|a|a.contains(&json!(note)))){continue;} if resolve(&index,&s,note)?.missing{return Err("Cannot add an unavailable note".into());}}
+                for note in &ids {if old.as_ref().is_some_and(|v|v["sourceIds"].as_array().is_some_and(|a|a.iter().any(|prior|prior.as_str().is_some_and(|prior|normalize_key(prior)==*note)))){continue;} if resolve(&index,&s,note)?.missing{return Err("Cannot add an unavailable note".into());}}
                 if let Some(old)=old {if payload["revision"].as_i64()!=old["revision"].as_i64(){return Err("Collection changed; refresh before saving".into());}}
                 c.execute("INSERT INTO collections(id,title,sources) VALUES(?1,?2,?3) ON CONFLICT(id) DO UPDATE SET title=excluded.title,sources=excluded.sources,revision=revision+1",params![id,title,json!(ids).to_string()]).map_err(error)?;Ok(collection(&c,&id)?)
             },            "notes"=>{
@@ -215,6 +257,24 @@ pub fn managed(s:&Scope,id:&str)->Result<bool,String>{db(s)?.query_row("SELECT E
  #[test]fn empty_chat_provider_means_default_model_and_missing_field_is_actionable(){assert_eq!(chat_provider_id(&json!({"providerId":""})).unwrap(),"");assert_eq!(chat_provider_id(&json!({})).unwrap_err(),"Missing providerId; select Default model or a saved provider.");}
  fn setup()->(tempfile::TempDir,Scope,Connection){let dir=tempfile::tempdir().unwrap();let root=std::fs::canonicalize(dir.path()).unwrap();let s=Scope{root,vault_id:"vault".into(),generation:"g".into()};let c=Connection::open_in_memory().unwrap();c.execute_batch("CREATE TABLE knowledge_notes(id TEXT PRIMARY KEY,vault_id TEXT,title TEXT,path TEXT,hash TEXT,deleted INTEGER DEFAULT 0)").unwrap();(dir,s,c)}
  #[test]fn live_references_follow_ids_and_preserve_missing_membership(){let (_dir,s,c)=setup();let path=s.root.join("First.md");std::fs::write(&path,"first revision").unwrap();c.execute("INSERT INTO knowledge_notes(id,vault_id,title,path,hash) VALUES('n','vault','First',?1,'')",[path.to_string_lossy().as_ref()]).unwrap();let old=resolve(&c,&s,"n").unwrap();std::fs::write(&path,"new saved content").unwrap();let new=resolve(&c,&s,"n").unwrap();assert_ne!(old.hash,new.hash);assert_eq!(old.text,"first revision");let renamed=s.root.join("Renamed.md");std::fs::rename(&path,&renamed).unwrap();c.execute("UPDATE knowledge_notes SET path=?1 WHERE id='n'",[renamed.to_string_lossy().as_ref()]).unwrap();assert_eq!(resolve(&c,&s,"n").unwrap().path,"Renamed.md");std::fs::remove_file(renamed).unwrap();assert!(resolve(&c,&s,"n").unwrap().missing);let other=Scope{vault_id:"other".into(),..s.clone()};assert!(resolve(&c,&other,"n").unwrap().missing);}
- #[test]fn selection_context_cannot_read_unselected_notes(){let source=Source{id:"chosen".into(),title:"chosen".into(),path:"chosen.md".into(),text:"alpha\n\nbeta selected evidence".into(),hash:"h".into(),missing:false};let source=Source{text:format!("alpha\n\n{}\n\nbeta selected evidence","distractor paragraph ".repeat(100)),..source};let (text,excerpts)=context(&[source],"beta",160);assert!(excerpts);assert!(text.chars().count()<=160);assert!(text.contains("beta selected"));assert!(!text.contains("private unselected"));}
- #[test]fn collections_and_snapshots_survive_reopen_without_note_copies(){let (_dir,s,_)=setup();{let c=db(&s).unwrap();c.execute("INSERT INTO collections(id,title,sources) VALUES('a','A','[\"one\",\"two\"]'),('b','B','[\"two\"]')",[]).unwrap();}let c=db(&s).unwrap();assert_eq!(source_ids(&c,"a").unwrap(),vec!["one","two"]);assert_eq!(source_ids(&c,"b").unwrap(),vec!["two"]);assert!(!s.root.join("one.md").exists());}
+ #[test]fn selection_context_cannot_read_unselected_notes(){let source=Source{id:"chosen".into(),title:"chosen".into(),path:"chosen.md".into(),text:"alpha\n\nbeta selected evidence".into(),hash:"h".into(),missing:false,kind:"note".into(),url:None,retrieved_at:None};let source=Source{text:format!("alpha\n\n{}\n\nbeta selected evidence","distractor paragraph ".repeat(100)),..source};let (text,excerpts)=context(&[source],"beta",160);assert!(excerpts);assert!(text.chars().count()<=160);assert!(text.contains("beta selected"));assert!(!text.contains("private unselected"));}
+ #[test]fn collections_and_snapshots_survive_reopen_without_note_copies(){let (_dir,s,_)=setup();{let c=db(&s).unwrap();c.execute("INSERT INTO collections(id,title,sources) VALUES('a','A','[\"one\",\"two\"]'),('b','B','[\"two\"]')",[]).unwrap();}let c=db(&s).unwrap();assert_eq!(source_ids(&c,"a").unwrap(),vec!["note:one","note:two"]);assert_eq!(source_ids(&c,"b").unwrap(),vec!["note:two"]);assert!(!s.root.join("one.md").exists());}
+ #[test]fn legacy_and_prefixed_source_keys_resolve_to_the_same_note(){
+  let (_dir,s,c)=setup();let path=s.root.join("First.md");std::fs::write(&path,"first revision").unwrap();
+  c.execute("INSERT INTO knowledge_notes(id,vault_id,title,path,hash) VALUES('n','vault','First',?1,'')",[path.to_string_lossy().as_ref()]).unwrap();
+  let study=db(&s).unwrap();
+  study.execute("INSERT INTO collections(id,title,sources) VALUES('legacy','Legacy','[\"n\"]'),('prefixed','Prefixed','[\"note:n\",\"web:missing\"]')",[]).unwrap();
+  assert_eq!(source_ids(&study,"legacy").unwrap(),vec!["note:n"]);
+  assert_eq!(source_ids(&study,"prefixed").unwrap(),vec!["note:n","web:missing"]);
+  assert_eq!(resolve(&c,&s,"n").unwrap().id,"note:n");
+  assert_eq!(resolve(&c,&s,"note:n").unwrap().text,"first revision");
+  let web=resolve(&c,&s,"web:missing").unwrap();assert!(web.missing);assert_eq!(web.kind,"web");
+ }
+ #[test]fn appending_web_keys_bumps_revision_once_and_skips_duplicates(){
+  let (_dir,s,_c)=setup();let study=db(&s).unwrap();study.execute("INSERT INTO collections(id,title,sources) VALUES('a','A','[\"n\"]')",[]).unwrap();
+  let key=format!("web:{}","a".repeat(64));
+  let first=append_source_ids(&study,"a",&[key.clone(),key.clone()]).unwrap();
+  assert_eq!(first["sourceIds"],json!(["note:n",key.clone()]));assert_eq!(first["revision"],2);
+  let second=append_source_ids(&study,"a",&[key]).unwrap();assert_eq!(second["revision"],2);
+ }
 }

@@ -1,5 +1,5 @@
 import { waitForAgentApproval,resolveAgentApproval } from '../services/agentApprovals';
-import { study } from '../services/study';
+import { study, type Collection } from '../services/study';
 import { AgentReview } from './study/AgentReview';
 import { runAgentTurn } from '../services/agentRunner';
 import { needsAgent } from '../utils/agentIntent';
@@ -8,7 +8,7 @@ import { mergeAgentContext } from '../services/agentContext';
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
   Sparkles, Send, Loader2, RefreshCw, FileText,
-  BookOpen, Link2, Hash, AlertTriangle, Globe, ShieldCheck, Undo2, Eye, Check, X,
+  BookOpen, Link2, Hash, AlertTriangle, Search, ShieldCheck, Undo2, Eye, Check, X,
   ChevronDown, ChevronUp, History, Plus, Pencil, Trash2, ExternalLink
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
@@ -25,6 +25,8 @@ import { PromptBar } from './ui/PromptBar';
 import { useRequestActivity } from './ui/useRequestActivity';
 import { AiStatusLine } from './ui/AiStatusLine';
 import type { ChatModelPicker } from './study/SharedChat';
+import { ResearchPanel } from './research/ResearchPanel';
+import './AISidebar.css';
 
 interface AISidebarProps {
   vaultPath?:string;
@@ -249,6 +251,46 @@ export const AISidebar: React.FC<AISidebarProps> = ({
   // request/tool lifecycle (never a timer). Cleared when a request settles.
   const {phase,setPhase,activity,settle}=useRequestActivity();
   const [searchMode, setSearchMode] = useState(false);
+  const [discoverMode, setDiscoverMode] = useState(false);
+  const [searchMenu, setSearchMenu] = useState(false);
+  const searchMenuRoot = useRef<HTMLDivElement>(null);
+  const searchMenuTrigger = useRef<HTMLButtonElement>(null);
+  const searchMenuBody = useRef<HTMLDivElement>(null);
+  const [researchRun, setResearchRun] = useState<{ key: number; query: string } | null>(null);
+  const [researchCollections, setResearchCollections] = useState<Collection[] | undefined>(undefined);
+  const [researchLibraryError, setResearchLibraryError] = useState('');
+  useEffect(() => {
+    if (!searchMenu) return;
+    const outside = (event: PointerEvent) => {
+      if (!searchMenuRoot.current?.contains(event.target as Node)) setSearchMenu(false);
+    };
+    const keydown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        setSearchMenu(false);
+        searchMenuTrigger.current?.focus();
+        return;
+      }
+      const items = Array.from(searchMenuBody.current?.querySelectorAll<HTMLButtonElement>('[role="menuitemcheckbox"]:not(:disabled), [role="menuitem"]:not(:disabled)') ?? []);
+      if (!items.length) return;
+      const index = items.indexOf(document.activeElement as HTMLButtonElement);
+      let next: number | undefined;
+      if (event.key === 'ArrowDown') next = (index + 1) % items.length;
+      if (event.key === 'ArrowUp') next = (index - 1 + items.length) % items.length;
+      if (event.key === 'Home') next = 0;
+      if (event.key === 'End') next = items.length - 1;
+      if (next !== undefined) { event.preventDefault(); items[next]?.focus(); }
+    };
+    document.addEventListener('pointerdown', outside);
+    document.addEventListener('keydown', keydown);
+    requestAnimationFrame(() => searchMenuBody.current?.querySelector<HTMLButtonElement>('[role="menuitemcheckbox"]')?.focus());
+    return () => { document.removeEventListener('pointerdown', outside); document.removeEventListener('keydown', keydown); };
+  }, [searchMenu]);
+  const chooseSearchOption = (apply: () => void) => {
+    apply();
+    setSearchMenu(false);
+    requestAnimationFrame(() => searchMenuTrigger.current?.focus());
+  };
   const [error, setError] = useState<ErrorDetails | null>(null);
   const [agentMode, setAgentMode] = useState(false);
   const [agentPrompt, setAgentPrompt] = useState<string | null>(null);
@@ -395,7 +437,7 @@ export const AISidebar: React.FC<AISidebarProps> = ({
 
   useEffect(() => {
     if (stickToBottom) chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, isLoading, stickToBottom]);
+  }, [messages, isLoading, stickToBottom, researchRun]);
 
   const handleViewportScroll = () => {
     const el = viewportRef.current;
@@ -553,8 +595,21 @@ export const AISidebar: React.FC<AISidebarProps> = ({
   const handleSubmit = async () => {
     setStickToBottom(true);
     if (isLoading || isSearching || agentPrompt) return;
-    if (!searchMode && !agentMode && needsAgent(inputValue)) { setAgentPrompt(inputValue); return; }
-    if (searchMode) {
+    if (!searchMode && !discoverMode && !agentMode && needsAgent(inputValue)) { setAgentPrompt(inputValue); return; }
+    if (discoverMode) {
+      const query = inputValue.trim();
+      if (!query) return;
+      setInputValue('');
+      setResearchRun({ key: Date.now(), query });
+      setResearchLibraryError('');
+      if (vaultPath) {
+        void study.request<Collection[]>(vaultPath, 'collections', {})
+          .then((rows) => { if (mounted.current) setResearchCollections(rows); })
+          .catch((e) => { if (mounted.current) setResearchLibraryError(String(e)); });
+      } else {
+        setResearchLibraryError('Open a vault to file researched sources in a notebook.');
+      }
+    } else if (searchMode) {
       const query = inputValue.trim();
       setInputValue('');
       await handleSearch(query);
@@ -806,6 +861,22 @@ export const AISidebar: React.FC<AISidebarProps> = ({
           </div>
         )}
 
+        {view === 'chat' && researchRun && (
+          <div className="ai-research-embed">
+            <ResearchPanel
+              key={researchRun.key}
+              vaultPath={vaultPath ?? ''}
+              collections={researchCollections}
+              initialQuery={researchRun.query}
+              includeWebDefault
+              useSourcesDefault={false}
+              autoStart
+              onClose={() => setResearchRun(null)}
+            />
+            {researchLibraryError && <p role="alert">{researchLibraryError}</p>}
+          </div>
+        )}
+
         <div ref={chatEndRef} />
         {!stickToBottom && messages.length > 0 && (
           <div className="sticky bottom-1 flex justify-center pt-1">
@@ -822,7 +893,7 @@ export const AISidebar: React.FC<AISidebarProps> = ({
 
       {/* Input section */}
       {agentMode && <AgentReview onVaultChanged={onVaultChanged} onMessage={async content => { setMessages(previous=>[...previous,{role:'assistant',content}]); }} />}
-      {view === 'chat' && <PromptBar value={inputValue} onChange={setInputValue} onSend={handleSubmit} running={isLoading||isSearching} onStop={()=>{cancelledRequest.current=true;approvalController.current.abort();settle('cancelled');}} model={modelPicker} agent={agentMode} onAgent={setAgentMode} context={note?'Active note context':'Vault context'} placeholder={searchMode?'Search the web...':note?'Chat with active note context...':'Ask Prism AI anything...'} extra={<>{agentMode&&<button type="button" aria-pressed={autoApprove} onClick={()=>setAutoApprove(v=>!v)}>Approve for me {autoApprove?'ON':'OFF'}</button>}<button type="button" aria-pressed={searchMode} onClick={()=>setSearchMode(m=>!m)}><Globe size={14}/> Web</button></>}/> }
+      {view === 'chat' && <PromptBar value={inputValue} onChange={setInputValue} onSend={handleSubmit} running={isLoading||isSearching} onStop={()=>{cancelledRequest.current=true;approvalController.current.abort();settle('cancelled');}} model={modelPicker} agent={agentMode} onAgent={setAgentMode} context={note?'Active note context':'Vault context'} placeholder={discoverMode?'Research a topic…':searchMode?'Search the web...':note?'Chat with active note context...':'Ask Prism AI anything...'} extra={<>{agentMode&&<button type="button" aria-pressed={autoApprove} onClick={()=>setAutoApprove(v=>!v)}>Approve for me {autoApprove?'ON':'OFF'}</button>}<div className="ai-search-control" ref={searchMenuRoot}><button type="button" aria-pressed={searchMode} onClick={()=>setSearchMode(m=>!m)}><Search size={14}/> Web</button><button ref={searchMenuTrigger} type="button" className="ai-search-caret" aria-label="Search options" aria-haspopup="menu" aria-expanded={searchMenu} aria-controls={searchMenu?'ai-search-menu':undefined} onClick={()=>setSearchMenu(v=>!v)}><ChevronDown size={13} aria-hidden="true"/></button>{searchMenu&&<div id="ai-search-menu" ref={searchMenuBody} className="ai-search-menu" role="menu" aria-label="Search options"><button type="button" role="menuitemcheckbox" aria-checked={searchMode} tabIndex={-1} onClick={()=>chooseSearchOption(()=>setSearchMode(v=>!v))}>Web search<span className="ai-search-menu__state">{searchMode?'On':'Off'}</span></button><button type="button" role="menuitemcheckbox" aria-checked={discoverMode} tabIndex={-1} onClick={()=>chooseSearchOption(()=>setDiscoverMode(v=>!v))}>Discover sources<span className="ai-search-menu__state">{discoverMode?'On':'Off'}</span></button><button type="button" role="menuitem" tabIndex={-1} disabled>Deep research (soon)</button></div>}</div></>}/> }
     </div>
   );
 };

@@ -2388,7 +2388,13 @@ pub fn run() {
             replace_chat_transcript,
             unlink_notebook_session,
             relaunch_app,
-            web_search
+            web_search,
+            knowledge::research::research_start,
+            knowledge::research::research_cancel,
+            knowledge::research::research_get,
+            knowledge::research::research_add_sources,
+            knowledge::research::research_add_url,
+            knowledge::research::research_preview
         ])
         .build(app_context())
         .expect("error while building tauri application")

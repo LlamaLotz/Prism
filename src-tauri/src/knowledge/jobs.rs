@@ -87,40 +87,65 @@ pub fn run<T>(
     let id = interrupted
         .clone()
         .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+    run_with_id(app, &id, kind, priority, key, payload, work)
+}
+/// Runs a job with an identity chosen by the caller. Research persists its
+/// session (and its job id) before the detached worker starts, so the id must
+/// be known up front. Queueing, cancellation and completion semantics are
+/// identical to [`run`].
+pub fn run_with_id<T>(
+    app: &tauri::AppHandle,
+    id: &str,
+    kind: &str,
+    priority: i64,
+    key: &str,
+    payload: serde_json::Value,
+    work: impl FnOnce(&JobContext) -> Result<T, String>,
+) -> Result<T, String> {
+    let scope = super::current(app)?;
+    let c = crate::db::init_db(app)?;
+    let existing: Option<String> = c
+        .query_row(
+            "SELECT state FROM knowledge_jobs WHERE id=?1",
+            [id],
+            |r| r.get(0),
+        )
+        .optional()
+        .map_err(|e| e.to_string())?;
     let tx = rusqlite::Transaction::new_unchecked(&c, rusqlite::TransactionBehavior::Immediate)
         .map_err(|e| e.to_string())?;
     let count:i64=tx.query_row("SELECT count(*) FROM knowledge_jobs WHERE state IN ('queued','running','waiting_for_approval')",[],|r|r.get(0)).map_err(|e|e.to_string())?;
     if count >= 256 {
         return Err("Background queue is full; retry when current work finishes".into());
     }
-    let inserted=if interrupted.is_some() {tx.execute("UPDATE knowledge_jobs SET state='queued',progress=0,error=NULL,payload=?2,updated_at=unixepoch() WHERE id=?1 AND state='interrupted'",params![id,payload.to_string()])}
+    let inserted=if existing.as_deref() == Some("interrupted") {tx.execute("UPDATE knowledge_jobs SET state='queued',progress=0,error=NULL,payload=?2,updated_at=unixepoch() WHERE id=?1 AND state='interrupted'",params![id,payload.to_string()])}
     else {tx.execute("INSERT OR IGNORE INTO knowledge_jobs(id,vault_id,kind,dedup,priority,state,payload) VALUES (?1,?2,?3,?4,?5,'queued',?6)",params![id,scope.vault_id,kind,key,priority,payload.to_string()])}.map_err(|e|e.to_string())?;
     tx.commit().map_err(|e| e.to_string())?;
     if inserted == 0 {
         return Err("An identical operation is already queued".into());
     }
-    super::emit(app, &c, &scope.vault_id, "job_changed", &id)?;
+    super::emit(app, &c, &scope.vault_id, "job_changed", id)?;
     let context = JobContext {
         app: app.clone(),
-        id: id.clone(),
+        id: id.to_string(),
         scope: scope.clone(),
     };
     loop {
         context.check()?;
         // One slot reserved for foreground, one for background. Claim atomically.
-        let claimed = claim(&c, &id, priority)?;
+        let claimed = claim(&c, id, priority)?;
         if claimed {
             break;
         }
         std::thread::sleep(Duration::from_millis(40));
     }
-    super::emit(app, &c, &scope.vault_id, "job_changed", &id)?;
+    super::emit(app, &c, &scope.vault_id, "job_changed", id)?;
     let _active = ActiveGuard(ACTIVE.with(|a| a.replace(Some(context.clone()))));
     let result = work(&context).and_then(|value| {
         context.check()?;
         Ok(value)
     });
-    let status = if state(&c, &id)? == "cancelled" {
+    let status = if state(&c, id)? == "cancelled" {
         "cancelled"
     } else if result.is_ok() {
         "succeeded"
@@ -128,7 +153,7 @@ pub fn run<T>(
         "failed"
     };
     c.execute("UPDATE knowledge_jobs SET state=?2,progress=CASE WHEN ?2='succeeded' THEN 1 ELSE progress END,error=?3,updated_at=unixepoch() WHERE id=?1",params![id,status,result.as_ref().err()]).map_err(|e|e.to_string())?;
-    super::emit(app, &c, &scope.vault_id, "job_changed", &id)?;
+    super::emit(app, &c, &scope.vault_id, "job_changed", id)?;
     result
 }
 #[derive(Clone)]

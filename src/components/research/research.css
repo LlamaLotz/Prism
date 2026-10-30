@@ -1,0 +1,370 @@
+/* Shared Research surface — used by the AI sidebar and the Notebook Sources
+   pane. Structure only; colour and depth come from the notebook token contract
+   so the same panel reads correctly in all six theme combinations. */
+
+.research-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  padding: 12px;
+  font-size: 12px;
+  color: var(--nb-text);
+  background: var(--nb-panel);
+  border: 1px solid var(--nb-border);
+  border-radius: var(--nb-radius-sm);
+}
+
+.research-panel *,
+.research-panel *::before,
+.research-panel *::after {
+  box-sizing: border-box;
+}
+
+.research-panel__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.research-panel__head h3 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.4;
+  color: var(--nb-text);
+}
+
+html .research-panel .research-panel__close {
+  padding: 3px 8px;
+  font-size: 12px;
+  color: var(--nb-secondary);
+  background: transparent;
+  border: 1px solid transparent;
+}
+
+html .research-panel .research-panel__close:hover {
+  color: var(--nb-text);
+  background: var(--nb-selection);
+}
+
+.research-panel__field {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  font-size: 12px;
+  color: var(--nb-secondary);
+}
+
+.research-panel__field input,
+.research-panel__field select {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  padding: 7px 9px;
+  font: inherit;
+  font-size: 12px;
+  color: var(--nb-text);
+  background: var(--nb-card);
+  border: 1px solid var(--nb-border);
+  border-radius: var(--nb-radius-sm);
+}
+
+.research-panel__field input:focus-visible,
+.research-panel__field select:focus-visible,
+.research-panel__options input:focus-visible {
+  outline: 2px solid var(--nb-focus);
+  outline-offset: 1px;
+}
+
+.research-panel__options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 16px;
+  font-size: 12px;
+  color: var(--nb-text);
+}
+
+.research-panel__options label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
+
+.research-panel__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+html .research-panel__actions button,
+html .research-footer > button,
+html .research-candidate__actions button,
+html .research-preview-dialog__head button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 28px;
+  padding: 5px 10px;
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--nb-text);
+  background: var(--nb-card);
+  border: 1px solid var(--nb-border);
+  border-radius: var(--nb-radius-sm);
+  cursor: pointer;
+}
+
+html .research-panel__actions button:hover:not(:disabled),
+html .research-footer > button:hover:not(:disabled),
+html .research-candidate__actions button:hover:not(:disabled),
+html .research-preview-dialog__head button:hover:not(:disabled) {
+  background: var(--nb-selection);
+}
+
+html .research-panel__actions button:disabled,
+html .research-footer > button:disabled {
+  color: var(--nb-secondary);
+  cursor: not-allowed;
+}
+
+.research-progress {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: 12px;
+  color: var(--nb-secondary);
+}
+
+.research-progress progress {
+  width: 84px;
+  height: 6px;
+  accent-color: var(--nb-focus);
+}
+
+.research-notice,
+.research-error,
+.research-success,
+.research-panel__hint {
+  margin: 0;
+  padding: 8px 10px;
+  font-size: 12px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+  border-radius: var(--nb-radius-sm);
+}
+
+.research-notice {
+  color: var(--nb-text);
+  background: var(--nb-card);
+  border: 1px solid var(--nb-border);
+}
+
+.research-error {
+  color: var(--nb-text);
+  background: var(--nb-card);
+  border: 1px solid var(--nb-border);
+  border-left: 3px solid var(--status-error, #ef4444);
+}
+
+.research-success {
+  color: var(--nb-text);
+  background: var(--nb-selection);
+  border: 1px solid var(--nb-border);
+}
+
+.research-panel__hint {
+  padding: 0;
+  color: var(--nb-secondary);
+  background: transparent;
+  border: 0;
+}
+
+.research-candidates {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.research-candidate {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  padding: 10px;
+  background: var(--nb-card);
+  border: 1px solid var(--nb-border);
+  border-radius: var(--nb-radius-sm);
+}
+
+.research-candidate[data-duplicate] {
+  opacity: 0.75;
+}
+
+.research-candidate__top {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  min-width: 0;
+}
+
+.research-candidate__top input[type='checkbox'] {
+  margin-top: 3px;
+  flex-shrink: 0;
+}
+
+.research-candidate__body {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  flex: 1;
+}
+
+.research-candidate__title {
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.45;
+  color: var(--nb-text);
+  overflow-wrap: anywhere;
+  text-decoration: underline;
+  text-decoration-color: var(--nb-hairline);
+  text-underline-offset: 2px;
+}
+
+.research-candidate__title:hover {
+  color: var(--nb-focus);
+}
+
+.research-candidate__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+}
+
+.research-chip {
+  max-width: 100%;
+  padding: 1px 7px;
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--nb-secondary);
+  background: var(--nb-panel);
+  border: 1px solid var(--nb-border);
+  border-radius: 999px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.research-chip[data-relevance] {
+  color: var(--nb-text);
+}
+
+.research-chip[data-duplicate] {
+  color: var(--nb-text);
+  border-color: var(--nb-focus);
+}
+
+.research-snippet,
+.research-why {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--nb-text);
+  overflow-wrap: anywhere;
+}
+
+.research-why {
+  color: var(--nb-secondary);
+}
+
+.research-candidate__actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.research-footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 8px;
+  padding-top: 10px;
+  border-top: 1px solid var(--nb-hairline);
+}
+
+.research-footer .research-panel__field {
+  flex: 1 1 170px;
+}
+
+html .research-preview-dialog {
+  width: min(560px, calc(100vw - 32px));
+  max-height: calc(100vh - 32px);
+  margin: auto;
+  padding: 18px;
+  color: var(--nb-text);
+  background: var(--nb-overlay);
+  border: 1px solid var(--nb-border);
+  border-radius: var(--nb-radius);
+  box-shadow: var(--nb-edge), var(--nb-shadow);
+}
+
+.research-preview-dialog::backdrop {
+  background: rgb(0 0 0 / 0.55);
+}
+
+.research-preview-dialog__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.research-preview-dialog__head h3 {
+  margin: 0;
+  font-size: 16px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.research-preview-dialog a {
+  display: inline-block;
+  margin: 10px 0;
+  font-size: 12px;
+  color: var(--nb-focus);
+  overflow-wrap: anywhere;
+}
+
+.research-preview-dialog pre {
+  max-height: 50vh;
+  margin: 10px 0 0;
+  padding: 10px;
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--nb-text);
+  background: var(--nb-card);
+  border: 1px solid var(--nb-border);
+  border-radius: var(--nb-radius-sm);
+  white-space: pre-wrap;
+  overflow: auto;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 700px) {
+  .research-panel {
+    padding: 10px;
+  }
+  .research-candidate__top {
+    flex-wrap: wrap;
+  }
+}

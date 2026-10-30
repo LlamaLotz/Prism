@@ -21,9 +21,30 @@ let modelRound=0;
 const bigPreview=Array.from({length:30},(_,i)=>`- line ${i} removed from the note\n+ line ${i} added with new evidence`).join('\n');
 Object.assign(window,{fixtureCalls:calls,fixtureMessages:messages});
 Object.defineProperty(window,'__TAURI_EVENT_PLUGIN_INTERNALS__',{value:{unregisterListener:()=>{}}});
-Object.defineProperty(window,'__TAURI_INTERNALS__',{value:{transformCallback:()=>1,unregisterCallback:()=>{},invoke:async(command:string,args:any={})=>{
+const eventCallbacks:Record<number,(event:any)=>void>={};const eventHandlers:Record<string,Set<number>>={};let callbackId=0;let researchSession:any=null;
+const emitEvent=(event:string,payload:unknown)=>{for(const id of eventHandlers[event]??[])eventCallbacks[id]?.({event,id,payload});};
+Object.assign(window,{fixtureEmit:emitEvent,fixtureEventCount:(event:string)=>eventHandlers[event]?.size??0,fixtureResearch:()=>researchSession});
+Object.defineProperty(window,'__TAURI_INTERNALS__',{value:{transformCallback:(callback:(event:any)=>void)=>{const id=++callbackId;eventCallbacks[id]=callback;return id;},unregisterCallback:(id:number)=>{delete eventCallbacks[id];},invoke:async(command:string,args:any={})=>{
  calls.push({command,args});
+ if(command==='plugin:event|listen'){const {event,handler}=args;(eventHandlers[event]??=new Set()).add(handler);return handler;}
+ if(command==='plugin:event|unlisten'){const {event,eventId}=args;eventHandlers[event]?.delete(eventId);return;}
  if(command.startsWith('plugin:'))return 1;
+ if(command==='research_start'){
+  if(args.depth==='deep')throw new Error('NOT_AVAILABLE: Deep research requires the local research service.');
+  researchSession={sessionId:'ses1',jobId:'job1',query:args.query,depth:args.depth,includeWeb:args.includeWeb,useSources:args.useSources,collectionId:args.collectionId??null,status:'running',phase:'planning',progress:0,candidates:[],addedKeys:[],error:null,created:1};
+  return {jobId:'job1',sessionId:'ses1'};
+ }
+ if(command==='research_get')return structuredClone(researchSession);
+ if(command==='research_cancel'){if(researchSession)researchSession.status='cancelled';return;}
+ if(command==='research_add_sources'){
+  const collection=collections.find(c=>c.id===args.collectionId);if(!collection)throw new Error('Notebook not found');
+  collection.sourceIds=[...new Set([...collection.sourceIds,...args.keys])];
+  for(const key of args.keys)if(!sources.some(s=>s.id===key))sources.push({id:key,title:`Researched ${key.replace(/^web:/,'')}`,path:`web:${key.replace(/^web:/,'')}`,hash:`hash-${key}`,text:`Extracted web text for ${key}.`,missing:false,kind:'web',url:`https://example.com/${key.replace(/^web:/,'')}`});
+  return structuredClone(collection);
+ }
+ if(command==='research_add_url'){const collection=collections.find(c=>c.id===args.collectionId);if(!collection)throw new Error('Notebook not found');const id=`web:${collection.sourceIds.length+1}`;collection.sourceIds.push(id);sources.push({id,title:args.url,path:args.url,hash:id,text:'Imported web page.',missing:false,kind:'web',url:args.url});return structuredClone(collection);}
+ if(command==='research_preview')return {title:`Preview ${args.key}`,text:`Extracted text for ${args.key}.`,url:'https://example.com/preview',chars:32};
+
  if(command==='list_chat_sessions')return chats;
  if(command==='append_chat_message'){const row={id:`m${messages[args.sessionId].length}`,role:args.role,content:args.content,metadata:args.metadata};messages[args.sessionId].push(row);return row;}
  if(command==='rename_chat_session'){const c=chats.find(c=>c.id===args.id);c.title=args.title;return c;}
