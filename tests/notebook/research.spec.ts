@@ -1,7 +1,6 @@
 import { test, expect, type Page } from '@playwright/test';
 
 const NOTEBOOK = '/tests/notebook/study-harness.html';
-const RUNTIME = '/tests/notebook/runtime-harness.html';
 
 const candidates = [
   {
@@ -129,8 +128,13 @@ test('Deep Research shows the not-available notice without leaving the panel', a
   expect(calls.find((call: any) => call.command === 'research_start').args.depth).toBe('deep');
 });
 
+async function openAssistant(page: Page) {
+  await page.goto(NOTEBOOK);
+  await page.getByRole('button', { name: 'Switch to assistant view' }).click();
+}
+
 test('AI sidebar Web menu turns on Discover and renders research candidates inline', async ({ page }) => {
-  await page.goto(`${RUNTIME}?agent&research&noapproval`);
+  await openAssistant(page);
   await expect(page.getByRole('button', { name: 'Web', exact: true })).toBeVisible();
   const options = page.getByRole('button', { name: 'Search options' });
   await expect(options).toHaveAttribute('aria-expanded', 'false');
@@ -164,4 +168,15 @@ test('AI sidebar Web menu turns on Discover and renders research candidates inli
   await expect(panel.getByRole('link', { name: 'Deep learning overview' })).toBeVisible();
   await expect(panel.getByText('Ranking results', { exact: false })).toBeVisible();
   await expect(page.getByLabel('Add to notebook')).toHaveValue('c1');
+});
+
+test('AI sidebar Web search returns results in the live conversation', async ({ page }) => {
+  await openAssistant(page);
+  await page.getByRole('button', { name: 'Web', exact: true }).click();
+  await page.getByLabel('Message', { exact: true }).fill('rust async runtime');
+  await page.getByRole('button', { name: 'Send', exact: true }).click();
+
+  await expect(page.getByRole('link', { name: 'Example result' })).toBeVisible();
+  const calls = await page.evaluate(() => (window as any).fixtureCalls);
+  expect(calls).toContainEqual({ command: 'web_search', args: { query: 'rust async runtime' } });
 });

@@ -26,6 +26,7 @@ import { useRequestActivity } from './ui/useRequestActivity';
 import { AiStatusLine } from './ui/AiStatusLine';
 import type { ChatModelPicker } from './study/SharedChat';
 import { ResearchPanel } from './research/ResearchPanel';
+import './research/search-control.css';
 import './AISidebar.css';
 
 interface AISidebarProps {
