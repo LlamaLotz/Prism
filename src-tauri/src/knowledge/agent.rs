@@ -63,6 +63,17 @@ pub fn tool_definitions() -> Vec<ToolDefinition> {
 pub struct AgentToolRequest {
     pub tool: String,
     pub input: serde_json::Value,
+    #[serde(default = "web_enabled_default")]
+    pub web_enabled: bool,
+}
+
+fn web_enabled_default() -> bool { true }
+
+fn ensure_web_allowed(tool: &str, web_enabled: bool) -> Result<(), String> {
+    if tool == "web_search" && !web_enabled {
+        return Err("WEB_DISABLED: web access is disabled for this turn".into());
+    }
+    Ok(())
 }
 
 #[derive(Serialize, Debug)]
@@ -1465,6 +1476,7 @@ pub async fn agent_call_tool(
     request: AgentToolRequest,
 ) -> Result<AgentToolResponse, String> {
     let tool = request.tool.clone();
+    ensure_web_allowed(&tool, request.web_enabled)?;
     // Reads — direct, no approval
     match tool.as_str() {
         "web_search" => {
@@ -1998,6 +2010,32 @@ mod tests {
         map.remove(&edit_id);
         map.remove(&other_edit_id);
     }
+
+    #[test]
+    fn web_enabled_defaults_true_for_legacy_requests() {
+        let req: AgentToolRequest =
+            serde_json::from_value(serde_json::json!({"tool":"web_search","input":{"query":"x"}}))
+                .unwrap();
+        assert!(req.web_enabled);
+    }
+
+    #[test]
+    fn web_enabled_honors_camel_case_flag() {
+        let req: AgentToolRequest = serde_json::from_value(serde_json::json!({
+            "tool": "web_search",
+            "input": {"query": "x"},
+            "webEnabled": false
+        }))
+        .unwrap();
+        assert!(!req.web_enabled);
+    }
+
+    #[test]
+    fn web_allowed_only_blocks_web_search_when_disabled() {
+        assert!(ensure_web_allowed("web_search", false).is_err());
+        assert!(ensure_web_allowed("web_search", true).is_ok());
+        assert!(ensure_web_allowed("read_note", false).is_ok());
+    }
 }
 
 
@@ -2074,5 +2112,5 @@ pub async fn prepare_ai_enhancement(app: tauri::AppHandle, task: String, path: S
         },
     };
     if super::current(&app)?.generation != scope.generation { return Err("CONFLICT: Vault changed".into()); }
-    agent_call_tool(app, AgentToolRequest { tool: "edit_note".into(), input: serde_json::json!({"noteId":note_id,"expectedHash":original_hash,"operations":operations,"sourcePath":source_path}) }).await
+    agent_call_tool(app, AgentToolRequest { tool: "edit_note".into(), input: serde_json::json!({"noteId":note_id,"expectedHash":original_hash,"operations":operations,"sourcePath":source_path}), web_enabled: true }).await
 }
