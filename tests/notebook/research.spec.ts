@@ -131,6 +131,7 @@ test('Deep Research shows the not-available notice without leaving the panel', a
 
 test('AI sidebar Web menu turns on Discover and renders research candidates inline', async ({ page }) => {
   await page.goto(`${RUNTIME}?agent&research&noapproval`);
+  await expect(page.getByRole('button', { name: 'Web', exact: true })).toBeVisible();
   const options = page.getByRole('button', { name: 'Search options' });
   await expect(options).toHaveAttribute('aria-expanded', 'false');
   await options.click();

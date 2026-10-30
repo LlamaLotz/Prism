@@ -360,6 +360,30 @@ html .research-preview-dialog {
   overflow-wrap: anywhere;
 }
 
+.research-approval {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--nb-text);
+  background: color-mix(in srgb, var(--nb-focus) 10%, var(--nb-card));
+  border: 1px solid color-mix(in srgb, var(--nb-focus) 45%, var(--nb-border));
+  border-radius: var(--nb-radius-sm);
+}
+
+.research-approval p {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.research-approval__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
 @media (max-width: 700px) {
   .research-panel {
     padding: 10px;

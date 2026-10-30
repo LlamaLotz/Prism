@@ -76,6 +76,7 @@ Object.defineProperty(window,'__TAURI_INTERNALS__',{value:{transformCallback:(ca
  if(command==='study_chat'){messages[args.sessionId].push({id:'user'+Date.now(),role:'user',content:args.message},{id:'reply'+Date.now(),role:'assistant',content:'A grounded answer from your selected sources.'});return true;}
  if(command==='study_generate'){await new Promise(r=>setTimeout(r,query.has('slowTools')?2500:350));if(query.has('failure'))throw new Error('Generation failed. Please retry.');const a={...artifacts.find(a=>a.kind===args.kind)!,id:crypto.randomUUID(),collectionId:args.collectionId,title:'New learning material'};artifacts.push(a);return a;}
  if(command==='study_export')return true;
+ if(command==='list_approvals')return [];
  if(command==='agent_list_tools')return [{name:'read_note',description:'Read a note',requiresApproval:false},{name:'edit_note',description:'Prepare an edit',requiresApproval:true}];
  if(command==='agent_list_pending')return structuredClone(pending);
  if(command==='agent_list_operations')return structuredClone(operations);

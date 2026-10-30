@@ -300,6 +300,7 @@ async fn read_all(
 ) -> Result<Vec<(SearchHit, FetchedPage)>, String> {
     let deadline = Instant::now() + Duration::from_secs(60);
     let mut out = Vec::new();
+    let mut failures = Vec::new();
     for batch in hits.chunks(4) {
         job.check()?;
         if Instant::now() >= deadline {
@@ -318,11 +319,25 @@ async fn read_all(
             ));
         }
         for (hit, handle) in handles {
-            if let Ok(Ok(page)) = handle.await {
-                out.push((hit, page));
+            match handle.await {
+                Ok(Ok(page)) => out.push((hit, page)),
+                Ok(Err(error)) => failures.push(error),
+                Err(error) => failures.push(error.to_string()),
             }
         }
         job.check()?;
+    }
+    // Never finish a run with a silent empty candidate list: surface why the
+    // pages could not be read so the panel can show an actionable error.
+    if out.is_empty() && !hits.is_empty() {
+        let detail = failures
+            .first()
+            .cloned()
+            .unwrap_or_else(|| "No page was read before the deadline.".into());
+        return Err(format!(
+            "Could not read any of the {} search results. {detail}",
+            hits.len()
+        ));
     }
     Ok(out)
 }
@@ -542,13 +557,20 @@ pub(crate) fn run(
     )?;
     job.check()?;
     let heuristics = heuristic_queries(&session.query, &context.terms, session.use_sources);
-    let planned = tauri::async_runtime::block_on(model_queries(
-        app,
-        scope,
-        session,
-        &context,
-        request_id,
-    ));
+    // Query planning is an optimisation, not a dependency. A slow or
+    // unconfigured model must never hold the run at the planning phase, so it
+    // gets a bounded window and falls back to the deterministic queries.
+    let planned = tauri::async_runtime::block_on(async {
+        match tokio::time::timeout(
+            Duration::from_secs(25),
+            model_queries(app, scope, session, &context, request_id),
+        )
+        .await
+        {
+            Ok(queries) => queries,
+            Err(_) => Vec::new(),
+        }
+    });
     job.check()?;
     let queries = merge_queries(&session.query, heuristics, planned);
 

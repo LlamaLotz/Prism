@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { Collection } from '../../services/study';
+import { knowledge, type CloudApproval } from '../../services/knowledge';
 import { researchRuntime, type ResearchPreview } from '../../services/researchRuntime';
 import type { ResearchCandidate, ResearchDepth } from '../../types';
 import { CandidateCard } from './CandidateCard';
@@ -78,6 +79,7 @@ export function ResearchPanel({
   const [error, setError] = useState('');
   const [deepUnavailable, setDeepUnavailable] = useState(false);
   const [preview, setPreview] = useState<ResearchPreview | null>(null);
+  const [approvals, setApprovals] = useState<CloudApproval[]>([]);
   const previewDialog = useRef<HTMLDialogElement>(null);
   const previewClose = useRef<HTMLButtonElement>(null);
   const stopRef = useRef<(() => void) | null>(null);
@@ -267,6 +269,31 @@ export function ResearchPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // External requests wait on privacy consent. Surfacing the pending approval
+  // here keeps a run from looking stalled at its first phase.
+  useEffect(() => {
+    if (!running) { setApprovals([]); return; }
+    let alivePoll = true;
+    const poll = async () => {
+      try {
+        const rows = await knowledge.approvals();
+        if (alivePoll) setApprovals(Array.isArray(rows) ? rows : []);
+      } catch { /* Approval state is best-effort. */ }
+    };
+    void poll();
+    const timer = window.setInterval(() => void poll(), 1500);
+    return () => { alivePoll = false; window.clearInterval(timer); };
+  }, [running]);
+
+  async function resolveApproval(id: string, approved: boolean) {
+    try {
+      await knowledge.approve(id, approved);
+      setApprovals((current) => current.filter((row) => row.id !== id));
+    } catch (e) {
+      setError(`Approval failed. ${errorDetail(e)}`.trim());
+    }
+  }
+
   const progress = phase ? percent(phase.progress) : 0;
   const canAdd = selected.size > 0 && !!destination && !adding;
   const doneEmpty = !running && !error && phase?.phase === 'done' && candidates.length === 0;
@@ -302,6 +329,13 @@ export function ResearchPanel({
       {phase && <span>{progress}%</span>}
     </p>}
 
+    {approvals.length > 0 && <div className="research-approval" role="status">
+      <p>Prism needs your approval to contact <strong>{approvals[0].destination}</strong>. Progress stays on hold until you decide.</p>
+      <div className="research-approval__actions">
+        <button type="button" onClick={() => void resolveApproval(approvals[0].id, true)}>Approve</button>
+        <button type="button" onClick={() => void resolveApproval(approvals[0].id, false)}>Deny</button>
+      </div>
+    </div>}
     {deepUnavailable && <p className="research-notice" role="status">Deep Research is coming in a later update. Use Discover for now.</p>}
     {doneEmpty && <p className="research-notice" role="status">No new sources were found for this topic. Try a broader question.</p>}
     {error && <p className="research-error" role="alert">{error}</p>}

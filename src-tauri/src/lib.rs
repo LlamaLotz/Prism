@@ -5,7 +5,6 @@ mod document_model;
 #[cfg(feature = "ingest-rust")]
 mod native_ingest;
 use rusqlite::params;
-use scraper::{Html, Selector};
 use std::fs;
 #[cfg(target_os = "windows")]
 use std::os::windows::process::CommandExt;
@@ -19,6 +18,7 @@ mod config;
 mod db;
 mod engine;
 mod knowledge;
+mod search;
 pub mod linker;
 pub mod menu;
 mod path_util;
@@ -2133,73 +2133,12 @@ async fn relaunch_app(app: tauri::AppHandle) -> Result<(), String> {
     Ok(())
 }
 
-/// Searches the web via DuckDuckGo's HTML-lite endpoint (no API key needed)
-/// and returns the top results. The response body is parsed with the scraper
-/// crate — the HTML structure is simple enough for CSS selectors.
+/// Searches the web and returns the top results. DuckDuckGo is tried first;
+/// when it serves a bot challenge, public keyless APIs (Wikipedia, Stack
+/// Exchange, Hacker News) keep search usable. See `search::run`.
 #[tauri::command]
 async fn web_search(app: tauri::AppHandle, query: String) -> Result<Vec<WebSearchResult>, String> {
-    let consent_query = query.clone();
-    tauri::async_runtime::spawn_blocking(move || {
-        knowledge::models::authorize(
-            &app,
-            "https://html.duckduckgo.com",
-            "WEB_SEARCH",
-            &consent_query,
-            false,
-            false,
-        )
-    })
-    .await
-    .map_err(|e| e.to_string())??;
-    let url = format!(
-        "https://html.duckduckgo.com/html/?q={}",
-        urlencoding::encode(&query)
-    );
-
-    let body = reqwest::get(&url)
-        .await
-        .map_err(|e| format!("Network error: {e}"))?
-        .text()
-        .await
-        .map_err(|e| format!("Failed to read response: {e}"))?;
-
-    let document = Html::parse_document(&body);
-    let link_sel = Selector::parse(".result__a").map_err(|e| e.to_string())?;
-    let snippet_sel = Selector::parse(".result__snippet").map_err(|e| e.to_string())?;
-    let container_sel = Selector::parse(".result.results_links").map_err(|e| e.to_string())?;
-
-    let mut results = Vec::new();
-    for container in document.select(&container_sel) {
-        let title = container
-            .select(&link_sel)
-            .next()
-            .map(|el| el.text().collect::<String>().trim().to_string())
-            .unwrap_or_default();
-        let url = container
-            .select(&link_sel)
-            .next()
-            .and_then(|el| el.value().attr("href"))
-            .unwrap_or("")
-            .to_string();
-        let snippet = container
-            .select(&snippet_sel)
-            .next()
-            .map(|el| el.text().collect::<String>().trim().to_string())
-            .unwrap_or_default();
-
-        if !title.is_empty() {
-            results.push(WebSearchResult {
-                title,
-                url,
-                snippet,
-            });
-        }
-        if results.len() >= 5 {
-            break;
-        }
-    }
-
-    Ok(results)
+    search::run(app, query).await
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
