@@ -134,13 +134,16 @@ test.describe('full application composition', () => {
     const shared = page.locator('.study-assistant');
     const conversations = shared.getByRole('combobox', { name: 'Conversation' });
     const verifyAlignment = async () => {
-      const [heading, selector] = await Promise.all([
-        shared.locator('.study-toolbar h2').boundingBox(),
-        conversations.boundingBox(),
-      ]);
-      expect(heading).not.toBeNull();
-      expect(selector).not.toBeNull();
-      expect(Math.abs(heading!.x - selector!.x)).toBeLessThanOrEqual(1);
+      // The assistant sidebar animates width for 180ms. Measure only once the
+      // heading and conversation selector have reached their resting positions.
+      await expect.poll(async () => {
+        const [heading, selector] = await Promise.all([
+          shared.locator('.study-toolbar h2').boundingBox(),
+          conversations.boundingBox(),
+        ]);
+        if (!heading || !selector) return Number.POSITIVE_INFINITY;
+        return Math.abs(heading.x - selector.x);
+      }, { timeout: 5000 }).toBeLessThanOrEqual(1);
     };
 
     await verifyAlignment();
