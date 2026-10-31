@@ -108,15 +108,18 @@ export function getAppIcon(id?: string, themeMode?: 'dark' | 'light'): string {
 /**
  * Resolves the startup splash logo from the stored app-icon id.
  *
- * The splash is always black, so it always uses the dark-mode SVG variant even
- * when the app itself is in light mode. Unlike getAppIcon(), this never falls
- * back to the raster /logo.png — an unknown or empty id uses /logo.svg.
- * Data-URL uploads pass through untouched.
+ * The splash is always black, so it always uses the dark-mode variant even when
+ * the app itself is in light mode. The default is the raster /logo.png: the
+ * splash draws the artwork into a canvas before uploading it as a WebGL
+ * texture, and WebKit drops the embedded raster layers of these SVGs when they
+ * are rasterized that way — leaving only the vector strokes. The PNG carries
+ * the same artwork and decodes everywhere. Data-URL uploads pass through
+ * untouched.
  */
 export function getSplashLogo(id?: string): string {
-  if (!id) return '/logo.svg';
+  if (!id) return '/logo.png';
   if (id.startsWith('data:')) return id;
-  return DARK_ICON_MAP[id] ?? '/logo.svg';
+  return DARK_ICON_MAP[id] ?? '/logo.png';
 }
 
 /**
