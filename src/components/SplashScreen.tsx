@@ -12,6 +12,7 @@ import {
 } from './liquid-glass-logo-renderer';
 import { getSplashLogo } from '../services/appIcon';
 import { usePrefersReducedMotion } from '../utils/usePrefersReducedMotion';
+import { APP_VERSION } from '../version';
 import './SplashScreen.css';
 
 interface SplashScreenProps {
@@ -212,6 +213,9 @@ export function SplashScreen({ isLoading, onFinish, logo }: SplashScreenProps) {
             active={isLoading}
           />
         )}
+      </div>
+      <div className="splash-version" aria-label={`Prism version ${APP_VERSION}`}>
+        v{APP_VERSION}
       </div>
     </div>
   );

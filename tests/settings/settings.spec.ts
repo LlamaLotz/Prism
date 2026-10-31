@@ -1,5 +1,10 @@
 import { expect, test } from '@playwright/test';
 
+test('settings shows the app version', async ({ page }) => {
+  await page.goto('/tests/settings/harness.html');
+  await expect(page.getByText(/^Prism v\d+\.\d+\.\d+$/)).toBeVisible();
+});
+
 for (const action of ['Save Changes', 'Apply & Close']) {
   test(`${action} awaits completion and prevents duplicate saves and closing`, async ({ page }) => {
     await page.goto('/tests/settings/harness.html');

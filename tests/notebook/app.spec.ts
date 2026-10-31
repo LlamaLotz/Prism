@@ -3,6 +3,11 @@ import { openConversationMenu } from './assistant-menu';
 
 const url = '/tests/notebook/app-harness.html';
 
+test('splash shows the app version', async ({ page }) => {
+  await page.goto(url);
+  await expect(page.locator('.splash-version')).toHaveText(/^v\d+\.\d+\.\d+$/);
+});
+
 // The real app boots behind the startup splash; the heavy UI mounts once boot
 // finishes. Waiting for the composition's landing element is the readiness
 // signal, and every test asserts the app never hit its error boundary.

@@ -28,6 +28,7 @@ import {
   Download,
 } from 'lucide-react';
 import { AppSettings, SettingsApplyError, tauriAPI } from '../types';
+import { APP_VERSION } from '../version';
 import {
   checkForAppUpdate,
   downloadAndInstallAppUpdate,
@@ -1021,6 +1022,9 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
             </button>
           ))}
         </nav>
+        <div className="shrink-0 px-5 py-3 border-t border-slate-900 text-[11px] font-mono tracking-[0.08em] text-[var(--color-text-muted)]">
+          Prism v{APP_VERSION}
+        </div>
       </aside>
 
       {/* Main content */}

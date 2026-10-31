@@ -62,3 +62,17 @@
     display: none;
   }
 }
+
+/* Build identity watermark in the bottom-right corner. */
+.splash-version {
+  position: absolute;
+  right: 1.25rem;
+  bottom: 1rem;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.2;
+  letter-spacing: 0.12em;
+  color: rgba(255, 255, 255, 0.5);
+  pointer-events: none;
+  user-select: none;
+}
