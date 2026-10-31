@@ -273,16 +273,37 @@ export function normalizeLiquidGlassLogo(value: LiquidGlassLogoTuning): LiquidGl
 
 type Raster = { canvas: HTMLCanvasElement; box: [number, number] };
 
-function loadImage(src: string) {
-  return new Promise<HTMLImageElement | null>((resolve) => {
-    if (!src) return resolve(null);
-    const image = new Image();
-    image.crossOrigin = 'anonymous';
-    image.decoding = 'async';
-    image.onload = () => resolve(image);
-    image.onerror = () => resolve(null);
+// Only cross-origin HTTP assets need CORS mode. Asking for it on a same-origin
+// SVG makes WebKit refuse to load the raster layers embedded in the file, so
+// the canvas raster would come back with its vector strokes only.
+function needsCors(src: string) {
+  if (!/^https?:/i.test(src)) return false;
+  try {
+    return new URL(src).origin !== window.location.origin;
+  } catch {
+    return false;
+  }
+}
+
+async function loadImage(src: string): Promise<HTMLImageElement | null> {
+  if (!src) return null;
+  const image = new Image();
+  if (needsCors(src)) image.crossOrigin = 'anonymous';
+  image.decoding = 'async';
+  const loaded = await new Promise<boolean>((resolve) => {
+    image.onload = () => resolve(true);
+    image.onerror = () => resolve(false);
     image.src = src;
   });
+  if (!loaded) return null;
+  // An SVG's embedded <image> layers decode after `onload`; drawing straight
+  // away drops them, so wait for the full decode where the engine supports it.
+  try {
+    await image.decode();
+  } catch {
+    // Best effort: a decode failure still leaves the image usable.
+  }
+  return image;
 }
 
 const nextPowerOfTwo = (value: number) => 2 ** Math.ceil(Math.log2(Math.max(2, value)));
