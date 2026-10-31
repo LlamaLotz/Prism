@@ -984,6 +984,9 @@ export function GridScan({
 
     const onPointerMove = (event: PointerEvent) => {
       const s = settingsRef.current;
+      // A non-interactive room never reacts to the pointer, so it must not
+      // wake the loop either: every wake costs a full redraw.
+      if (!s.interactive) return;
       const { u, v, inside } = locate(event);
       pointer.x = u;
       pointer.y = v;
@@ -992,7 +995,7 @@ export function GridScan({
       if (inside) {
         window.clearTimeout(leaveTimer);
         leaveTimer = 0;
-        if (s.interactive && !reduce) setLook(u * 2 - 1, v * 2 - 1, true);
+        if (!reduce) setLook(u * 2 - 1, v * 2 - 1, true);
         wake();
       } else if (was && !leaveTimer) {
         leaveTimer = window.setTimeout(() => {
@@ -1019,6 +1022,7 @@ export function GridScan({
     };
 
     const onPointerLeave = () => {
+      if (!settingsRef.current.interactive) return;
       pointer.inside = false;
       look.held = false;
       wake();

@@ -100,7 +100,8 @@ function SplashLogoShine({ frameRef, logoSrc, active }: SplashLogoShineProps) {
  * A GridScan room sits behind the logo. It mounts with the splash so its
  * shaders compile while the logo SVG loads, but it only reveals itself — and
  * starts its own first scan — once the logo reports ready, so both entrances
- * begin on the same beat and land together.
+ * begin on the same beat and land together. After that single sweep the room
+ * freezes on its fully revealed state: boot work owns the machine from there.
  */
 export function SplashScreen({ isLoading, onFinish, logo }: SplashScreenProps) {
   const [fade, setFade] = useState(false);
@@ -208,14 +209,14 @@ export function SplashScreen({ isLoading, onFinish, logo }: SplashScreenProps) {
           scanColor="#38BDF8"
           cells={8}
           depth={3}
-          scanDuration={3.6}
-          scanDelay={2.4}
           introDuration={logoFinishTime}
           intro={gridStarted}
-          autoScan={gridStarted}
-          glow={0.5}
-          dpr={1.25}
-          parallax={gridStarted ? 0.7 : 0}
+          autoScan={false}
+          interactive={false}
+          parallax={0}
+          reflection={0}
+          glow={0.4}
+          dpr={1}
           clickEffect="none"
         />
       </div>
