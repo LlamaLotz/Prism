@@ -10,7 +10,6 @@ import {
   liquidGlassLogoDefaults,
   logoFinishTime,
 } from './liquid-glass-logo-renderer';
-import { GridScan } from './GridScan';
 import { getSplashLogo } from '../services/appIcon';
 import { usePrefersReducedMotion } from '../utils/usePrefersReducedMotion';
 import './SplashScreen.css';
@@ -96,18 +95,11 @@ function SplashLogoShine({ frameRef, logoSrc, active }: SplashLogoShineProps) {
  * The ReactDrops component is used as shipped: the sphere-to-tile entrance,
  * wavelength refraction, chromatic edges, measured fitting and image fallback
  * all come from its own renderer/shader.
- *
- * A GridScan room sits behind the logo. It mounts with the splash so its
- * shaders compile while the logo SVG loads, but it renders a single still
- * frame: the entrance is a compositor-only aperture on the wrapper, timed to
- * begin on the logo's first frame and finish before the logo settles. Nothing
- * in WebGL animates while boot work owns the machine.
  */
 export function SplashScreen({ isLoading, onFinish, logo }: SplashScreenProps) {
   const [fade, setFade] = useState(false);
   const [introDone, setIntroDone] = useState(false);
   const [fallback, setFallback] = useState(false);
-  const [gridStarted, setGridStarted] = useState(false);
   const frameRef = useRef<HTMLDivElement | null>(null);
   const logoHostRef = useRef<HTMLDivElement | null>(null);
   const prefersReducedMotion = usePrefersReducedMotion();
@@ -144,14 +136,10 @@ export function SplashScreen({ isLoading, onFinish, logo }: SplashScreenProps) {
         // No WebGL: the component's own image fallback is already the final
         // logo, so there is no entrance to wait for (or shine over).
         setFallback(true);
-        setGridStarted(true);
         finish();
         return true;
       }
       if (host.querySelector('.liquid-glass-logo[data-liquid-glass-ready]')) {
-        // The logo's first frame is the shared start signal: the grid fades in
-        // and runs its reveal sweep over the same 1.8 s the logo settles in.
-        setGridStarted(true);
         if (prefersReducedMotion) {
           finish();
         } else if (settleTimer === undefined) {
@@ -203,29 +191,13 @@ export function SplashScreen({ isLoading, onFinish, logo }: SplashScreenProps) {
         fade ? 'opacity-0 pointer-events-none' : 'opacity-100'
       }`}
     >
-      <div className="splash-grid" data-active={gridStarted} aria-hidden="true">
-        <GridScan
-          linesColor="#334155"
-          scanColor="#38BDF8"
-          cells={8}
-          depth={3}
-          intro={false}
-          autoScan={false}
-          interactive={false}
-          parallax={0}
-          reflection={0.35}
-          glow={0.5}
-          dpr={1.25}
-          clickEffect="none"
-        />
-      </div>
-      <div ref={frameRef} className="relative z-10 w-[min(90vw,48rem)]">
+      <div ref={frameRef} className="relative w-[min(90vw,48rem)]">
         <div ref={logoHostRef}>
           <LiquidGlassLogo
             logo={logoSrc}
             ending="logo"
             theme="dark"
-            background="transparent"
+            background="#000000"
             logoColor="original"
             depth={2.9}
             height={480}

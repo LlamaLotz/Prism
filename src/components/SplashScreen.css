@@ -62,34 +62,3 @@
     display: none;
   }
 }
-
-/* The room behind the logo. It is mounted with the splash so its WebGL
-   programs compile while the logo SVG loads, but it draws a single still
-   frame. The entrance is compositor-only: an aperture that opens from the
-   centre outward — the same read as the room's depth reveal — timed to start
-   on the logo's first frame and finish before the logo settles. */
-.splash-grid {
-  position: absolute;
-  inset: 0;
-  z-index: 0;
-  opacity: 0;
-  clip-path: inset(50% 50% 50% 50%);
-  pointer-events: none;
-  transition:
-    opacity 400ms ease-out,
-    clip-path 1300ms cubic-bezier(0.22, 0.61, 0.36, 1);
-}
-
-.splash-grid[data-active='true'] {
-  opacity: 1;
-  clip-path: inset(0%);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .splash-grid {
-    clip-path: inset(0%);
-    transition:
-      opacity 200ms ease-out,
-      clip-path 0ms;
-  }
-}
