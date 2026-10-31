@@ -89,6 +89,7 @@ for (const theme of ['industrial','gloss']) for (const mode of ['light','dark'])
   await page.screenshot({path:`test-results/routing-${theme}-${mode}.png`});
   await page.goto(`/tests/notebook/runtime-harness.html?theme=${theme}&mode=${mode}&noapproval&agent&collapsed`);
   await page.getByRole('button',{name:'Agent OFF'}).click();
+  await page.getByRole('button',{name:/Agent history/}).click();
   await expect(page.getByRole('button',{name:'Approve',exact:true})).toBeVisible();
   await page.screenshot({path:`test-results/agent-${theme}-${mode}.png`});
   await expect.poll(()=>page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);

@@ -76,7 +76,7 @@ test('Notebook Default model uses global Gemini without a saved provider profile
  expect(JSON.stringify([saved,requests])).not.toContain('fixture-only-key');
 });
 test('Agent preview requires approval and supports undo',async({page})=>{
- await page.goto(url);await page.getByRole('button',{name:'Open notebook',exact:true}).click();await toggleAgent(page);await page.getByLabel('Message',{exact:true}).fill('{"tool":"edit_note","input":{"noteId":"s1","operations":[]}}');await page.getByRole('button',{name:'Send',exact:true}).click();await expect(page.getByRole('button',{name:'Approve',exact:true})).toBeVisible();
+ await page.goto(url);await page.getByRole('button',{name:'Open notebook',exact:true}).click();await toggleAgent(page);await page.getByLabel('Message',{exact:true}).fill('{"tool":"edit_note","input":{"noteId":"s1","operations":[]}}');await page.getByRole('button',{name:'Send',exact:true}).click();await page.getByRole('button',{name:/Agent history/}).click();await expect(page.getByRole('button',{name:'Approve',exact:true})).toBeVisible();
  expect(await page.evaluate(()=>(window as any).fixtureCalls.some((c:any)=>c.command==='agent_resolve_pending'))).toBe(false);await page.getByRole('button',{name:'Approve',exact:true}).click();await page.getByRole('button',{name:'Undo operation'}).click();await expect(page.getByText('Undid operation on Test.md.')).toBeVisible();
 });
 test('cancel and vault change prevent subsequent Agent tool calls',async({page})=>{
@@ -106,7 +106,7 @@ test('ordinary chat stays on its path and Agent duplicate sends and denial are s
  expect(await page.evaluate(()=>(window as any).fixtureCalls.filter((c:any)=>c.command==='study_chat').length)).toBe(1);
  await toggleAgent(page);await page.getByLabel('Message',{exact:true}).fill('Read the sources');await page.getByLabel('Message',{exact:true}).press('Enter');await page.getByLabel('Message',{exact:true}).fill('Do not send twice');await page.getByLabel('Message',{exact:true}).press('Enter');await expect(page.getByText('Agent answer using selected sources.',{exact:true})).toBeVisible();
  expect(await page.evaluate(()=>(window as any).fixtureCalls.filter((c:any)=>c.command==='append_chat_message'&&c.args.role==='user').length)).toBe(1);
- await page.getByLabel('Message',{exact:true}).fill('{"tool":"edit_note","input":{"noteId":"s1","operations":[]}}');await page.getByRole('button',{name:'Send',exact:true}).click();await page.getByRole('button',{name:'Deny',exact:true}).click();await expect(page.getByRole('button',{name:'Undo operation'})).not.toBeVisible();expect(await page.evaluate(()=>(window as any).fixtureCalls.find((c:any)=>c.command==='agent_resolve_pending').args.approved)).toBe(false);
+ await page.getByLabel('Message',{exact:true}).fill('{"tool":"edit_note","input":{"noteId":"s1","operations":[]}}');await page.getByRole('button',{name:'Send',exact:true}).click();await page.getByRole('button',{name:/Agent history/}).click();await page.getByRole('button',{name:'Deny',exact:true}).click();await expect(page.getByRole('button',{name:'Undo operation'})).not.toBeVisible();expect(await page.evaluate(()=>(window as any).fixtureCalls.find((c:any)=>c.command==='agent_resolve_pending').args.approved)).toBe(false);
  await expect(page.getByText(/The vault change was not applied: The proposed edit note change was denied\./)).toBeVisible();
 });
 test('agent history is a collapsible dropdown capped at half the chat view',async({page})=>{
@@ -115,8 +115,13 @@ test('agent history is a collapsible dropdown capped at half the chat view',asyn
  await page.getByLabel('Message',{exact:true}).fill('{"tool":"edit_note","input":{"noteId":"s1","operations":[]}}');
  await page.getByRole('button',{name:'Send',exact:true}).click();
  const toggle=page.getByRole('button',{name:/Agent history/});const drawer=page.locator('.agent-history');const chat=page.locator('.study-chat');
- await expect(page.getByRole('button',{name:'Approve',exact:true})).toBeVisible();
+ await expect(toggle).toHaveAttribute('aria-expanded','false');
+ await expect(page.locator('.star-glow')).toBeVisible();
+ await expect(page.getByRole('button',{name:'Approve',exact:true})).toHaveCount(0);
+ await expect(page.locator('.star-glow')).toHaveCount(0);
+ await toggle.click();
  await expect(toggle).toHaveAttribute('aria-expanded','true');
+ await expect(page.getByRole('button',{name:'Approve',exact:true})).toBeVisible();
  const chatHeight=await chat.evaluate(el=>el.getBoundingClientRect().height);
  const drawerHeight=await drawer.evaluate(el=>el.getBoundingClientRect().height);
  expect(drawerHeight).toBeLessThanOrEqual(chatHeight*0.5+1);
@@ -126,6 +131,10 @@ test('agent history is a collapsible dropdown capped at half the chat view',asyn
  await toggle.click();await expect(toggle).toHaveAttribute('aria-expanded','false');
  await page.getByLabel('Message',{exact:true}).fill('{"tool":"edit_note","input":{"noteId":"s1","operations":[]}}');
  await page.getByRole('button',{name:'Send',exact:true}).click();
+ await expect(page.locator('.star-glow')).toBeVisible();
+ await expect(toggle).toHaveAttribute('aria-expanded','false');
+ await expect(page.getByRole('button',{name:'Approve',exact:true})).toHaveCount(0);
+ await toggle.click();
  await expect(page.getByRole('button',{name:'Approve',exact:true})).toBeVisible();
  await expect(toggle).toHaveAttribute('aria-expanded','true');
 });
@@ -134,6 +143,12 @@ for(const theme of ['industrial','gloss'])for(const mode of ['light','dark'])tes
  await toggleAgent(page);
  await page.getByLabel('Message',{exact:true}).fill('{"tool":"edit_note","input":{"noteId":"s1","operations":[]}}');
  await page.getByRole('button',{name:'Send',exact:true}).click();
+ const toggle=page.getByRole('button',{name:/Agent history/});
+ await expect(page.locator('.star-glow')).toBeVisible();
+ await expect(toggle).toHaveAttribute('aria-expanded','false');
+ await expect(page.locator('.star-glow')).toHaveCount(0);
+ await toggle.click();
+ await expect(toggle).toHaveAttribute('aria-expanded','true');
  await expect(page.getByRole('button',{name:'Approve',exact:true})).toBeVisible();
  const chatHeight=await page.locator('.study-chat').evaluate(el=>el.getBoundingClientRect().height);
  const drawerHeight=await page.locator('.agent-history').evaluate(el=>el.getBoundingClientRect().height);

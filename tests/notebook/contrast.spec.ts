@@ -191,6 +191,7 @@ test.describe('rendered contrast', () => {
       await toggleAgent(page);
       await page.getByLabel('Message', { exact: true }).fill('{"tool":"edit_note","input":{"noteId":"s1","operations":[]}}');
       await page.getByRole('button', { name: 'Send', exact: true }).click();
+      await page.getByRole('button', { name: /Agent history/ }).click();
       await expect(page.getByRole('button', { name: 'Approve', exact: true })).toBeVisible();
       failures.push(...(await audit(page)));
 
@@ -234,6 +235,7 @@ test.describe('rendered contrast', () => {
       await toggleAgent(page);
       await page.getByLabel('Message', { exact: true }).fill('{"tool":"edit_note","input":{"noteId":"s1","operations":[]}}');
       await page.getByRole('button', { name: 'Send', exact: true }).click();
+      await page.getByRole('button', { name: /Agent history/ }).click();
       await expect(page.getByRole('button', { name: 'Approve', exact: true })).toBeVisible();
       failures.push(...(await audit(page)));
 

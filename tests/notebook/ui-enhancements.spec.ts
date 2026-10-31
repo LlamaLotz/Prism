@@ -17,7 +17,7 @@ test('agent-off prompt preserves text, cancels, and supports chat override', asy
 });
 test('AISidebar Web toggle grants the web_search tool', async ({page}) => {
   await page.goto('/tests/notebook/runtime-harness.html?noapproval&agent&webTool');
-  await page.getByRole('button',{name:'Web',exact:true}).click();
+  await page.getByRole('button',{name:'Web search',exact:true}).click();
   const input=page.getByLabel('Message',{exact:true});
   await input.fill('rust async runtime'); await input.press('Enter');
   await expect(page.getByRole('link',{name:'Example result'})).toBeVisible();

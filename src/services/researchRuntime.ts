@@ -33,6 +33,8 @@ export const researchRuntime = {
     invoke<ResearchSession>('research_get', { sessionId }),
   addSources: (vaultPath: string, collectionId: string, keys: string[]) =>
     invoke<Collection>('research_add_sources', { vaultPath, collectionId, keys }),
+  createNotes: (vaultPath: string, keys: string[], folder: string) =>
+    invoke<{ folder: string; paths: string[] }>('research_create_notes', { vaultPath, keys, folder }),
   addUrl: (vaultPath: string, collectionId: string, url: string) =>
     invoke<Collection>('research_add_url', { vaultPath, collectionId, url }),
   preview: (key: string) =>

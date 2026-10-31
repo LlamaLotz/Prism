@@ -49,6 +49,7 @@ Object.defineProperty(window,'__TAURI_INTERNALS__',{value:{transformCallback:(ca
  if(command==='research_get')return structuredClone(researchSession);
  if(command==='research_cancel'){if(researchSession)researchSession.status='cancelled';return;}
  if(command==='research_add_sources')return {id:args.collectionId,title:'Research notebook',sourceIds:args.keys,revision:2};
+ if(command==='research_create_notes'){const folder=`Researched Sources/${args.folder}`;return {folder,paths:(args.keys as string[]).map(key=>`${folder}/${String(key).replace(/[^a-z0-9]+/gi,'-')}.md`)};}
  if(command==='research_add_url')return {id:args.collectionId,title:'Research notebook',sourceIds:[args.url],revision:2};
  if(command==='research_preview')return {title:`Preview ${args.key}`,text:`Extracted text for ${args.key}.`,url:'https://example.com/preview',chars:32};
  if(command==='study_request'){

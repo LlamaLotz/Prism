@@ -120,7 +120,7 @@ export const liquidGlassLogoReferenceMark = referenceMark;
 
 /** Length of the scripted sequence at speed 1, in seconds. */
 export const liquidGlassLogoDuration = 3.3;
-const logoFinishTime = 1.8;
+export const logoFinishTime = 1.8;
 
 type Keys = readonly (readonly [number, number])[];
 

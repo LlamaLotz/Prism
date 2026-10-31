@@ -101,7 +101,7 @@ html .research-panel .research-panel__close:hover {
 }
 
 html .research-panel__actions button,
-html .research-footer > button,
+html .research-footer__actions button,
 html .research-candidate__actions button,
 html .research-preview-dialog__head button {
   display: inline-flex;
@@ -121,14 +121,14 @@ html .research-preview-dialog__head button {
 }
 
 html .research-panel__actions button:hover:not(:disabled),
-html .research-footer > button:hover:not(:disabled),
+html .research-footer__actions button:hover:not(:disabled),
 html .research-candidate__actions button:hover:not(:disabled),
 html .research-preview-dialog__head button:hover:not(:disabled) {
   background: var(--nb-selection);
 }
 
 html .research-panel__actions button:disabled,
-html .research-footer > button:disabled {
+html .research-footer__actions button:disabled {
   color: var(--nb-secondary);
   cursor: not-allowed;
 }
@@ -306,6 +306,16 @@ html .research-footer > button:disabled {
   flex: 1 1 170px;
 }
 
+.research-footer__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.research-footer .research-panel__hint {
+  flex-basis: 100%;
+}
+
 html .research-preview-dialog {
   width: min(560px, calc(100vw - 32px));
   max-height: calc(100vh - 32px);
@@ -333,14 +343,6 @@ html .research-preview-dialog {
   margin: 0;
   font-size: 16px;
   line-height: 1.4;
-  overflow-wrap: anywhere;
-}
-
-.research-preview-dialog a {
-  display: inline-block;
-  margin: 10px 0;
-  font-size: 12px;
-  color: var(--nb-focus);
   overflow-wrap: anywhere;
 }
 

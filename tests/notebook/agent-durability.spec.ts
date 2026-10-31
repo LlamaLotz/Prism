@@ -12,6 +12,11 @@ test('context metadata prefers packed citations, deduplicates and retains degrad
 test('stale approval requires a fresh preview and durable undo survives reload',async({page})=>{
  await page.goto('/tests/notebook/runtime-harness.html?noapproval&agent&collapsed&conflict');
  await page.getByRole('button',{name:'Agent OFF'}).click();
+ const toggle=page.getByRole('button',{name:/Agent history/});
+ await expect(toggle).toHaveAttribute('aria-expanded','false');
+ await expect(page.locator('.star-glow')).toBeVisible();
+ await expect(page.locator('.star-glow')).toHaveCount(0);
+ await toggle.click();
  await page.getByRole('button',{name:'Approve',exact:true}).click();
  await expect(page.getByRole('button',{name:'Generate fresh preview'})).toBeVisible();
  await expect(page.getByRole('button',{name:'Approve',exact:true})).not.toBeVisible();
@@ -20,16 +25,16 @@ test('stale approval requires a fresh preview and durable undo survives reload',
  expect(await page.evaluate(()=>(window as any).fixtureCalls.filter((c:any)=>c.command==='agent_resolve_pending').length)).toBe(1);
  await page.getByRole('button',{name:'Approve',exact:true}).click();
  await expect(page.getByRole('button',{name:'Undo operation'})).toBeVisible();
- await page.reload();await page.getByRole('button',{name:'Agent OFF'}).click();
+ await page.reload();await page.getByRole('button',{name:'Agent OFF'}).click();await page.getByRole('button',{name:/Agent history/}).click();
  await page.getByRole('button',{name:'Undo operation'}).click();
  await expect(page.getByRole('button',{name:'Undo operation'})).not.toBeVisible();
- await page.reload();await page.getByRole('button',{name:'Agent OFF'}).click();
+ await page.reload();await page.getByRole('button',{name:'Agent OFF'}).click();await page.getByRole('button',{name:/Agent history/}).click();
  await expect(page.getByRole('button',{name:'Undo operation'})).not.toBeVisible();
 });
 
 test('undo conflicts leave the journal operation available',async({page})=>{
  await page.goto('/tests/notebook/runtime-harness.html?noapproval&agent&collapsed&undoconflict');
- await page.getByRole('button',{name:'Agent OFF'}).click();await page.getByRole('button',{name:'Approve',exact:true}).click();
+ await page.getByRole('button',{name:'Agent OFF'}).click();await page.getByRole('button',{name:/Agent history/}).click();await page.getByRole('button',{name:'Approve',exact:true}).click();
  await page.getByRole('button',{name:'Undo operation'}).click();
  await expect(page.getByText('Source changed after the operation.',{exact:false}).first()).toBeVisible();
  await expect(page.getByRole('button',{name:'Undo operation'})).toBeVisible();
@@ -58,6 +63,12 @@ test('multi-round retrieved sources persist through chat reload and navigate by 
   await page.setViewportSize({width:360,height:800});
   await page.goto('/tests/notebook/runtime-harness.html?noapproval&agent&collapsed&manyoperations');
   await page.getByRole('button',{name:'Agent OFF'}).click();
+  const toggle=page.getByRole('button',{name:/Agent history/});
+  await expect(toggle).toHaveAttribute('aria-expanded','false');
+  await expect(page.locator('.star-glow')).toBeVisible();
+  await expect(page.locator('.star-glow')).toHaveCount(0);
+  await toggle.click();
+  await expect(toggle).toHaveAttribute('aria-expanded','true');
   const history=page.getByLabel('Agent operation history');
   await expect(history.getByRole('button',{name:'Recheck recovery'})).toBeVisible();
   expect(await history.evaluate(el=>el.clientHeight<=180&&el.scrollHeight>el.clientHeight)).toBe(true);
@@ -73,6 +84,10 @@ test('multi-round retrieved sources persist through chat reload and navigate by 
   await page.goto('/tests/notebook/runtime-harness.html?noapproval&agent&collapsed&manyoperations');
   await page.getByRole('button',{name:'Agent OFF'}).click();
   const toggle=page.getByRole('button',{name:/Agent history/});const drawer=page.locator('.agent-history');const sidebar=page.locator('.ai-sidebar');
+  await expect(toggle).toHaveAttribute('aria-expanded','false');
+  await expect(page.locator('.star-glow')).toBeVisible();
+  await expect(page.locator('.star-glow')).toHaveCount(0);
+  await toggle.click();
   await expect(page.getByLabel('Agent operation history')).toBeVisible();
   await expect(toggle).toHaveAttribute('aria-expanded','true');
   const sidebarHeight=await sidebar.evaluate(el=>el.getBoundingClientRect().height);

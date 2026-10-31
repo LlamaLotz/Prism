@@ -20,6 +20,8 @@ export interface ResearchPanelProps {
   autoStart?: boolean;
   onClose?: () => void;
   onAdded?: (collection: Collection) => void | Promise<void>;
+  /** Called after researched sources are written into the vault as notes. */
+  onVaultChanged?: () => void;
 }
 
 const PHASE_LABELS: Record<string, string> = {
@@ -53,6 +55,12 @@ function errorDetail(error: unknown): string {
   return raw.replace(/^[A-Z_]+:\s*/, '').slice(0, 240);
 }
 
+/** Local wall-clock stamp used as the vault folder segment (`YYYY-MM-DD HH-mm-ss`). */
+export function localTimestamp(date: Date = new Date()): string {
+  const pad = (value: number) => String(value).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}-${pad(date.getMinutes())}-${pad(date.getSeconds())}`;
+}
+
 export function ResearchPanel({
   vaultPath,
   collectionId,
@@ -64,6 +72,7 @@ export function ResearchPanel({
   autoStart = false,
   onClose,
   onAdded,
+  onVaultChanged,
 }: ResearchPanelProps) {
   const [topic, setTopic] = useState(initialQuery);
   const [includeWeb, setIncludeWeb] = useState(includeWebDefault);
@@ -74,7 +83,10 @@ export function ResearchPanel({
   const [candidates, setCandidates] = useState<ResearchCandidate[]>([]);
   const [selected, setSelected] = useState<Set<string>>(() => new Set());
   const [destination, setDestination] = useState(collectionId ?? '');
-  const [adding, setAdding] = useState(false);
+  const [savingNotebook, setSavingNotebook] = useState(false);
+  const [savingNotes, setSavingNotes] = useState(false);
+  const [notebookSaved, setNotebookSaved] = useState<Record<string, Set<string>>>({});
+  const [notesSaved, setNotesSaved] = useState<Set<string>>(() => new Set());
   const [notice, setNotice] = useState('');
   const [error, setError] = useState('');
   const [deepUnavailable, setDeepUnavailable] = useState(false);
@@ -127,6 +139,8 @@ export function ResearchPanel({
     setPhase(null);
     setCandidates([]);
     setSelected(new Set());
+    setNotebookSaved({});
+    setNotesSaved(new Set());
     setPreview(null);
     try {
       const result = await researchRuntime.start({
@@ -196,6 +210,8 @@ export function ResearchPanel({
     setPhase(null);
     setCandidates([]);
     setSelected(new Set());
+    setNotebookSaved({});
+    setNotesSaved(new Set());
     setError('');
     setDeepUnavailable(false);
     setNotice('');
@@ -213,25 +229,50 @@ export function ResearchPanel({
     });
   }
 
-  async function addSelected() {
-    const keys = [...selected].filter((key) => {
+  function selectableKeys(): string[] {
+    return [...selected].filter((key) => {
       const candidate = candidates.find((row) => row.key === key);
       return candidate && !candidate.duplicateOf;
     });
-    if (!keys.length || !destination) return;
-    setAdding(true);
+  }
+
+  async function saveToNotebook() {
+    const target = destination;
+    const keys = selectableKeys().filter((key) => !notebookSaved[target]?.has(key));
+    if (!keys.length || !target) return;
+    setSavingNotebook(true);
     setError('');
     setNotice('');
     try {
-      const collection = await researchRuntime.addSources(vaultPath, destination, keys);
+      const collection = await researchRuntime.addSources(vaultPath, target, keys);
       if (!alive.current) return;
+      setNotebookSaved((current) => ({ ...current, [target]: new Set([...(current[target] ?? []), ...keys]) }));
       setNotice(`Added ${keys.length} source${keys.length === 1 ? '' : 's'} to “${collection.title}”.`);
-      setSelected(new Set());
       await onAdded?.(collection);
     } catch (e) {
-      if (alive.current) setError(`Could not add sources. ${errorDetail(e)}`.trim());
+      if (alive.current) setError(`Could not save sources. ${errorDetail(e)}`.trim());
     } finally {
-      if (alive.current) setAdding(false);
+      if (alive.current) setSavingNotebook(false);
+    }
+  }
+
+  async function saveAsNotes() {
+    const keys = selectableKeys().filter((key) => !notesSaved.has(key));
+    if (!keys.length) return;
+    setSavingNotes(true);
+    setError('');
+    setNotice('');
+    try {
+      const result = await researchRuntime.createNotes(vaultPath, keys, localTimestamp());
+      if (!alive.current) return;
+      setNotesSaved((current) => new Set([...current, ...keys]));
+      const count = result.paths.length;
+      setNotice(`Saved ${count} note${count === 1 ? '' : 's'} to ${result.folder}.`);
+      onVaultChanged?.();
+    } catch (e) {
+      if (alive.current) setError(`Could not save notes. ${errorDetail(e)}`.trim());
+    } finally {
+      if (alive.current) setSavingNotes(false);
     }
   }
 
@@ -295,7 +336,11 @@ export function ResearchPanel({
   }
 
   const progress = phase ? percent(phase.progress) : 0;
-  const canAdd = selected.size > 0 && !!destination && !adding;
+  const selectable = selectableKeys();
+  const notebookKeys = selectable.filter((key) => !notebookSaved[destination]?.has(key));
+  const noteKeys = selectable.filter((key) => !notesSaved.has(key));
+  const canSaveToNotebook = notebookKeys.length > 0 && !!destination && !savingNotebook;
+  const canSaveAsNotes = noteKeys.length > 0 && !savingNotes;
   const doneEmpty = !running && !error && phase?.phase === 'done' && candidates.length === 0;
   return <section className="research-panel" aria-label="Research">
     <header className="research-panel__head">
@@ -352,18 +397,24 @@ export function ResearchPanel({
     </ul>}
 
     {(candidates.length > 0 || notice) && <footer className="research-footer">
-      {collections && <label className="research-panel__field">Add to notebook
-        <select value={destination} onChange={(event) => setDestination(event.target.value)} disabled={adding}>
+      {collections && collections.length > 0 && <label className="research-panel__field">Save to notebook
+        <select value={destination} onChange={(event) => setDestination(event.target.value)} disabled={savingNotebook}>
           <option value="">Select notebook</option>
           {collections.map((collection) => <option key={collection.id} value={collection.id}>{collection.title}</option>)}
         </select>
       </label>}
-      <button type="button" onClick={() => void addSelected()} disabled={!canAdd}>
-        Add {selected.size} source{selected.size === 1 ? '' : 's'}
-      </button>
+      <div className="research-footer__actions">
+        <button type="button" onClick={() => void saveToNotebook()} disabled={!canSaveToNotebook}>
+          Save to notebook
+        </button>
+        <button type="button" onClick={() => void saveAsNotes()} disabled={!canSaveAsNotes}>
+          Save as notes
+        </button>
+      </div>
+      <p className="research-panel__hint">Sources can be saved to a notebook and/or as vault notes.</p>
     </footer>}
     {notice && <p className="research-success" role="status">{notice}</p>}
-    {collections && !collections.length && <p className="research-panel__hint">Create a notebook to keep researched sources.</p>}
+    {collections && !collections.length && <p className="research-panel__hint">Create a notebook to keep researched sources, or save them as vault notes.</p>}
 
     <dialog
       ref={previewDialog}
@@ -376,7 +427,6 @@ export function ResearchPanel({
           <h3 id="research-preview-title">{preview.title}</h3>
           <button ref={previewClose} type="button" onClick={() => setPreview(null)} aria-label="Close preview">Close</button>
         </header>
-        {preview.url && <a href={preview.url} target="_blank" rel="noreferrer">Open page</a>}
         <pre>{preview.text}</pre>
       </>}
     </dialog>

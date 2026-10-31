@@ -58,24 +58,6 @@ html .study-assistant button:hover:not(:disabled) {
   background: var(--nb-selection);
 }
 
-/* Web sources open the captured page instead of a vault note. */
-html .study-workspace .study-toolbar-link {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 7px 10px;
-  font-size: 12px;
-  line-height: 1.4;
-  color: var(--nb-text);
-  text-decoration: none;
-  background: var(--nb-card);
-  border: 1px solid var(--nb-border);
-  border-radius: var(--nb-radius-sm);
-}
-html .study-workspace .study-toolbar-link:hover {
-  background: var(--nb-selection);
-}
-
 /* Disabled controls dim the chrome, never the label — a blanket opacity
    would push already-secondary text below AA. */
 .study-workspace button:disabled,
@@ -1019,6 +1001,8 @@ html .study-workspace .study-flashcard {
 
 /* Agent history: collapsed bar, expanded body capped at half the chat view. */
 .agent-history {
+  position: relative;
+  isolation: isolate;
   display: flex !important;
   flex: 0 0 auto;
   flex-direction: column !important;
@@ -1033,6 +1017,8 @@ html .study-workspace .study-flashcard {
   box-shadow: var(--nb-edge), var(--nb-shadow);
 }
 html .agent-history-toggle {
+  position: relative;
+  z-index: 1;
   display: flex !important;
   align-items: center !important;
   justify-content: flex-start !important;
@@ -1059,6 +1045,8 @@ html .agent-history-toggle:hover { background: var(--nb-selection) !important; }
   color: var(--nb-secondary) !important;
 }
 .agent-history-body {
+  position: relative;
+  z-index: 1;
   flex: 1 1 auto;
   min-height: 0;
   padding: 12px;
@@ -1067,6 +1055,24 @@ html .agent-history-toggle:hover { background: var(--nb-selection) !important; }
   border: 0 !important;
   border-top: 1px solid var(--nb-hairline) !important;
   border-radius: 0 !important;
+}
+
+/* Short-lived StarBorder bloom announcing fresh work while collapsed. */
+.agent-history-glow {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+}
+
+.agent-history-glow .star-glow.star-border {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  pointer-events: none;
 }
 
 /* --- Alerts -------------------------------------------------------------- */

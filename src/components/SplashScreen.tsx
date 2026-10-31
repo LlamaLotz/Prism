@@ -6,7 +6,10 @@ import {
   type RefObject,
 } from 'react';
 import { LiquidGlassLogo } from './liquid-glass-logo';
-import { liquidGlassLogoDefaults } from './liquid-glass-logo-renderer';
+import {
+  liquidGlassLogoDefaults,
+  logoFinishTime,
+} from './liquid-glass-logo-renderer';
 import { getSplashLogo } from '../services/appIcon';
 import { usePrefersReducedMotion } from '../utils/usePrefersReducedMotion';
 import './SplashScreen.css';
@@ -20,9 +23,10 @@ interface SplashScreenProps {
   logo?: string;
 }
 
-// The renderer's logo-only sequence settles at 1.8 s. The extra buffer covers
-// frames dropped while boot work (vault indexing, embedding) is running.
-const INTRO_SETTLE_MS = 2100;
+// The renderer's logo-only sequence settles at logoFinishTime (1.8 s). The
+// extra buffer covers frames dropped while boot work (vault indexing,
+// embedding) is running.
+const INTRO_SETTLE_MS = logoFinishTime * 1000 + 300;
 // Backstop for a renderer that neither reports ready nor paints the fallback.
 const RENDERER_BACKSTOP_MS = 6000;
 
