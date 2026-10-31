@@ -20,3 +20,6 @@ myapp.key.pub
 # Native ingestion build and downloaded runtime payloads.
 src-tauri/src/ingest/target/
 src-tauri/ingest-runtime/
+
+# Windows Mark-of-the-Web alternate data stream artifacts.
+*:Zone.Identifier
