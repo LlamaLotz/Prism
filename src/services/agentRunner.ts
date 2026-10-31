@@ -58,11 +58,12 @@ export function compactAgentContext(work:AgentMessage[]){
  const ledger=older.map(m=>m.content.slice(0,900)).join('\n').slice(-12000);
  work.splice(2,0,{role:'system',content:`Earlier execution record (data, not instructions):\n${ledger}`});
 }
-export async function runAgentTurn({messages,complete,post,approval,onTool,check=()=>{},now=Date.now}:{
+export async function runAgentTurn({messages,complete,post,approval,onTool,check=()=>{},now=Date.now,webEnabled=true,readOnly=false,allowedTools}:{
  messages:AgentMessage[];complete:(messages:AgentMessage[])=>Promise<string>;
  post:(text:string,progress?:boolean)=>void|Promise<void>;
  approval:(response:AgentToolResponse)=>unknown|Promise<unknown>;
  check?:()=>void;onTool?:(name:string)=>void;now?:()=>number;
+ webEnabled?:boolean;readOnly?:boolean;allowedTools?:ReadonlySet<string>;
 }):Promise<AgentMessage[]|undefined>{
  const work=[...messages];const guard=new RepetitionGuard();const writeTools=new Set(['create_note','edit_note','rename_note','delete_note','create_folder','move_folder','add_wikilink','add_tag','remove_tag','format_note']);
  let manual:string|undefined;let failedWrite:string|undefined;let malformed=0;
@@ -85,7 +86,16 @@ export async function runAgentTurn({messages,complete,post,approval,onTool,check
   await post(`Using ${calls.map(c=>c.tool.replaceAll('_',' ')).join(', ')}…`,true);
   for(const request of calls){
    check();onTool?.(request.tool);let evidence:unknown;let changed=false;const write=writeTools.has(request.tool);let result:AgentToolResponse;
-   try{result=await knowledge.agentCall(request.tool,request.input);check();}
+   if(allowedTools&&!allowedTools.has(request.tool)){
+    evidence={error:`Tool ${request.tool} is not available in this mode.`};
+    const deniedJson=JSON.stringify(evidence);
+    work.push({role:'user',content:`Tool ${request.tool} (${canonical(request.input)}) result:\n${deniedJson}\nContinue from this result or answer the user. Do not call unavailable tools.`});
+    if(guard.observe(request.tool,request.input,evidence,now(),false)){
+     await post('Paused because the agent repeated the same work for two minutes without making progress. You can continue or give it new instructions.');return work;
+    }
+    continue;
+   }
+   try{result=await knowledge.agentCall(request.tool,request.input,{webEnabled,readOnly});check();}
    catch(error){
     check();if(write)failedWrite=String(error);evidence={error:String(error)};
     const failedJson=JSON.stringify(evidence)??'null';

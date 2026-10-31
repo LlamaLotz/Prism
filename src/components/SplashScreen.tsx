@@ -1,49 +1,107 @@
-import { useEffect, useRef, useState } from 'react';
-import { getAppIcon, getSplashVideo } from '../services/appIcon';
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type RefObject,
+} from 'react';
+import { LiquidGlassLogo } from './liquid-glass-logo';
+import { liquidGlassLogoDefaults } from './liquid-glass-logo-renderer';
+import { getSplashLogo } from '../services/appIcon';
 import { usePrefersReducedMotion } from '../utils/usePrefersReducedMotion';
+import './SplashScreen.css';
 
 interface SplashScreenProps {
   /** True while the app + vault are still booting; flips false when ready. */
   isLoading: boolean;
-  /** Flips true once boot + first-run backfill are done, to start the animation. */
-  playVideo: boolean;
   /** Called after the fade-out completes so the parent can unmount this. */
   onFinish: () => void;
-  /** Custom app icon id from the rainbow logo registry (falls back to default). */
+  /** Custom app icon id from the rainbow logo registry (falls back to /logo.svg). */
   logo?: string;
-  /** User's accent color (#rrggbb) — mixed toward white for the title gradient. */
-  accentColor?: string;
+}
+
+// The renderer's logo-only sequence settles at 1.8 s. The extra buffer covers
+// frames dropped while boot work (vault indexing, embedding) is running.
+const INTRO_SETTLE_MS = 2100;
+// Backstop for a renderer that neither reports ready nor paints the fallback.
+const RENDERER_BACKSTOP_MS = 6000;
+
+const {
+  logoSize: LOGO_SIZE,
+  logoScale: LOGO_SCALE,
+  finalLogoScale: FINAL_LOGO_SCALE,
+} = liquidGlassLogoDefaults;
+
+interface SplashLogoShineProps {
+  frameRef: RefObject<HTMLDivElement | null>;
+  logoSrc: string;
+  active: boolean;
 }
 
 /**
- * Startup splash overlay. Shows the 3D animated loader while the app boots
- * and the first-run semantic backfill runs, then fades out and calls
- * `onFinish`.
- *
- * The loader uses the bundled H.264 MP4 (hardware-decoded, so it plays off
- * the main thread and stays smooth). Reduced-motion users and machines that
- * cannot decode the MP4 get the static app mark instead.
+ * A specular sweep over the resting logo. The SVG doubles as a CSS mask, so
+ * the highlight is clipped to the artwork's own alpha and stays aligned with
+ * the canvas at any window size.
  */
-export function SplashScreen({ isLoading, playVideo, onFinish, logo, accentColor = '#38BDF8' }: SplashScreenProps) {
+function SplashLogoShine({ frameRef, logoSrc, active }: SplashLogoShineProps) {
+  const [size, setSize] = useState(0);
+
+  useLayoutEffect(() => {
+    const frame = frameRef.current;
+    if (!frame) return;
+    const measure = () => {
+      const rect = frame.getBoundingClientRect();
+      // Mirrors fit() in liquid-glass-logo-renderer: the logo always occupies
+      // one plate edge, scaled down only when the frame is too small.
+      const fit = Math.min(
+        1,
+        rect.width / (LOGO_SIZE * 1.9),
+        rect.height / (LOGO_SIZE * 1.5),
+      );
+      setSize(LOGO_SIZE * fit * LOGO_SCALE * FINAL_LOGO_SCALE);
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(frame);
+    return () => observer.disconnect();
+  }, [frameRef]);
+
+  if (size <= 0) return null;
+  const mask = `url(${JSON.stringify(logoSrc)})`;
+  return (
+    <div
+      className="splash-logo-shine"
+      data-active={active ? 'true' : 'false'}
+      aria-hidden="true"
+      style={{
+        width: size,
+        height: size,
+        maskImage: mask,
+        WebkitMaskImage: mask,
+      }}
+    />
+  );
+}
+
+/**
+ * Startup splash overlay. Plays the Liquid Glass logo entrance immediately,
+ * then holds the original logo on black and sweeps a shine across it until the
+ * app finishes booting. Reduced-motion users get the resting logo only.
+ *
+ * The ReactDrops component is used as shipped: the sphere-to-tile entrance,
+ * wavelength refraction, chromatic edges, measured fitting and image fallback
+ * all come from its own renderer/shader.
+ */
+export function SplashScreen({ isLoading, onFinish, logo }: SplashScreenProps) {
   const [fade, setFade] = useState(false);
-  const [fontsReady, setFontsReady] = useState(false);
-  const [videoFailed, setVideoFailed] = useState(false);
-  const [videoReady, setVideoReady] = useState(false);
-  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const [introDone, setIntroDone] = useState(false);
+  const [fallback, setFallback] = useState(false);
+  const frameRef = useRef<HTMLDivElement | null>(null);
+  const logoHostRef = useRef<HTMLDivElement | null>(null);
   const prefersReducedMotion = usePrefersReducedMotion();
+  const logoSrc = getSplashLogo(logo);
   const onFinishRef = useRef(onFinish);
   useEffect(() => { onFinishRef.current = onFinish; }, [onFinish]);
-
-  // Wait for the Instrument Serif + Inter fonts to finish loading before
-  // showing the gradient-clipped title text, so the glyphs render correctly
-  // on the first paint instead of swapping in later.
-  useEffect(() => {
-    if ('fonts' in document) {
-      document.fonts.ready.then(() => setFontsReady(true));
-    } else {
-      setFontsReady(true); // fallback for environments without the API
-    }
-  }, []);
 
   useEffect(() => {
     document.documentElement.classList.add('splash-mode');
@@ -55,155 +113,101 @@ export function SplashScreen({ isLoading, playVideo, onFinish, logo, accentColor
     };
   }, []);
 
-  const loaderVideo = getSplashVideo();
-  // The video is decorative. Reduced-motion users (and machines where the
-  // MP4 cannot decode) get the static mark instead of a blank splash.
-  const useVideo = !videoFailed && !prefersReducedMotion;
-  const mediaReady = useVideo ? videoReady : true;
-
+  // Start the settle timer on the renderer's first frame, not on mount: the
+  // 500 KB logo SVG can take longer to rasterize than the React mount.
   useEffect(() => {
-    // Do not dismiss the splash until the loader has a frame ready to show.
-    // This matters for the large 3D MP4, which can outlast App's boot timer.
-    if (!isLoading && mediaReady) {
-      setFade(true);
-      const timer = setTimeout(() => onFinishRef.current(), 300);
-      return () => clearTimeout(timer);
-    }
-  }, [isLoading, mediaReady]);
+    const host = logoHostRef.current;
+    if (!host) return;
+    let settleTimer: ReturnType<typeof setTimeout> | undefined;
+    let finished = false;
 
-  // Detect when the 3D MP4 can render. Use several readiness events because
-  // WebView2 can emit `loadedmetadata` before a React effect attaches listeners.
-  useEffect(() => {
-    if (!loaderVideo || videoFailed || prefersReducedMotion) return;
-    const video = videoRef.current;
-    if (!video) return;
-
-    const markReady = () => setVideoReady(true);
-    const onError = () => {
-      setVideoFailed(true);
-      setVideoReady(true);
+    const finish = () => {
+      if (finished) return;
+      finished = true;
+      setIntroDone(true);
     };
-    if (video.error) {
-      onError();
-      return;
-    }
-    if (video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {
-      markReady();
-    }
-    video.addEventListener('loadedmetadata', markReady);
-    video.addEventListener('loadeddata', markReady);
-    video.addEventListener('canplay', markReady);
-    video.addEventListener('canplaythrough', markReady);
-    video.addEventListener('error', onError);
+
+    const check = () => {
+      if (host.querySelector('.liquid-glass-logo-fallback')) {
+        // No WebGL: the component's own image fallback is already the final
+        // logo, so there is no entrance to wait for (or shine over).
+        setFallback(true);
+        finish();
+        return true;
+      }
+      if (host.querySelector('.liquid-glass-logo[data-liquid-glass-ready]')) {
+        if (prefersReducedMotion) {
+          finish();
+        } else if (settleTimer === undefined) {
+          settleTimer = setTimeout(finish, INTRO_SETTLE_MS);
+        }
+      }
+      return false;
+    };
+
+    check();
+    const observer = new MutationObserver(() => {
+      if (check()) observer.disconnect();
+    });
+    observer.observe(host, { attributes: true, childList: true, subtree: true });
+    const backstop = setTimeout(finish, RENDERER_BACKSTOP_MS);
+
     return () => {
-      video.removeEventListener('loadedmetadata', markReady);
-      video.removeEventListener('loadeddata', markReady);
-      video.removeEventListener('canplay', markReady);
-      video.removeEventListener('canplaythrough', markReady);
-      video.removeEventListener('error', onError);
+      observer.disconnect();
+      clearTimeout(settleTimer);
+      clearTimeout(backstop);
     };
-  }, [loaderVideo, videoFailed, prefersReducedMotion]);
+  }, [prefersReducedMotion]);
 
-  // The loader is decorative: if the MP4 is slow to decode, switch to the
-  // static mark instead of keeping the app behind the splash indefinitely.
+  // Dismiss only after the entrance is complete. If boot finished earlier the
+  // intro still plays out; if it takes longer, the shine bridges the wait.
   useEffect(() => {
-    if (!playVideo || !useVideo || videoReady || videoFailed) return;
-    const timer = setTimeout(() => {
-      setVideoFailed(true);
-      setVideoReady(true);
-    }, 800);
-    return () => clearTimeout(timer);
-  }, [playVideo, useVideo, videoReady, videoFailed]);
-
-  // React renders `muted` as an attribute but doesn't always set the DOM
-  // property on mount, which can silently block muted-autoplay in WKWebView.
-  // Set it imperatively and retry after metadata arrives so the MP4 starts
-  // buffering/playing even when autoplay was evaluated before the property was
-  // applied.
-  useEffect(() => {
-    if (!useVideo) return;
-    const video = videoRef.current;
-    if (!video) return;
-    const start = () => {
-      video.muted = true;
-      if (video.paused) video.play().catch(() => {});
-    };
-    start();
-    video.addEventListener('loadedmetadata', start);
-    video.addEventListener('canplay', start);
+    if (!introDone || isLoading) return;
+    const hold = prefersReducedMotion ? 80 : 250;
+    const fadeTimer = setTimeout(() => setFade(true), hold);
+    const finishTimer = setTimeout(() => onFinishRef.current(), hold + 300);
     return () => {
-      video.removeEventListener('loadedmetadata', start);
-      video.removeEventListener('canplay', start);
+      clearTimeout(fadeTimer);
+      clearTimeout(finishTimer);
     };
-  }, [useVideo]);
+  }, [introDone, isLoading, prefersReducedMotion]);
 
-  // Start the loader from frame 0 once boot is done and the media is ready.
-  // The video already began buffering/decoding during the static phase (it is
-  // muted + autoplay so WKWebView allows it to load), so this just resets it
-  // to the start and reveals it.
+  // Arm the shine only if boot is still running once the entrance finishes.
+  // If boot won the race, the splash dismisses without ever mounting it; once
+  // armed it stays mounted so the highlight can fade out as the splash leaves.
+  const [shineArmed, setShineArmed] = useState(false);
   useEffect(() => {
-    if (!playVideo || !videoReady) return;
-    const video = videoRef.current;
-    if (video && !videoFailed) {
-      video.currentTime = 0;
-      if (video.paused) video.play().catch(() => {});
-    }
-  }, [playVideo, videoReady, videoFailed]);
-
-  const showMedia = useVideo && videoReady;
+    if (introDone && isLoading) setShineArmed(true);
+  }, [introDone, isLoading]);
+  const showShine = shineArmed && !prefersReducedMotion && !fallback;
 
   return (
     <div
-      className={`splash-screen-container fixed inset-0 z-[100] flex flex-col items-center justify-center bg-[#35383e] rounded-none transition-opacity duration-300 ease-out ${
+      className={`splash-screen-container fixed inset-0 z-[100] flex items-center justify-center bg-black transition-opacity duration-300 ease-out ${
         fade ? 'opacity-0 pointer-events-none' : 'opacity-100'
       }`}
     >
-      <div className="splash-in flex flex-col items-center justify-center gap-7 px-8 rounded-none">
-        <div className="relative w-[min(90vw,48rem)] aspect-video splash-logo mx-auto rounded-none">
-          {useVideo ? (
-            <video
-              ref={videoRef}
-              src={loaderVideo}
-              muted
-              loop
-              playsInline
-              autoPlay
-              preload="auto"
-              aria-hidden="true"
-              className={`absolute inset-0 w-full h-full object-contain transition-opacity duration-300 ${
-                showMedia ? 'opacity-100' : 'opacity-0'
-              }`}
-            />
-          ) : (
-            <img
-              src={getAppIcon(logo)}
-              alt=""
-              className="absolute inset-0 m-auto w-40 h-40 object-contain splash-static-mark"
-            />
-          )}
+      <div ref={frameRef} className="relative w-[min(90vw,48rem)]">
+        <div ref={logoHostRef}>
+          <LiquidGlassLogo
+            logo={logoSrc}
+            ending="logo"
+            theme="dark"
+            background="#000000"
+            logoColor="original"
+            depth={2.9}
+            height={480}
+            style={{ maxHeight: 'calc(100vh - 6rem)' }}
+            aria-label="Prism"
+          />
         </div>
-        <div className="flex flex-col items-center text-center rounded-none">
-          <h1
-            className={`text-8xl font-serif italic font-normal tracking-wide splash-title transition-opacity duration-500 ${
-              fontsReady ? 'opacity-100' : 'opacity-0'
-            }`}
-            style={{
-              // Accent-tinted gradient (brightened with white so dark accents
-              // stay readable on black). Engines without color-mix() drop this
-              // and fall back to the ice-blue gradient in .splash-title.
-              backgroundImage: `linear-gradient(to bottom, #ffffff 0%, color-mix(in srgb, ${accentColor} 60%, white) 100%)`,
-            }}
-          >
-            Prism
-          </h1>
-          <p
-            className={`text-sm text-white/60 font-sans tracking-wider mt-2 transition-opacity duration-500 ${
-              fontsReady ? 'opacity-100' : 'opacity-0'
-            }`}
-          >
-            by SDKid
-          </p>
-        </div>
+        {showShine && (
+          <SplashLogoShine
+            frameRef={frameRef}
+            logoSrc={logoSrc}
+            active={isLoading}
+          />
+        )}
       </div>
     </div>
   );

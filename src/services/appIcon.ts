@@ -17,7 +17,6 @@ import whiteACLight from '../assets/logos/light/White AC.svg';
 import blueLight from '../assets/logos/light/Blue.svg';
 import greyLight from '../assets/logos/light/Grey.svg';
 import whiteLight from '../assets/logos/light/White.svg';
-import video3D from '../assets/loaders/3D Loader.mp4';
 
 /**
  * The Prism logos the user can pick from as the app icon (SVG, transparent
@@ -106,9 +105,18 @@ export function getAppIcon(id?: string, themeMode?: 'dark' | 'light'): string {
   return map[id] ?? DARK_ICON_MAP[id] ?? '/logo.png';
 }
 
-/** Always use the 3D MP4 for the startup splash, regardless of app icon. */
-export function getSplashVideo(): string {
-  return video3D;
+/**
+ * Resolves the startup splash logo from the stored app-icon id.
+ *
+ * The splash is always black, so it always uses the dark-mode SVG variant even
+ * when the app itself is in light mode. Unlike getAppIcon(), this never falls
+ * back to the raster /logo.png — an unknown or empty id uses /logo.svg.
+ * Data-URL uploads pass through untouched.
+ */
+export function getSplashLogo(id?: string): string {
+  if (!id) return '/logo.svg';
+  if (id.startsWith('data:')) return id;
+  return DARK_ICON_MAP[id] ?? '/logo.svg';
 }
 
 /**

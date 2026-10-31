@@ -12,7 +12,7 @@ import {
   ChevronDown, ChevronUp, History, Plus, Pencil, Trash2, ExternalLink
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
-import { NoteFile, OmniRouteConfig, tauriAPI } from '../types';
+import { NoteFile, OmniRouteConfig } from '../types';
 import { summarizeNote, suggestConnections, suggestMetadata, sendChatMessage, sendChatMessageWithRetrieval } from '../services/apiService';
 import { CHAT_COLLAPSE_THRESHOLD } from '../services/knowledge';
 import { buildAgentSystemPrompt, buildChatSystemPrompt } from '../services/systemMessages';
@@ -247,11 +247,10 @@ export const AISidebar: React.FC<AISidebarProps> = ({
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [inputValue, setInputValue] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [isSearching, setIsSearching] = useState(false);
   // High-level processing phase for the thinking indicator, set from the real
   // request/tool lifecycle (never a timer). Cleared when a request settles.
   const {phase,setPhase,activity,settle}=useRequestActivity();
-  const [searchMode, setSearchMode] = useState(false);
+  const [webEnabled, setWebEnabled] = useState(false);
   const [discoverMode, setDiscoverMode] = useState(false);
   const [searchMenu, setSearchMenu] = useState(false);
   const searchMenuRoot = useRef<HTMLDivElement>(null);
@@ -499,41 +498,11 @@ export const AISidebar: React.FC<AISidebarProps> = ({
     setMessages((prev) => [...prev, { ...context, role: 'assistant', content: `Agent prepared \`${tool}\` — review the preview below and Approve to apply.\n\nPreview:\n\`\`\`diff\n${preview ?? '(no preview)'}\n\`\`\`` }]);
   };
 
-  const handleAgentTurn = async (trimmed: string) => {
-    if (isLoading) return true;
-    cancelledRequest.current=false;approvalController.current=new AbortController();
-    // Manual fast-path: a raw {"tool":..., "input":...} message dispatches
-    // directly to the Tool Bus without involving the model.
-    const asTool = (() => { try { return JSON.parse(trimmed); } catch { return null; } }) as any;
-    if (asTool && typeof asTool.tool === 'string' && asTool.input !== undefined) {
-      setMessages((prev) => [...prev, { role: 'user', content: trimmed }]);
-      setInputValue(''); setIsLoading(true); setPhase('Using tool…');
-      try {
-        const res = await knowledge.agentCall(asTool.tool, asTool.input);
-        if(cancelledRequest.current||!mounted.current)return true;
-        if (res.requiresApproval && res.approvalId) {
-          await postApprovalMessage(res.tool, res.preview);
-        } else {
-          setMessages((prev) => [...prev, { role: 'assistant', content: `Tool \`${res.tool}\` result:\n\`\`\`json\n${JSON.stringify(res.result, null, 2)}\n\`\`\`` }]);
-        }
-      } catch (err: any) { showError(err, 'Agent tool failed.'); } finally { setIsLoading(false); setPhase(''); }
-      return true;
-    }
-    // Model-driven loop: the model gets the Tool Bus registry (reads + edit
-    // tools) so agent mode can read and edit notes through conversation.
-    // Writes still stop at the preview + user-approval gate — the model can
-    // prepare edits, never apply them silently.
-    if (!isConfigured) {
-      setError(createUserErrorDetails('AI is not configured. Please enter your API Key and Base URL in Settings.'));
-      return true;
-    }
-    setInputValue(''); setError(null);
-    // Fetch the Tool Bus registry first: when it is unreachable we fall back
-    // to plain chat (`handleSend` posts the user bubble itself).
-    let registry: AgentToolDefinition[] = [];
-    try { registry = await knowledge.agentTools(); } catch { registry = []; }
-    if(cancelledRequest.current||!mounted.current)return true;
-    if (!registry.length) { await handleSend(trimmed); return true; }
+  // Model-driven tool turn: posts the user bubble, builds the chat + agent
+  // system prompt for the supplied registry and runs the loop. Writes still
+  // stop at the preview + user-approval gate; allowedTools enforces the scope
+  // chosen by the caller (chat-with-web vs. full Agent mode).
+  const runToolTurn = async (trimmed: string, registry: AgentToolDefinition[], webEnabled: boolean, readOnly: boolean) => {
     setMessages((prev) => [...prev, { role: 'user', content: trimmed }]);
     setIsLoading(true);
     setPhase('Thinking…');
@@ -557,6 +526,9 @@ export const AISidebar: React.FC<AISidebarProps> = ({
         onTool:tool=>setPhase(`Running ${tool}`),
         post: (content, progress) => { setPhase(progress ? 'Using tool…' : 'Finalizing…'); setMessages(previous => [...previous, { role: 'assistant', content, ...(progress ? {} : context) }]); },
         approval: async response => {if(autoApproveRef.current){const result=await resolveAgentApproval(response.approvalId!,true);onVaultChanged?.();return result;}setPhase('Waiting for approval');const waiting=waitForAgentApproval(response.approvalId!,approvalController.current.signal);void postApprovalMessage(response.tool,response.preview,context);return waiting;},
+        webEnabled,
+        readOnly,
+        allowedTools: new Set(registry.map(t => t.name)),
       });
     } catch (err: any) {
       if(!cancelledRequest.current){settle('failed');showError(err, 'Agent turn failed.');}
@@ -564,39 +536,71 @@ export const AISidebar: React.FC<AISidebarProps> = ({
       setIsLoading(false);
       setPhase('');
     }
+  };
+
+  const handleAgentTurn = async (trimmed: string) => {
+    if (isLoading) return true;
+    cancelledRequest.current=false;approvalController.current=new AbortController();
+    // Manual fast-path: a raw {"tool":..., "input":...} message dispatches
+    // directly to the Tool Bus without involving the model.
+    let asTool: any = null;
+    try { asTool = JSON.parse(trimmed); } catch { asTool = null; }
+    if (asTool && typeof asTool.tool === 'string' && asTool.input !== undefined) {
+      setMessages((prev) => [...prev, { role: 'user', content: trimmed }]);
+      setInputValue(''); setIsLoading(true); setPhase('Using tool…');
+      try {
+        const res = await knowledge.agentCall(asTool.tool, asTool.input, { webEnabled, readOnly: false });
+        if(cancelledRequest.current||!mounted.current)return true;
+        if (res.requiresApproval && res.approvalId) {
+          await postApprovalMessage(res.tool, res.preview);
+        } else {
+          setMessages((prev) => [...prev, { role: 'assistant', content: `Tool \`${res.tool}\` result:\n\`\`\`json\n${JSON.stringify(res.result, null, 2)}\n\`\`\`` }]);
+        }
+      } catch (err: any) { showError(err, 'Agent tool failed.'); } finally { setIsLoading(false); setPhase(''); }
+      return true;
+    }
+    // Model-driven loop: the model gets the Tool Bus registry (reads + edit
+    // tools) so agent mode can read and edit notes through conversation.
+    // Writes still stop at the preview + user-approval gate — the model can
+    // prepare edits, never apply them silently.
+    if (!isConfigured) {
+      setError(createUserErrorDetails('AI is not configured. Please enter your API Key and Base URL in Settings.'));
+      return true;
+    }
+    setInputValue(''); setError(null);
+    // Fetch the Tool Bus registry first: when it is unreachable we fall back
+    // to plain chat (`handleSend` posts the user bubble itself).
+    let registry: AgentToolDefinition[] = [];
+    try { registry = await knowledge.agentTools(); } catch { registry = []; }
+    if (!webEnabled) registry = registry.filter(t => t.name !== 'web_search');
+    if(cancelledRequest.current||!mounted.current)return true;
+    if (!registry.length) { await handleSend(trimmed); return true; }
+    await runToolTurn(trimmed, registry, webEnabled, false);
     return true;
   };
 
-  const handleSearch = async (query: string) => {
-    if (!query || isSearching) return;
-
-    setIsSearching(true);
-    setError(null);
-    setPhase('Searching…');
-    setMessages((prev) => [...prev, { role: 'user', content: `🔍 Search: ${query}` }]);
-
-    try {
-      const results = await tauriAPI.webSearch(query);
-      if (results.length === 0) {
-        setMessages((prev) => [...prev, { role: 'assistant', content: `No results found for "${query}".` }]);
-        return;
-      }
-      const formatted = results.map((r, i) => 
-        `${i + 1}. **[${r.title}](${r.url})**\n   ${r.snippet}`
-      ).join('\n\n');
-      setMessages((prev) => [...prev, { role: 'assistant', content: formatted }]);
-    } catch (err: any) {
-      showError(err, 'Search failed.');
-    } finally {
-      setIsSearching(false);
-      setPhase('');
+  // Chat with Web on: read-only tools plus web_search, no vault writes. The
+  // Web button is a permission toggle, not a direct search action.
+  const handleChatWithWeb = async (trimmed: string) => {
+    if (!trimmed || isLoading) return;
+    if (!isConfigured) {
+      setError(createUserErrorDetails('AI is not configured. Please enter your API Key and Base URL in Settings.'));
+      return;
     }
+    cancelledRequest.current=false;approvalController.current=new AbortController();
+    setInputValue(''); setError(null);
+    let tools: AgentToolDefinition[] = [];
+    try { tools = await knowledge.agentTools(); } catch { tools = []; }
+    if(cancelledRequest.current||!mounted.current)return;
+    const scoped = tools.filter(t => !t.requiresApproval);
+    if (!scoped.some(t => t.name === 'web_search')) { await handleSend(trimmed); return; }
+    await runToolTurn(trimmed, scoped, true, true);
   };
 
   const handleSubmit = async () => {
     setStickToBottom(true);
-    if (isLoading || isSearching || agentPrompt) return;
-    if (!searchMode && !discoverMode && !agentMode && needsAgent(inputValue)) { setAgentPrompt(inputValue); return; }
+    if (isLoading || agentPrompt) return;
+    if (!discoverMode && !agentMode && needsAgent(inputValue)) { setAgentPrompt(inputValue); return; }
     if (discoverMode) {
       const query = inputValue.trim();
       if (!query) return;
@@ -610,14 +614,15 @@ export const AISidebar: React.FC<AISidebarProps> = ({
       } else {
         setResearchLibraryError('Open a vault to file researched sources in a notebook.');
       }
-    } else if (searchMode) {
-      const query = inputValue.trim();
-      setInputValue('');
-      await handleSearch(query);
-    } else if (agentMode && inputValue.trim()) {
+    } else if (agentMode) {
       const v = inputValue.trim();
+      if (!v) return;
       if (await handleAgentTurn(v)) return;
       await handleSend(v);
+    } else if (webEnabled) {
+      const v = inputValue.trim();
+      if (!v) return;
+      await handleChatWithWeb(v);
     } else {
       await handleSend();
     }
@@ -702,13 +707,13 @@ export const AISidebar: React.FC<AISidebarProps> = ({
         </div>
       </div>
 
-      {!agentMode && <p className="agent-mode-hint">Chat only — tools disabled</p>}
+      {!agentMode && <p className="agent-mode-hint">{webEnabled ? 'Chat — web search enabled' : 'Chat only — tools disabled'}</p>}
       <dialog ref={agentDialog} className="runtime-dialog runtime-surface" aria-labelledby="agent-enable-title" onCancel={() => setAgentPrompt(null)}>
         <h2 id="agent-enable-title">Turn on Agent?</h2>
         <p>This request may need tools. Turn on Agent to let Prism prepare the action?</p>
         <div className="runtime-actions">
           <button className="runtime-button" autoFocus onClick={() => setAgentPrompt(null)}>Cancel</button>
-          <button className="runtime-button" onClick={() => { const prompt = agentPrompt; setAgentPrompt(null); if (prompt) void handleSend(prompt); }}>Send as chat</button>
+          <button className="runtime-button" onClick={() => { const prompt = agentPrompt; setAgentPrompt(null); if (prompt) void (webEnabled ? handleChatWithWeb(prompt) : handleSend(prompt)); }}>Send as chat</button>
           <button className="runtime-button runtime-primary" onClick={() => { const prompt = agentPrompt; setAgentPrompt(null); setAgentMode(true); if (prompt) void handleAgentTurn(prompt); }}>Turn on Agent and send</button>
         </div>
       </dialog>
@@ -894,7 +899,7 @@ export const AISidebar: React.FC<AISidebarProps> = ({
 
       {/* Input section */}
       {agentMode && <AgentReview onVaultChanged={onVaultChanged} onMessage={async content => { setMessages(previous=>[...previous,{role:'assistant',content}]); }} />}
-      {view === 'chat' && <PromptBar value={inputValue} onChange={setInputValue} onSend={handleSubmit} running={isLoading||isSearching} onStop={()=>{cancelledRequest.current=true;approvalController.current.abort();settle('cancelled');}} model={modelPicker} agent={agentMode} onAgent={setAgentMode} context={note?'Active note context':'Vault context'} placeholder={discoverMode?'Research a topic…':searchMode?'Search the web...':note?'Chat with active note context...':'Ask Prism AI anything...'} extra={<>{agentMode&&<button type="button" aria-pressed={autoApprove} onClick={()=>setAutoApprove(v=>!v)}>Approve for me {autoApprove?'ON':'OFF'}</button>}<div className="ai-search-control" ref={searchMenuRoot}><button type="button" title="Web search" aria-pressed={searchMode} onClick={()=>setSearchMode(m=>!m)}><Search size={14}/> Web</button><button ref={searchMenuTrigger} type="button" className="ai-search-caret" aria-label="Search options" aria-haspopup="menu" aria-expanded={searchMenu} aria-controls={searchMenu?'ai-search-menu':undefined} onClick={()=>setSearchMenu(v=>!v)}><ChevronDown size={13} aria-hidden="true"/></button>{searchMenu&&<div id="ai-search-menu" ref={searchMenuBody} className="ai-search-menu" role="menu" aria-label="Search options"><button type="button" role="menuitemcheckbox" aria-checked={searchMode} tabIndex={-1} onClick={()=>chooseSearchOption(()=>setSearchMode(v=>!v))}>Web search<span className="ai-search-menu__state">{searchMode?'On':'Off'}</span></button><button type="button" role="menuitemcheckbox" aria-checked={discoverMode} tabIndex={-1} onClick={()=>chooseSearchOption(()=>setDiscoverMode(v=>!v))}>Discover sources<span className="ai-search-menu__state">{discoverMode?'On':'Off'}</span></button><button type="button" role="menuitem" tabIndex={-1} disabled>Deep research (soon)</button></div>}</div></>}/> }
+      {view === 'chat' && <PromptBar value={inputValue} onChange={setInputValue} onSend={handleSubmit} running={isLoading} onStop={()=>{cancelledRequest.current=true;approvalController.current.abort();settle('cancelled');}} model={modelPicker} agent={agentMode} onAgent={setAgentMode} context={note?'Active note context':'Vault context'} placeholder={discoverMode?'Research a topic…':webEnabled?'Ask Prism — web search on…':note?'Chat with active note context...':'Ask Prism AI anything...'} extra={<>{agentMode&&<button type="button" aria-pressed={autoApprove} onClick={()=>setAutoApprove(v=>!v)}>Approve for me {autoApprove?'ON':'OFF'}</button>}<div className="ai-search-control" ref={searchMenuRoot}><button type="button" title="Let the AI search the web" aria-pressed={webEnabled} onClick={()=>setWebEnabled(m=>!m)}><Search size={14}/> Web</button><button ref={searchMenuTrigger} type="button" className="ai-search-caret" aria-label="Search options" aria-haspopup="menu" aria-expanded={searchMenu} aria-controls={searchMenu?'ai-search-menu':undefined} onClick={()=>setSearchMenu(v=>!v)}><ChevronDown size={13} aria-hidden="true"/></button>{searchMenu&&<div id="ai-search-menu" ref={searchMenuBody} className="ai-search-menu" role="menu" aria-label="Search options"><button type="button" role="menuitemcheckbox" aria-checked={webEnabled} tabIndex={-1} onClick={()=>chooseSearchOption(()=>setWebEnabled(v=>!v))}>Web search<span className="ai-search-menu__state">{webEnabled?'On':'Off'}</span></button><button type="button" role="menuitemcheckbox" aria-checked={discoverMode} tabIndex={-1} onClick={()=>chooseSearchOption(()=>setDiscoverMode(v=>!v))}>Discover sources<span className="ai-search-menu__state">{discoverMode?'On':'Off'}</span></button><button type="button" role="menuitem" tabIndex={-1} disabled>Deep research (soon)</button></div>}</div></>}/> }
     </div>
   );
 };

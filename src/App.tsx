@@ -43,7 +43,6 @@ import { useDialog } from './components/DialogProvider';
 import { TitleBar } from './components/TitleBar';
 import { MaterialSurface } from './components/MaterialSurface';
 import { createErrorDetails, createRawErrorDetails, errorDialogMessage, ErrorDetails } from './utils/errors';
-import { usePrefersReducedMotion } from './utils/usePrefersReducedMotion';
 
 import { documents } from './services/documents';
 import { DocumentImports } from './components/DocumentImports';
@@ -168,28 +167,22 @@ export default function App() {
     applyWindowIcon(settings.appearance.appIcon, settings.appearance.themeMode);
   }, [settings.appearance.appIcon, settings.appearance.themeMode]);
 
-  // Startup splash: the static logo shows while boot + first-run backfill run;
-  // the animated video only plays once ALL booting work is finished (on an
-  // idle CPU), then the splash fades out.
+  // Startup splash: the Liquid Glass logo entrance plays immediately while
+  // boot + first-run backfill run. Once all work is done, `isBooting` flips
+  // false and the splash finishes its intro (plus a shine if it was waiting)
+  // before fading out.
   const [isBooting, setIsBooting] = useState(true);
-  const [playVideo, setPlayVideo] = useState(false);
   const [splashVisible, setSplashVisible] = useState(true);
   const settingsReadyRef = useRef(false);
   const vaultReadyRef = useRef(false);
   const backfillDoneRef = useRef(false);
-  const playVideoStartedRef = useRef(false);
-  const prefersReducedMotion = usePrefersReducedMotion();
+  const bootReadyRef = useRef(false);
 
-  const tryPlayVideo = () => {
-    if (playVideoStartedRef.current) return;
+  const markBootReady = () => {
+    if (bootReadyRef.current) return;
     if (!settingsReadyRef.current || !vaultReadyRef.current || !backfillDoneRef.current) return;
-    playVideoStartedRef.current = true;
-    setPlayVideo(true);
-    // Boot work is done, so the loader can have the CPU/GPU to itself. A short
-    // branded beat is enough: the old code waited almost a full 7.36 s video
-    // loop before mounting the app. Reduced-motion users skip the intro and
-    // get the static mark.
-    setTimeout(() => setIsBooting(false), prefersReducedMotion ? 120 : 1100);
+    bootReadyRef.current = true;
+    setIsBooting(false);
   };
 
   // Hard safety timeout: if the splash hasn't dismissed after 15 seconds
@@ -733,7 +726,7 @@ export default function App() {
         vaultReadyRef.current = true;
         backfillDoneRef.current = true; // no vault → nothing to embed
       }
-      tryPlayVideo();
+      markBootReady();
 
       // Apply startup-only appearance settings (these only affect launch state).
       setLayout(merged.appearance.startupView);
@@ -845,17 +838,17 @@ export default function App() {
             console.log(`Semantic backfill complete: ${count} notes embedded.`);
             backfillDoneRef.current = true;
             setSemanticTick((t) => t + 1);
-            tryPlayVideo();
+            markBootReady();
           })
           .catch((e) => {
             console.error('Embedding backfill failed:', e);
             setEmbeddingError(createErrorDetails(e, 'Semantic search is unavailable.'));
             backfillDoneRef.current = true;
-            tryPlayVideo();
+            markBootReady();
           });
       } else {
         backfillDoneRef.current = true;
-        tryPlayVideo();
+        markBootReady();
       }
 
       // Keep the index in sync reactively as files change on disk (gated by
@@ -893,7 +886,7 @@ export default function App() {
     } finally {
       // First vault index (success or failure) unblocks the splash screen.
       vaultReadyRef.current = true;
-      tryPlayVideo();
+      markBootReady();
     }
   };
 
@@ -1866,10 +1859,8 @@ export default function App() {
       {splashVisible && (
         <SplashScreen
           isLoading={isBooting}
-          playVideo={playVideo}
           onFinish={() => setSplashVisible(false)}
           logo={settings.appearance.appIcon || undefined}
-          accentColor={settings.appearance.accentColor}
         />
       )}
     </div>

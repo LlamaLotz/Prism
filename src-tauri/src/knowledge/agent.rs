@@ -65,13 +65,25 @@ pub struct AgentToolRequest {
     pub input: serde_json::Value,
     #[serde(default = "web_enabled_default")]
     pub web_enabled: bool,
+    #[serde(default)]
+    pub read_only: bool,
 }
 
 fn web_enabled_default() -> bool { true }
 
-fn ensure_web_allowed(tool: &str, web_enabled: bool) -> Result<(), String> {
+fn ensure_tool_allowed(tool: &str, web_enabled: bool, read_only: bool) -> Result<(), String> {
     if tool == "web_search" && !web_enabled {
         return Err("WEB_DISABLED: web access is disabled for this turn".into());
+    }
+    if read_only {
+        let is_write = tool_definitions()
+            .iter()
+            .find(|d| d.name == tool)
+            .map(|d| d.requires_approval)
+            .unwrap_or(false);
+        if is_write {
+            return Err("READ_ONLY: write tools are disabled in this mode".into());
+        }
     }
     Ok(())
 }
@@ -1476,7 +1488,7 @@ pub async fn agent_call_tool(
     request: AgentToolRequest,
 ) -> Result<AgentToolResponse, String> {
     let tool = request.tool.clone();
-    ensure_web_allowed(&tool, request.web_enabled)?;
+    ensure_tool_allowed(&tool, request.web_enabled, request.read_only)?;
     // Reads — direct, no approval
     match tool.as_str() {
         "web_search" => {
@@ -2017,24 +2029,49 @@ mod tests {
             serde_json::from_value(serde_json::json!({"tool":"web_search","input":{"query":"x"}}))
                 .unwrap();
         assert!(req.web_enabled);
+        assert!(!req.read_only);
     }
 
     #[test]
-    fn web_enabled_honors_camel_case_flag() {
+    fn camel_case_flags_deserialize() {
         let req: AgentToolRequest = serde_json::from_value(serde_json::json!({
             "tool": "web_search",
             "input": {"query": "x"},
-            "webEnabled": false
+            "webEnabled": false,
+            "readOnly": true
         }))
         .unwrap();
         assert!(!req.web_enabled);
+        assert!(req.read_only);
     }
 
     #[test]
     fn web_allowed_only_blocks_web_search_when_disabled() {
-        assert!(ensure_web_allowed("web_search", false).is_err());
-        assert!(ensure_web_allowed("web_search", true).is_ok());
-        assert!(ensure_web_allowed("read_note", false).is_ok());
+        assert!(ensure_tool_allowed("web_search", false, false).is_err());
+        assert!(ensure_tool_allowed("web_search", true, true).is_ok());
+        assert!(ensure_tool_allowed("read_note", false, false).is_ok());
+    }
+
+    #[test]
+    fn read_only_blocks_write_tools() {
+        for tool in ["create_note", "edit_note", "delete_note", "add_tag", "remove_tag", "rename_note", "create_folder", "move_folder", "add_wikilink", "format_note"] {
+            let err = ensure_tool_allowed(tool, true, true).unwrap_err();
+            assert!(err.starts_with("READ_ONLY:"), "{tool} should be blocked: {err}");
+        }
+    }
+
+    #[test]
+    fn read_only_allows_read_tools_and_unknown_tools() {
+        for tool in ["read_note", "read_block", "search_vault", "vault_overview", "get_related_notes", "get_backlinks", "web_search"] {
+            assert!(ensure_tool_allowed(tool, true, true).is_ok(), "{tool} should be allowed");
+        }
+        assert!(ensure_tool_allowed("not_a_tool", true, true).is_ok());
+    }
+
+    #[test]
+    fn write_tools_allowed_when_not_read_only() {
+        assert!(ensure_tool_allowed("create_note", true, false).is_ok());
+        assert!(ensure_tool_allowed("edit_note", true, false).is_ok());
     }
 }
 
@@ -2112,5 +2149,7 @@ pub async fn prepare_ai_enhancement(app: tauri::AppHandle, task: String, path: S
         },
     };
     if super::current(&app)?.generation != scope.generation { return Err("CONFLICT: Vault changed".into()); }
-    agent_call_tool(app, AgentToolRequest { tool: "edit_note".into(), input: serde_json::json!({"noteId":note_id,"expectedHash":original_hash,"operations":operations,"sourcePath":source_path}), web_enabled: true }).await
+    // Internal enhancement proposal: it always needs the edit_note path to build a preview,
+    // independent of the chat's read-only mode (publication still requires approval).
+    agent_call_tool(app, AgentToolRequest { tool: "edit_note".into(), input: serde_json::json!({"noteId":note_id,"expectedHash":original_hash,"operations":operations,"sourcePath":source_path}), web_enabled: true, read_only: false }).await
 }

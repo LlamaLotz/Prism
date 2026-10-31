@@ -73,7 +73,7 @@ export const knowledge = {
   planRetrieval: (request: RetrievalRequest) => invoke<RetrievalPlan>('plan_retrieval', { request }),
   getContext: (request: RetrievalRequest) => invoke<RetrievalPlan>('get_context', { request }),
   agentTools: () => invoke<AgentToolDefinition[]>('agent_list_tools'),
-  agentCall: (tool: string, input: unknown) => invoke<AgentToolResponse>('agent_call_tool', { request: { tool, input } }),
+  agentCall: (tool: string, input: unknown, options: { webEnabled?: boolean; readOnly?: boolean } = {}) => invoke<AgentToolResponse>('agent_call_tool', { request: { tool, input, webEnabled: options.webEnabled ?? true, readOnly: options.readOnly ?? false } }),
   agentPending: () => invoke<AgentPending[]>('agent_list_pending'),
   agentApprove: (id: string, approved: boolean) => invoke<{ approved: boolean; id: string; result?: AgentWriteResult }>('agent_resolve_pending', { id, approved }),
   agentRecheckOperation: (operationId: string) => invoke<void>('agent_recheck_operation', { operationId }),

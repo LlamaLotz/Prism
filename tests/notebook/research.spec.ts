@@ -128,8 +128,8 @@ test('Deep Research shows the not-available notice without leaving the panel', a
   expect(calls.find((call: any) => call.command === 'research_start').args.depth).toBe('deep');
 });
 
-async function openAssistant(page: Page) {
-  await page.goto(NOTEBOOK);
+async function openAssistant(page: Page, suffix?: string) {
+  await page.goto(NOTEBOOK + (suffix ?? ''));
   await page.getByRole('button', { name: 'Switch to assistant view' }).click();
 }
 
@@ -170,13 +170,17 @@ test('AI sidebar Web menu turns on Discover and renders research candidates inli
   await expect(page.getByLabel('Add to notebook')).toHaveValue('c1');
 });
 
-test('AI sidebar Web search returns results in the live conversation', async ({ page }) => {
-  await openAssistant(page);
+test('AI sidebar Web toggle grants the AI web_search tool access', async ({ page }) => {
+  await openAssistant(page, '?webTool');
   await page.getByRole('button', { name: 'Web', exact: true }).click();
   await page.getByLabel('Message', { exact: true }).fill('rust async runtime');
   await page.getByRole('button', { name: 'Send', exact: true }).click();
 
   await expect(page.getByRole('link', { name: 'Example result' })).toBeVisible();
   const calls = await page.evaluate(() => (window as any).fixtureCalls);
-  expect(calls).toContainEqual({ command: 'web_search', args: { query: 'rust async runtime' } });
+  const webCall = calls.find((call: any) => call.command === 'agent_call_tool' && call.args.request.tool === 'web_search');
+  expect(webCall).toBeTruthy();
+  expect(webCall.args.request.webEnabled).toBe(true);
+  expect(webCall.args.request.readOnly).toBe(false);
+  expect(calls.some((call: any) => call.command === 'web_search')).toBe(false);
 });

@@ -15,6 +15,33 @@ test('agent-off prompt preserves text, cancels, and supports chat override', asy
   await expect(page.getByRole('button',{name:'Agent OFF'})).toBeVisible();
   expect(await page.evaluate(()=>(window as any).fixtureCalls.filter((c:any)=>c.command==='agent_call_tool').length)).toBe(0);
 });
+test('AISidebar Web toggle grants the web_search tool', async ({page}) => {
+  await page.goto('/tests/notebook/runtime-harness.html?noapproval&agent&webTool');
+  await page.getByRole('button',{name:'Web',exact:true}).click();
+  const input=page.getByLabel('Message',{exact:true});
+  await input.fill('rust async runtime'); await input.press('Enter');
+  await expect(page.getByRole('link',{name:'Example result'})).toBeVisible();
+  const calls=await page.evaluate(()=>(window as any).fixtureCalls);
+  const webCall=calls.find((c:any)=>c.command==='agent_call_tool'&&c.args.request.tool==='web_search');
+  expect(webCall.args.request.webEnabled).toBe(true);
+  expect(webCall.args.request.readOnly).toBe(true);
+  expect(calls.some((c:any)=>c.command==='web_search')).toBe(false);
+});
+test('AISidebar Web off in Agent mode excludes web_search from the prompt', async ({page}) => {
+  await page.goto('/tests/notebook/runtime-harness.html?noapproval&agent&webTool');
+  await page.getByRole('button',{name:'Agent OFF'}).click();
+  const input=page.getByLabel('Message',{exact:true});
+  await input.fill('rust async runtime'); await input.press('Enter');
+  await expect(page.getByRole('link',{name:'Example result'})).toBeVisible();
+  const calls=await page.evaluate(()=>(window as any).fixtureCalls);
+  const firstModel=calls.find((c:any)=>c.command==='execute_model');
+  const system=firstModel.args.request.messages.find((m:any)=>m.role==='system').content;
+  expect(system).not.toContain('web_search');
+  expect(calls.filter((c:any)=>c.command==='agent_call_tool'&&c.args.request.tool==='web_search'&&c.args.request.webEnabled!==false)).toHaveLength(0);
+  // The raw tool path still sends the hard-block flag to the backend.
+  await input.fill('{"tool":"web_search","input":{"query":"rust async runtime"}}'); await input.press('Enter');
+  await expect.poll(()=>page.evaluate(()=>(window as any).fixtureCalls.filter((c:any)=>c.command==='agent_call_tool'&&c.args.request.tool==='web_search'&&c.args.request.webEnabled===false).length)).toBe(1);
+});
 test('service recovery waits for explicit retry and never launches a process', async ({page}) => {
   await page.goto('/tests/notebook/runtime-harness.html?noapproval&agent&rounds&service');
   const input=page.getByPlaceholder('Ask Prism AI anything...'); await input.fill('Hello'); await input.press('Enter');

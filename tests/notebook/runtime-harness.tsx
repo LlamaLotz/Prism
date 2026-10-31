@@ -70,13 +70,14 @@ Object.defineProperty(window,'__TAURI_INTERNALS__',{value:{transformCallback:(ca
  if(command==='create_chat_session'){const row={id:'chat-1',title:args.title,origin:'copilot',messageCount:0,createdAt:1,updatedAt:1};chats=[row];localStorage.setItem('fixture-chats',JSON.stringify(chats));return row;}
  if(command==='append_chat_message'){const row={...args,id:`message-${transcript.length}`,createdAt:1};transcript.push(row);localStorage.setItem('fixture-transcript',JSON.stringify(transcript));return row;}
  if(command==='get_chat_messages')return transcript;
- if(command==='agent_list_tools')return [{name:'read_note',description:'Read a note',requiresApproval:false,category:'read'}];
+ if(command==='agent_list_tools')return [{name:'read_note',description:'Read a note',requiresApproval:false,category:'read'},{name:'web_search',description:'Search the web',requiresApproval:false,category:'read'}];
  if(command==='plan_retrieval')return {query:'fixture',blocks:[],contextText:'Source material',citations:[source('paged-out')],contextCitations:modelRound===0?[source('A')]:[source('A'),source('B')],degraded:modelRound===0?'Embeddings unavailable; lexical results used':null};
  if(command==='model_service_status'){checks++;return {state:checks>1?'ready':'unavailable',command:'ollama serve',message:checks>1?'Ready':'Start your installed service.'};}
  if(command==='prepare_ai_enhancement')return {tool:'edit_note',requiresApproval:true,approvalId:'edit-1',preview:'- Original\n+ Formatted',result:null,error:null};
- if(command==='execute_model'){if(query.has('service') && checks<2)throw new Error('SERVICE_UNAVAILABLE: Provider connection failed');modelRound++;return modelRound===1?'```json\n{"tool":"read_note","input":{"noteId":"note-A"}}\n```':'Final answer from both rounds.';}
+ if(command==='execute_model'){if(query.has('service') && checks<2)throw new Error('SERVICE_UNAVAILABLE: Provider connection failed');modelRound++;if(query.has('webTool'))return modelRound===1?'```json\n{"tool":"web_search","input":{"query":"rust async runtime"}}\n```':'[Example result](https://example.com/result)';return modelRound===1?'```json\n{"tool":"read_note","input":{"noteId":"note-A"}}\n```':'Final answer from both rounds.';}
  if(command==='agent_call_tool'){
-  const request=args.request as {tool:string;input:unknown};
+  const request=args.request as {tool:string;input:unknown;webEnabled?:boolean};
+  if(request.tool==='web_search'){if(request.webEnabled===false)return {tool:'web_search',requiresApproval:false,approvalId:null,preview:null,result:null,error:'WEB_DISABLED: web access is disabled for this turn'};return {tool:'web_search',requiresApproval:false,approvalId:null,preview:null,result:[{title:'Example result',url:'https://example.com/result',snippet:'A result snippet.'}],error:null};}
   if(request.tool==='read_note')return {tool:'read_note',result:{content:'Source A'},requiresApproval:false};
   pending=[{...pending[0],id:'edit-2',tool:'edit_note',notePath:'/vault/note.md',preview:'- Current source\n+ Fresh revision',vaultId:'vault-1',input:request.input as any,createdAt:1}];
   return {tool:'edit_note',requiresApproval:true,approvalId:'edit-2',preview:pending[0].preview};
