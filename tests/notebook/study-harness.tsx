@@ -12,6 +12,7 @@ const calls:any[]=[],chats:any[]=[],messages:Record<string,any[]>={};let pending
 if(query.has('history'))operations=Array.from({length:12},(_,i)=>({id:`op${i}`,tool:'edit_note',notePath:`/vault/Note ${i}.md`,state:'applied',undoAvailable:true}));
 const sources=[{id:'s1',title:'திருக்குறள் · Virtue and learning',path:'Literature/திருக்குறள்.md',text:'Selected Tamil source. Learning is a lifelong practice.',hash:'h1',missing:false},{id:'s2',title:'Testing fundamentals and a deliberately long source title',path:'Computer Science/Testing.md',text:'Tests verify behavior.',hash:'h2',missing:false}];
 let collections:any[]=query.has('empty')?[]:[{id:'c1',title:'Learning across disciplines',sourceIds:['s1','s2'],revision:1}];
+if(query.has('websource')){sources.push({id:'web:9',title:'Saved web page',path:'https://example.com/page',hash:'hweb',text:'Captured web page text.',missing:false,kind:'web',url:'https://example.com/page'});collections[0]?.sourceIds.push('web:9');}
 if(query.has('library'))collections.push(...Array.from({length:5},(_,i)=>({id:`book${i}`,title:i===2?'அறத்துப்பால் · A deliberately long notebook title for studying multilingual content':`Research notebook ${i+1}`,sourceIds:['s1'],revision:1})));
 const bodies:any={flashcards:{cards:[{id:'f1',front:'What are the three main sections of the Thirukkural?',back:'Virtue, wealth, and love.',sourceIds:['s1']},{id:'f2',front:'அறத்துப்பால் (Virtue): What is the value of learning?',back:'Learning supports wisdom.',sourceIds:['s1']}]},quiz:{questions:[{id:'q1',question:'What does a good test verify?',options:['Behavior','Formatting alone','Nothing'],answer:0,explanation:'Behavior matters.',sourceIds:['s2']},{id:'q2',question:'Which section concerns virtue?',options:['அறத்துப்பால்','Other'],answer:0,explanation:'அறத்துப்பால் concerns virtue.',sourceIds:['s1']}]},slides:{slides:[{id:'sl1',title:'அறத்துப்பால் (Virtue): Introduction',bullets:['Section: பாயிரவியல் (Introduction)','Chapter 1: The Praise of God','Chapter 2: The Excellence of Rain'],notes:'Introduce the main themes.',sourceIds:['s1']},{id:'sl2',title:'Testing fundamentals',bullets:['Verify observable behavior','Keep tests understandable'],notes:'Connect with the source.',sourceIds:['s2']}]},table:{columns:['Topic','Description'],rows:[{cells:['Virtue','அறத்துப்பால்'],sourceIds:['s1']},{cells:['Testing','Behavior'],sourceIds:['s2']}]},mindmap:{nodes:[{id:'n1',parentId:null,label:'Learning',sourceIds:['s1']},{id:'n2',parentId:'n1',label:'Testing',sourceIds:['s2']}]},podcast:{transcript:'A source-grounded conversation about learning.'}};
 let artifacts=query.has('empty')?[]:Object.keys(bodies).map((kind,i)=>({id:kind,collectionId:'c1',kind,title:{flashcards:'Thirukkural Structure and Testing Fundamentals',quiz:'Learning check',slides:'Introduction to the Thirukkural',table:'Learning comparison',mindmap:'Connected ideas',podcast:'A conversation about learning'}[kind],version:1,parentId:null,snapshotId:'snap',body:bodies[kind],created:1700000000+i}));
@@ -30,7 +31,7 @@ Object.defineProperty(window,'__TAURI_INTERNALS__',{value:{transformCallback:(ca
  if(command==='plugin:event|unlisten'){const {event,eventId}=args;eventHandlers[event]?.delete(eventId);return;}
  if(command.startsWith('plugin:'))return 1;
  if(command==='research_start'){
-  if(args.depth==='deep')throw new Error('NOT_AVAILABLE: Deep research requires the local research service.');
+  if(args.depth==='deep'&&!query.has('deepresearch'))throw new Error('NOT_AVAILABLE: Deep research requires the local research service.');
   researchSession={sessionId:'ses1',jobId:'job1',query:args.query,depth:args.depth,includeWeb:args.includeWeb,useSources:args.useSources,collectionId:args.collectionId??null,status:'running',phase:'planning',progress:0,candidates:[],addedKeys:[],error:null,created:1};
   return {jobId:'job1',sessionId:'ses1'};
  }
@@ -41,6 +42,10 @@ Object.defineProperty(window,'__TAURI_INTERNALS__',{value:{transformCallback:(ca
   collection.sourceIds=[...new Set([...collection.sourceIds,...args.keys])];
   for(const key of args.keys)if(!sources.some(s=>s.id===key))sources.push({id:key,title:`Researched ${key.replace(/^web:/,'')}`,path:`web:${key.replace(/^web:/,'')}`,hash:`hash-${key}`,text:`Extracted web text for ${key}.`,missing:false,kind:'web',url:`https://example.com/${key.replace(/^web:/,'')}`});
   return structuredClone(collection);
+ }
+ if(command==='research_create_notes'){
+  const folder=`Researched Sources/${args.folder}`;
+  return {folder,paths:args.keys.map((key:string)=>`${folder}/${String(key).replace(/[^a-z0-9]+/gi,'-')}.md`)};
  }
  if(command==='research_add_url'){const collection=collections.find(c=>c.id===args.collectionId);if(!collection)throw new Error('Notebook not found');const id=`web:${collection.sourceIds.length+1}`;collection.sourceIds.push(id);sources.push({id,title:args.url,path:args.url,hash:id,text:'Imported web page.',missing:false,kind:'web',url:args.url});return structuredClone(collection);}
  if(command==='research_preview')return {title:`Preview ${args.key}`,text:`Extracted text for ${args.key}.`,url:'https://example.com/preview',chars:32};

@@ -13,6 +13,11 @@ html .prompt-bar__controls .ai-search-control > button {
 }
 
 html .prompt-bar__controls .ai-search-control > button:first-child {
+  justify-content: center;
+  width: 30px;
+  min-width: 30px;
+  min-height: 30px;
+  padding-inline: 0;
   border-top-right-radius: 0 !important;
   border-bottom-right-radius: 0 !important;
 }

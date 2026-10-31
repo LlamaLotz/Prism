@@ -118,6 +118,7 @@ test('auto-approved apply failures are surfaced and mark the turn failed',async(
 test('manual approval waits for the reviewer and applies the change',async({page})=>{
  await page.goto('/tests/notebook/study-harness.html');await page.getByRole('button',{name:'Open notebook',exact:true}).click();await toggleAgent(page);
  await page.getByLabel('Message',{exact:true}).fill('{"tool":"edit_note","input":{"noteId":"s1","operations":[]}}');await page.getByRole('button',{name:'Send',exact:true}).click();
+ await page.getByRole('button',{name:/Agent history/}).click();
  await expect(page.getByRole('button',{name:'Approve',exact:true})).toBeVisible();
  expect(await page.evaluate(()=>(window as any).fixtureCalls.filter((c:any)=>c.command==='agent_resolve_pending').length)).toBe(0);
  await page.getByRole('button',{name:'Approve',exact:true}).click();
