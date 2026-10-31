@@ -6,6 +6,7 @@
 pub(crate) mod dedupe;
 pub(crate) mod discover;
 pub(crate) mod fetch;
+pub(crate) mod notes;
 pub(crate) mod providers;
 pub(crate) mod store;
 

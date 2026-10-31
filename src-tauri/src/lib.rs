@@ -1734,7 +1734,7 @@ fn append_ingestion_log(
 }
 
 /// Convert UNIX epoch seconds to UTC calendar fields (Howard Hinnant's civil-from-days algorithm).
-fn civil_from_epoch(epoch_secs: i64) -> (i64, i64, i64, i64, i64, i64) {
+pub(crate) fn civil_from_epoch(epoch_secs: i64) -> (i64, i64, i64, i64, i64, i64) {
     let days = epoch_secs.div_euclid(86_400);
     let secs_of_day = epoch_secs.rem_euclid(86_400);
     let hour = secs_of_day / 3_600;
@@ -2332,6 +2332,7 @@ pub fn run() {
             knowledge::research::research_cancel,
             knowledge::research::research_get,
             knowledge::research::research_add_sources,
+            knowledge::research::notes::research_create_notes,
             knowledge::research::research_add_url,
             knowledge::research::research_preview
         ])
