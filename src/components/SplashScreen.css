@@ -62,3 +62,27 @@
     display: none;
   }
 }
+
+/* The room behind the logo. It is mounted with the splash so its WebGL
+   programs compile while the logo SVG is still loading, but it stays invisible
+   until the logo paints its first frame. From that signal the grid fades in
+   while its own first scan reveals the room over the same 1.8 s the logo takes
+   to settle, so the two entrances start and finish together. */
+.splash-grid {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 700ms ease-out;
+}
+
+.splash-grid[data-active='true'] {
+  opacity: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .splash-grid {
+    transition-duration: 200ms;
+  }
+}
