@@ -496,6 +496,7 @@ export function createLiquidGlassLogoRenderer(
   canvas: HTMLCanvasElement,
   initial: LiquidGlassLogoTuning,
   onReady?: () => void,
+  onComplete?: () => void,
 ): LiquidGlassLogoRenderer | null {
   const gl = canvas.getContext('webgl2', {
     premultipliedAlpha: true,
@@ -622,6 +623,15 @@ export function createLiquidGlassLogoRenderer(
   let visible = true;
   let frame = 0;
   const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)');
+  let completed = false;
+
+  const sequenceDuration = () =>
+    tuning.ending === 'logo' ? logoFinishTime : liquidGlassLogoDuration;
+  const markComplete = () => {
+    if (completed) return;
+    completed = true;
+    onComplete?.();
+  };
 
   const fit = () =>
     Math.min(
@@ -790,26 +800,29 @@ export function createLiquidGlassLogoRenderer(
       onReady?.();
     }
     draw();
+    if (reduced?.matches) markComplete();
     request();
   };
 
   const tick = (now: number) => {
     frame = 0;
-    const delta = last ? Math.min(0.05, (now - last) / 1000) : 0;
+    // Cap the step so a stall or a restored window does not skip the whole
+    // entrance. 250 ms keeps slow, software-rendered frames (about 4 fps)
+    // advancing in real time instead of stretching the sequence.
+    const delta = last ? Math.min(0.25, (now - last) / 1000) : 0;
     last = now;
+    const duration = sequenceDuration();
     const moving = playing && visible && !reduced?.matches && loaded;
     if (moving) {
       clock += delta * tuning.speed;
-      const cycle =
-        (tuning.ending === 'logo' ? logoFinishTime : liquidGlassLogoDuration) + tuning.loopDelay;
+      const cycle = duration + tuning.loopDelay;
       if (tuning.loop && clock >= cycle) clock %= cycle;
     }
     draw();
-    if (
-      moving &&
-      (tuning.loop || clock < (tuning.ending === 'logo' ? logoFinishTime : liquidGlassLogoDuration))
-    )
-      request();
+    // Report the settled frame only for a one-shot entrance; looping previews
+    // deliberately never finish.
+    if (!tuning.loop && loaded && clock >= duration) markComplete();
+    if (moving && (tuning.loop || clock < duration)) request();
     else last = 0;
   };
   function request() {
@@ -861,7 +874,10 @@ export function createLiquidGlassLogoRenderer(
     replay() {
       clock = 0;
       last = 0;
+      completed = false;
       draw();
+      // Reduced motion never advances the clock, so settle immediately again.
+      if (reduced?.matches) markComplete();
       request();
     },
     seek(seconds) {

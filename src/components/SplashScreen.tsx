@@ -6,10 +6,7 @@ import {
   type RefObject,
 } from 'react';
 import { LiquidGlassLogo } from './liquid-glass-logo';
-import {
-  liquidGlassLogoDefaults,
-  logoFinishTime,
-} from './liquid-glass-logo-renderer';
+import { liquidGlassLogoDefaults } from './liquid-glass-logo-renderer';
 import { getSplashLogo } from '../services/appIcon';
 import { usePrefersReducedMotion } from '../utils/usePrefersReducedMotion';
 import { APP_VERSION } from '../version';
@@ -20,15 +17,13 @@ interface SplashScreenProps {
   isLoading: boolean;
   /** Called after the fade-out completes so the parent can unmount this. */
   onFinish: () => void;
-  /** Custom app icon id from the rainbow logo registry (falls back to /logo.svg). */
+  /** Custom app icon id from the rainbow logo registry (falls back to /logo.png). */
   logo?: string;
 }
 
-// The renderer's logo-only sequence settles at logoFinishTime (1.8 s). The
-// extra buffer covers frames dropped while boot work (vault indexing,
-// embedding) is running.
-const INTRO_SETTLE_MS = logoFinishTime * 1000 + 300;
-// Backstop for a renderer that neither reports ready nor paints the fallback.
+// The renderer reports when its logo-only sequence settles (1.8 s) via a data
+// attribute. This backstop only covers a renderer that never paints at all;
+// slow frames no longer cut the entrance short.
 const RENDERER_BACKSTOP_MS = 6000;
 
 const {
@@ -44,9 +39,9 @@ interface SplashLogoShineProps {
 }
 
 /**
- * A specular sweep over the resting logo. The SVG doubles as a CSS mask, so
- * the highlight is clipped to the artwork's own alpha and stays aligned with
- * the canvas at any window size.
+ * A specular sweep over the resting logo. The artwork doubles as a CSS mask,
+ * so the highlight is clipped to its own alpha and stays aligned with the
+ * canvas at any window size.
  */
 function SplashLogoShine({ frameRef, logoSrc, active }: SplashLogoShineProps) {
   const [size, setSize] = useState(0);
@@ -118,12 +113,13 @@ export function SplashScreen({ isLoading, onFinish, logo }: SplashScreenProps) {
     };
   }, []);
 
-  // Start the settle timer on the renderer's first frame, not on mount: the
-  // 500 KB logo SVG can take longer to rasterize than the React mount.
+  // Start the settle wait on the renderer's own progress: the intro finishes
+  // when the sequence clock reaches its end, not after a fixed wall-clock
+  // delay. A slow renderer plays the entrance in real time instead of having
+  // the splash fade out halfway through it.
   useEffect(() => {
     const host = logoHostRef.current;
     if (!host) return;
-    let settleTimer: ReturnType<typeof setTimeout> | undefined;
     let finished = false;
 
     const finish = () => {
@@ -140,12 +136,16 @@ export function SplashScreen({ isLoading, onFinish, logo }: SplashScreenProps) {
         finish();
         return true;
       }
-      if (host.querySelector('.liquid-glass-logo[data-liquid-glass-ready]')) {
-        if (prefersReducedMotion) {
-          finish();
-        } else if (settleTimer === undefined) {
-          settleTimer = setTimeout(finish, INTRO_SETTLE_MS);
-        }
+      if (host.querySelector('.liquid-glass-logo[data-liquid-glass-intro-complete]')) {
+        finish();
+        return true;
+      }
+      if (
+        prefersReducedMotion &&
+        host.querySelector('.liquid-glass-logo[data-liquid-glass-ready]')
+      ) {
+        finish();
+        return true;
       }
       return false;
     };
@@ -159,7 +159,6 @@ export function SplashScreen({ isLoading, onFinish, logo }: SplashScreenProps) {
 
     return () => {
       observer.disconnect();
-      clearTimeout(settleTimer);
       clearTimeout(backstop);
     };
   }, [prefersReducedMotion]);
@@ -194,6 +193,9 @@ export function SplashScreen({ isLoading, onFinish, logo }: SplashScreenProps) {
     >
       <div ref={frameRef} className="relative w-[min(90vw,48rem)]">
         <div ref={logoHostRef}>
+          {/* The 32-band spectral shader is fill-rate bound. 1.5x still gives
+              the splash more pixels than the logo texture holds, while keeping
+              the entrance smooth on software-rendered or low-end Windows GPUs. */}
           <LiquidGlassLogo
             logo={logoSrc}
             ending="logo"
@@ -202,6 +204,7 @@ export function SplashScreen({ isLoading, onFinish, logo }: SplashScreenProps) {
             logoColor="original"
             depth={2.9}
             height={480}
+            maxDpr={1.5}
             style={{ maxHeight: 'calc(100vh - 6rem)' }}
             aria-label="Prism"
           />
