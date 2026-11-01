@@ -17,6 +17,16 @@ import whiteACLight from '../assets/logos/light/White AC.svg';
 import blueLight from '../assets/logos/light/Blue.svg';
 import greyLight from '../assets/logos/light/Grey.svg';
 import whiteLight from '../assets/logos/light/White.svg';
+// Raster copies of the dark-mode logos, used only by the startup splash. WebKit
+// drops an SVG's embedded <image> layers when the file is drawn into a canvas,
+// so the splash cannot use the SVG variants even though <img> can.
+import blueACSplash from '../assets/logos/splash/blue-ac.png';
+import greyACSplash from '../assets/logos/splash/grey-ac.png';
+import whiteACSplash from '../assets/logos/splash/white-ac.png';
+import blueSplash from '../assets/logos/splash/blue.png';
+import greySplash from '../assets/logos/splash/grey.png';
+import whiteSplash from '../assets/logos/splash/white.png';
+import bwACSplash from '../assets/logos/splash/bw-ac.png';
 
 /**
  * The Prism logos the user can pick from as the app icon (SVG, transparent
@@ -90,6 +100,22 @@ const LIGHT_ICON_MAP: Record<string, string> = {
 };
 
 /**
+ * Dark-mode raster variants for the startup splash. Every entry is a PNG so
+ * WebKit never has to rasterize an SVG with embedded <image> layers through a
+ * canvas: it drops those layers, which left the splash showing only the prism
+ * outline in its CSS shine instead of the artwork itself.
+ */
+const SPLASH_ICON_MAP: Record<string, string> = {
+  'blue-ac': blueACSplash,
+  'grey-ac': greyACSplash,
+  'white-ac': whiteACSplash,
+  'bw-ac': bwACSplash,
+  blue: blueSplash,
+  grey: greySplash,
+  white: whiteSplash,
+};
+
+/**
  * Resolves a stored app-icon id to its asset URL, selecting the appropriate
  * dark-mode or light-mode variant based on `themeMode`.
  *
@@ -109,17 +135,17 @@ export function getAppIcon(id?: string, themeMode?: 'dark' | 'light'): string {
  * Resolves the startup splash logo from the stored app-icon id.
  *
  * The splash is always black, so it always uses the dark-mode variant even when
- * the app itself is in light mode. The default is the raster /logo.png: the
+ * the app itself is in light mode. Every known icon maps to a raster PNG: the
  * splash draws the artwork into a canvas before uploading it as a WebGL
  * texture, and WebKit drops the embedded raster layers of these SVGs when they
- * are rasterized that way — leaving only the vector strokes. The PNG carries
- * the same artwork and decodes everywhere. Data-URL uploads pass through
+ * are rasterized that way — leaving only the vector strokes. The PNG copies
+ * carry the same artwork and decode everywhere. Data-URL uploads pass through
  * untouched.
  */
 export function getSplashLogo(id?: string): string {
   if (!id) return '/logo.png';
   if (id.startsWith('data:')) return id;
-  return DARK_ICON_MAP[id] ?? '/logo.png';
+  return SPLASH_ICON_MAP[id] ?? '/logo.png';
 }
 
 /**

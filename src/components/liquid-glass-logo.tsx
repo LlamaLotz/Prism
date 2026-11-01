@@ -62,6 +62,7 @@ export const LiquidGlassLogo = forwardRef<LiquidGlassLogoHandle, LiquidGlassLogo
     const canvas = useRef<HTMLCanvasElement>(null);
     const engine = useRef<ReturnType<typeof createLiquidGlassLogoRenderer>>(null);
     const [ready, setReady] = useState(false);
+    const [introComplete, setIntroComplete] = useState(false);
     const [fallback, setFallback] = useState(false);
     // A theme supplies the colors; any color passed explicitly still wins.
     const theme = liquidGlassLogoThemes[overrides.theme === 'light' ? 'light' : 'dark'];
@@ -79,7 +80,10 @@ export const LiquidGlassLogo = forwardRef<LiquidGlassLogoHandle, LiquidGlassLogo
     useImperativeHandle(
       ref,
       () => ({
-        replay: () => engine.current?.replay(),
+        replay: () => {
+          setIntroComplete(false);
+          engine.current?.replay();
+        },
         seek: (seconds) => engine.current?.seek(seconds),
         pause: () => engine.current?.pause(),
         play: () => engine.current?.play(),
@@ -90,8 +94,11 @@ export const LiquidGlassLogo = forwardRef<LiquidGlassLogoHandle, LiquidGlassLogo
       if (!canvas.current) return;
       let renderer: ReturnType<typeof createLiquidGlassLogoRenderer> = null;
       try {
-        renderer = createLiquidGlassLogoRenderer(canvas.current, latest.current, () =>
-          setReady(true),
+        renderer = createLiquidGlassLogoRenderer(
+          canvas.current,
+          latest.current,
+          () => setReady(true),
+          () => setIntroComplete(true),
         );
       } catch {
         renderer = null;
@@ -117,6 +124,7 @@ export const LiquidGlassLogo = forwardRef<LiquidGlassLogoHandle, LiquidGlassLogo
         role="img"
         aria-label={label ?? (tuning.ending === 'logo' ? 'Logo' : tuning.text)}
         data-liquid-glass-ready={ready || undefined}
+        data-liquid-glass-intro-complete={introComplete || undefined}
       >
         {backgroundImage && (
           <>
