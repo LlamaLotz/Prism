@@ -9,6 +9,7 @@ import { NoteFile, tauriAPI } from '../types';
 import { useIngestion } from '../services/ingestionStore';
 import { knowledge, type SearchPage } from '../services/knowledge';
 import { getAppIcon } from '../services/appIcon';
+import { VaultBranchedTree } from './VaultBranchedTree';
 
 interface SidebarProps {
   notes: NoteFile[];
@@ -28,6 +29,8 @@ interface SidebarProps {
   appIcon?: string;
   /** Current theme mode — used to swap white logos to grey in light mode. */
   themeMode?: 'dark' | 'light';
+  /** Liquid Gloss gets the branched vault tree; Industrial keeps the classic list. */
+  themeStyle?: 'industrial' | 'gloss';
   onNewNote: () => void;
   onNewFolder: () => void;
   /** Delete a folder (and everything inside it). Receives the folder's
@@ -132,6 +135,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   statusText = '',
   appIcon = '',
   themeMode = 'dark',
+  themeStyle = 'industrial',
   onNewNote,
   onNewFolder,
   onDeleteFolder,
@@ -315,7 +319,16 @@ export const Sidebar: React.FC<SidebarProps> = ({
       document.body.style.userSelect = '';
       setDragOverFolder(null);
       setDraggingPath(null);
-      if (!drag?.dragging || drag.target === null) return;
+      if (!drag?.dragging) return;
+
+      // A drag may end over the sidebar background (no row click follows), so
+      // clear the click guard after the browser has had a chance to dispatch
+      // the post-drag click. Row handlers still clear it synchronously.
+      window.setTimeout(() => {
+        suppressClickRef.current = false;
+      }, 0);
+
+      if (drag.target === null) return;
 
       if (drag.type === 'note') {
         const note = notesRef.current.find((entry) => entry.path === drag.path);
@@ -665,10 +678,31 @@ export const Sidebar: React.FC<SidebarProps> = ({
               : 'Connect folder to load notes.'}
           </div>
         ) : showTree ? (
-          <>
-            {rootNotes.map((note) => renderNote(note, 0))}
-            {folders.map((folder) => renderFolder(folder, 0))}
-          </>
+          themeStyle === 'gloss' ? (
+            <VaultBranchedTree
+              rootNotes={rootNotes}
+              folders={folders}
+              collapsed={collapsed}
+              activeNote={activeNote}
+              draggingPath={draggingPath}
+              dragOverFolder={dragOverFolder}
+              suppressClickRef={suppressClickRef}
+              onToggleFolder={toggleFolder}
+              onSelectFolder={onSelectFolder}
+              onSelectNote={onSelectNote}
+              onOpenNote={onOpenNote}
+              onNoteMenu={onNoteMenu}
+              onDeleteFolder={onDeleteFolder}
+              onDeleteNote={onDeleteNote}
+              onRenameNote={onRenameNote}
+              startPointerDrag={startPointerDrag}
+            />
+          ) : (
+            <>
+              {rootNotes.map((note) => renderNote(note, 0))}
+              {folders.map((folder) => renderFolder(folder, 0))}
+            </>
+          )
         ) : filteredNotes.length === 0 ? (
           <div className="text-center text-xs text-[var(--nb-secondary)] py-8">
             {searchError || searchResult?.degraded || (!searchResult ? 'Searching…' : 'No notes match your search.')}

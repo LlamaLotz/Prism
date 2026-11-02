@@ -1667,6 +1667,7 @@ export default function App() {
             statusText={settings.appearance.sidebarStatusText}
             appIcon={settings.appearance.appIcon}
             themeMode={settings.appearance.themeMode}
+            themeStyle={settings.appearance.themeStyle}
           />
           </MaterialSurface>
         </div>
