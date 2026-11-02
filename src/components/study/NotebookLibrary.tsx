@@ -72,8 +72,8 @@ export function NotebookLibrary({ vaultPath, notebooks, materials, onOpen, onCre
     selectedEl.scrollIntoView({ block: 'nearest', inline: 'center', behavior: 'instant' });
   }, [selected, index, mode]);
   const changeMode = (value: string) => { setMode(value); try { localStorage.setItem(key, value); } catch { /* in-memory preference still works */ } };
-  return <section className="notebook-library" aria-label="Notebook library" data-mode={mode} data-archetype={archetype}>
-    <header className="notebook-library__header"><div><span className="study-eyebrow">YOUR KNOWLEDGE, CONNECTED</span><h1>Notebooks</h1><p className="study-muted">A place for your sources, conversations, and study materials.</p></div><button type="button" className="notebook-library__new" onClick={onCreate} disabled={busy}><Plus size={16}/> New notebook</button></header>
+  return <section className="notebook-library" aria-label="Notebook library">
+    <header className="notebook-library__header"><div><span className="study-eyebrow">YOUR KNOWLEDGE, CONNECTED</span><h1>Notebooks</h1><p className="study-muted">A place for your sources, conversations, and study materials.</p></div></header>
     <div className="notebook-library__controls"><label className="notebook-search"><Search size={17}/><input aria-label="Search notebooks" placeholder="Search notebooks…" value={query} onChange={e => setQuery(e.target.value)}/></label><div aria-label="Library presentation"><button aria-pressed={mode === 'cards'} onClick={() => changeMode('cards')}><Layers size={16}/> Cards</button><button aria-pressed={mode === 'grid'} onClick={() => changeMode('grid')}><Grid2X2 size={16}/> Grid</button></div></div>
     {!rows.length && (query ? <p className="study-muted">No matching notebooks. Try a different title.</p> : <div className="study-empty"><h2>Start your first notebook</h2><p className="study-muted">Collect your notes and turn them into study materials.</p></div>)}
       <div ref={track} className={`notebook-covers notebook-covers--${mode}`} data-industrial={industrial} role="group" aria-label="Notebook covers" tabIndex={mode === 'cards' ? 0 : -1}

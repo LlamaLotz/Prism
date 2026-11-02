@@ -386,8 +386,9 @@ html .study-workspace .notebook-add-card[data-selected='true'] { outline: 2px so
 @media (prefers-reduced-motion: reduce) { .notebook-add-card { transition: none !important; } }
 
 
-/* Responsive coverflow: the 3D fan stays at every width. The Add tile leaves
-   the fan below 1000px of library width and a header action takes over. */
+/* Responsive coverflow: the 3D fan stays at every width. The Add notebook
+   card leaves the fan below 1000px of library width and sits underneath it,
+   so the creation action is always visible. */
 .notebook-covers--cards:not([data-industrial='true']) {
   --cover-card: 240px;
   --cover-step: 165px;
@@ -399,50 +400,29 @@ html .study-workspace .notebook-add-card[data-selected='true'] { outline: 2px so
 .notebook-covers--cards:not([data-industrial='true']) .notebook-add-card {
   width: var(--cover-card);
   height: calc(var(--cover-card) * 1.125);
-}
-.notebook-library__new {
-  display: none !important;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  flex-shrink: 0;
-  min-height: 32px;
-  padding: 6px 10px;
-  border: 1px solid var(--nb-border);
-  border-radius: var(--nb-radius-sm) !important;
-  background: var(--nb-card);
-  color: var(--nb-text);
-  font: inherit;
-  font-size: 12px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: border-color 150ms ease, background-color 150ms ease;
-}
-.notebook-library__new:hover {
-  border-color: var(--nb-focus);
-  background: var(--nb-selection);
+  min-height: 0;
 }
 @container (max-width: 999px) {
   .notebook-covers--cards:not([data-industrial='true']) {
     --cover-card: 210px;
     --cover-step: 135px;
-  }
-  .notebook-library[data-archetype='gloss'][data-mode='cards'] .notebook-library__new {
-    display: inline-flex !important;
+    min-height: calc(24px + var(--cover-card) * 1.125 + 16px + 120px + 16px);
   }
   .notebook-covers--cards:not([data-industrial='true']) .notebook-add-card {
-    display: none;
+    top: calc(24px + var(--cover-card) * 1.125 + 16px);
+    left: 50%;
+    width: var(--cover-card);
+    height: 120px;
+    min-height: 0;
+    padding: 16px;
+    gap: 8px;
+    transform: translateX(-50%);
   }
 }
 @container (max-width: 700px) {
   .notebook-covers--cards:not([data-industrial='true']) {
     --cover-card: 190px;
     --cover-step: 110px;
-  }
-}
-@container (max-width: 500px) {
-  .notebook-library__new {
-    align-self: flex-start;
   }
 }
 @container (min-width: 1000px) {
