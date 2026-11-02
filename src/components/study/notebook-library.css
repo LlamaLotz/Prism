@@ -187,7 +187,7 @@ html .study-workspace .notebook-cover__caption small {
   position: absolute;
   left: 50%;
   top: 24px;
-  transform: translateX(calc(-50% + var(--cover-distance) * 165px))
+  transform: translateX(calc(-50% + var(--cover-distance) * var(--cover-step, 165px)))
     translateZ(calc(var(--cover-depth) * -110px))
     rotateY(clamp(-48deg, calc(var(--cover-distance) * -38deg), 48deg));
   height: 270px;
@@ -376,7 +376,7 @@ html .study-workspace .notebook-add-card {
   transition: transform .45s cubic-bezier(.22,.8,.25,1); box-shadow: none;
 }
 .notebook-add-card span { font-size: 12px; color: var(--nb-secondary); }
-.notebook-covers--cards:not([data-industrial='true']) .notebook-add-card { position: absolute; left: 50%; top: 24px; transform: translateX(calc(-50% + var(--cover-distance) * 165px)) translateZ(calc(var(--cover-depth) * -110px)) rotateY(clamp(-48deg, calc(var(--cover-distance) * -38deg), 48deg)); height: 270px; }
+.notebook-covers--cards:not([data-industrial='true']) .notebook-add-card { position: absolute; left: 50%; top: 24px; transform: translateX(calc(-50% + var(--cover-distance) * var(--cover-step, 165px))) translateZ(calc(var(--cover-depth) * -110px)) rotateY(clamp(-48deg, calc(var(--cover-distance) * -38deg), 48deg)); height: 270px; }
 .notebook-covers--cards[data-industrial='true'] .notebook-add-card { scroll-snap-align: center; height: 330px; }
 html .study-workspace .notebook-covers--grid .notebook-add-card { width: 100%; min-height: 280px; }
 html .study-workspace .notebook-add-card[data-selected='true'] { outline: 2px solid var(--nb-focus); outline-offset: 3px; }
@@ -386,55 +386,68 @@ html .study-workspace .notebook-add-card[data-selected='true'] { outline: 2px so
 @media (prefers-reduced-motion: reduce) { .notebook-add-card { transition: none !important; } }
 
 
-/* Coverflow fallback: below the width where the 3D stack fits, use the same
-   rounded cards in a horizontal rail. This keeps the covers, captions and add
-   tile usable without the absolute stack clipping them. The coverflow remains
-   in place at wide widths. */
+/* Responsive coverflow: the 3D fan stays at every width. The Add tile leaves
+   the fan below 1000px of library width and a header action takes over. */
+.notebook-covers--cards:not([data-industrial='true']) {
+  --cover-card: 240px;
+  --cover-step: 165px;
+}
+.notebook-covers--cards:not([data-industrial='true']) .notebook-cover {
+  width: var(--cover-card);
+  height: calc(var(--cover-card) * 1.125);
+}
+.notebook-covers--cards:not([data-industrial='true']) .notebook-add-card {
+  width: var(--cover-card);
+  height: calc(var(--cover-card) * 1.125);
+}
+.notebook-library__new {
+  display: none !important;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  flex-shrink: 0;
+  min-height: 32px;
+  padding: 6px 10px;
+  border: 1px solid var(--nb-border);
+  border-radius: var(--nb-radius-sm) !important;
+  background: var(--nb-card);
+  color: var(--nb-text);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color 150ms ease, background-color 150ms ease;
+}
+.notebook-library__new:hover {
+  border-color: var(--nb-focus);
+  background: var(--nb-selection);
+}
 @container (max-width: 999px) {
   .notebook-covers--cards:not([data-industrial='true']) {
-    display: flex;
-    align-items: center;
-    gap: 22px;
-    min-height: 330px;
-    padding: 16px 12px;
-    overflow-x: auto;
-    overflow-y: hidden;
-    scroll-padding-inline: 12px;
-    scroll-snap-type: x mandatory;
-    perspective: none;
-    touch-action: pan-x pan-y;
+    --cover-card: 210px;
+    --cover-step: 135px;
   }
-  .notebook-covers--cards:not([data-industrial='true']) .notebook-cover {
-    position: relative;
-    left: auto;
-    top: auto;
-    width: 240px;
-    height: 330px;
-    transform: none;
-    scroll-snap-align: center;
-  }
-  .notebook-covers--cards:not([data-industrial='true']) .notebook-cover__art {
-    height: 240px;
-  }
-  .notebook-covers--cards:not([data-industrial='true']) .notebook-cover__caption {
-    display: flex;
+  .notebook-library[data-archetype='gloss'][data-mode='cards'] .notebook-library__new {
+    display: inline-flex !important;
   }
   .notebook-covers--cards:not([data-industrial='true']) .notebook-add-card {
-    position: relative;
-    left: auto;
-    top: auto;
-    width: 240px;
-    height: 330px;
-    transform: none;
-    scroll-snap-align: center;
+    display: none;
   }
 }
-
-/* Wide coverflow only: reserve the gap between the last cover and the add
-   tile. Without this, the 240px add tile overlaps the rotated second cover. */
+@container (max-width: 700px) {
+  .notebook-covers--cards:not([data-industrial='true']) {
+    --cover-card: 190px;
+    --cover-step: 110px;
+  }
+}
+@container (max-width: 500px) {
+  .notebook-library__new {
+    align-self: flex-start;
+  }
+}
 @container (min-width: 1000px) {
   .notebook-covers--cards:not([data-industrial='true']) .notebook-add-card {
-    transform: translateX(calc(-50% + var(--cover-distance) * 165px + 72px))
+    transform: translateX(calc(-50% + var(--cover-distance) * var(--cover-step) + 72px))
       translateZ(calc(var(--cover-depth) * -110px))
       rotateY(clamp(-48deg, calc(var(--cover-distance) * -38deg), 48deg));
   }
