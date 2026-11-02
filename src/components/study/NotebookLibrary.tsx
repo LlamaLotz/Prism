@@ -56,6 +56,10 @@ export function NotebookLibrary({ vaultPath, notebooks, materials, onOpen, onCre
   const rows = notebooks.filter(n => n.title.toLocaleLowerCase().includes(query.toLocaleLowerCase()));
   const index = selected === '__new__' ? rows.length : Math.max(0, rows.findIndex(n => n.id === selected));
   const active = rows[index];
+  // The add card is the third fan slot: it follows the selected cover and the
+  // next one, and clamps there so it never slides off the shelf. When there are
+  // fewer notebooks it moves closer, and selecting it centres it.
+  const addDistance = Math.min(rows.length - index, 2);
   const select = (next: number) => { const i = Math.max(0, Math.min(rows.length, next)); setSelected(rows[i]?.id ?? '__new__'); };
   useEffect(() => {
     if (mode !== 'cards') return;
@@ -81,7 +85,7 @@ export function NotebookLibrary({ vaultPath, notebooks, materials, onOpen, onCre
         onPointerDown={e => { if ((e.target as HTMLElement).closest('details')) return; if (mode === 'cards') drag.current = { x: e.clientX, y: e.clientY, moved: false }; }}
         onPointerMove={e => { if (!drag.current) return; if (Math.abs(e.clientX - drag.current.x) > 12 && Math.abs(e.clientX - drag.current.x) > Math.abs(e.clientY - drag.current.y)) drag.current.moved = true; }}
         onPointerUp={e => { const start = drag.current; if (start?.moved) { select(index + Math.round((start.x - e.clientX) / 120 || (start.x > e.clientX ? 1 : -1))); e.preventDefault(); } setTimeout(() => { drag.current = null; }, 0); }} onPointerCancel={() => { drag.current = null; }}>
-        {rows.map((notebook, i) => { const distance = i - index; const count = materials.filter(a => a.collectionId === notebook.id).length; const cover = notebook.cover ?? 'accent'; return <article key={notebook.id} className="notebook-cover" data-selected={i === index} style={{ '--cover-distance': distance, '--cover-depth': Math.abs(distance), zIndex: rows.length + 1 - Math.abs(distance) } as CSSProperties}>
+        {rows.map((notebook, i) => { const distance = i - index; const count = materials.filter(a => a.collectionId === notebook.id).length; const cover = notebook.cover ?? 'accent'; const offstage = !industrial && mode === 'cards' && Math.abs(distance) > 1; return <article key={notebook.id} className="notebook-cover" data-selected={i === index} data-offstage={offstage || undefined} style={{ '--cover-distance': distance, '--cover-depth': Math.abs(distance), zIndex: rows.length + 1 - Math.abs(distance) } as CSSProperties}>
           <button className="notebook-cover__open" tabIndex={mode === 'grid' || i === index ? 0 : -1} aria-label={`${notebook.title}, ${notebook.sourceIds.length} sources, ${count} materials`} onClick={() => { if (drag.current?.moved) return; if (mode === 'grid' || i === index) onOpen(notebook.id); else setSelected(notebook.id); }}>
             <span className="notebook-cover__art" data-cover={cover.startsWith('data:') ? 'image' : cover} aria-hidden="true">{/^data:image\/(webp|png);base64,/.test(cover) ? <img src={cover} alt=""/> : <BookOpen size={40}/>}<span className="notebook-cover__number">{String(i + 1).padStart(2, '0')}</span></span><span className="notebook-cover__caption"><strong>{notebook.title}</strong><small>{notebook.sourceIds.length} sources · {count} materials</small></span>
           </button>
@@ -94,7 +98,7 @@ export function NotebookLibrary({ vaultPath, notebooks, materials, onOpen, onCre
             </div>
           </details>
         </article>; })}
-        <button className="notebook-add-card" disabled={busy} data-selected={index === rows.length} style={{ '--cover-distance': rows.length - index, '--cover-depth': Math.abs(rows.length - index), zIndex: index === rows.length ? rows.length + 2 : 0 } as CSSProperties} tabIndex={mode === 'grid' || index === rows.length ? 0 : -1} onClick={() => { if (drag.current?.moved) return; if (mode === 'grid' || index === rows.length) onCreate(); else select(rows.length); }}><Plus size={32}/><strong>Add notebook</strong><span>A new place for your ideas</span></button>
+        <button className="notebook-add-card" disabled={busy} data-selected={index === rows.length} style={{ '--cover-distance': addDistance, '--cover-depth': Math.abs(addDistance), '--add-gap': addDistance === 0 ? '0px' : undefined, zIndex: rows.length + 2 } as CSSProperties} tabIndex={0} onClick={() => { if (drag.current?.moved) return; onCreate(); }}><Plus size={32}/><strong>Add notebook</strong><span>A new place for your ideas</span></button>
       </div>
       {mode === 'cards' && <footer className="notebook-library__caption"><button aria-label="Previous notebook" disabled={index === 0} onClick={() => select(index - 1)}><ArrowLeft size={18}/></button><div><h2>{active?.title ?? 'Add notebook'}</h2><p className="study-muted">{active ? `${active.sourceIds.length} sources · ${materials.filter(a => a.collectionId === active.id).length} materials` : 'Collect sources and start something new.'}</p>{active && <button onClick={() => onOpen(active.id)}>Open notebook <ArrowRight size={15}/></button>}</div><button aria-label="Next notebook" disabled={index === rows.length} onClick={() => select(index + 1)}><ArrowRight size={18}/></button></footer>}
       <dialog ref={coverDialog} className="study-generation-dialog notebook-cover-dialog" aria-labelledby="notebook-cover-title" onCancel={e => { if (savingCover) e.preventDefault(); else setCoverFor(null); }}>

@@ -376,7 +376,7 @@ html .study-workspace .notebook-add-card {
   transition: transform .45s cubic-bezier(.22,.8,.25,1); box-shadow: none;
 }
 .notebook-add-card span { font-size: 12px; color: var(--nb-secondary); }
-.notebook-covers--cards:not([data-industrial='true']) .notebook-add-card { position: absolute; left: 50%; top: 24px; transform: translateX(calc(-50% + var(--cover-distance) * var(--cover-step, 165px))) translateZ(calc(var(--cover-depth) * -110px)) rotateY(clamp(-48deg, calc(var(--cover-distance) * -38deg), 48deg)); height: 270px; }
+.notebook-covers--cards:not([data-industrial='true']) .notebook-add-card { position: absolute; left: 50%; top: 24px; transform: translateX(calc(-50% + var(--cover-distance) * var(--cover-step, 165px) + var(--add-gap, 72px))) translateZ(calc(var(--cover-depth) * -110px)) rotateY(clamp(-48deg, calc(var(--cover-distance) * -38deg), 48deg)); height: 270px; }
 .notebook-covers--cards[data-industrial='true'] .notebook-add-card { scroll-snap-align: center; height: 330px; }
 html .study-workspace .notebook-covers--grid .notebook-add-card { width: 100%; min-height: 280px; }
 html .study-workspace .notebook-add-card[data-selected='true'] { outline: 2px solid var(--nb-focus); outline-offset: 3px; }
@@ -386,12 +386,20 @@ html .study-workspace .notebook-add-card[data-selected='true'] { outline: 2px so
 @media (prefers-reduced-motion: reduce) { .notebook-add-card { transition: none !important; } }
 
 
-/* Responsive coverflow: the 3D fan stays at every width. The Add notebook
-   card leaves the fan below 1000px of library width and sits underneath it,
-   so the creation action is always visible. */
+/* The fan shows the selected cover, its neighbour on each side, and the
+   dashed Add notebook card in the third slot. Covers further out stay in the
+   DOM for navigation but must not sit behind the add card. */
+.notebook-covers--cards:not([data-industrial='true']) .notebook-cover[data-offstage='true'] {
+  visibility: hidden;
+}
+
+/* Responsive coverflow: the 3D fan stays at every width and the dashed Add
+   notebook card keeps the third slot. The card, step and add gap scale
+   together so the three-card composition fits the library. */
 .notebook-covers--cards:not([data-industrial='true']) {
   --cover-card: 240px;
   --cover-step: 165px;
+  --add-gap: 72px;
 }
 .notebook-covers--cards:not([data-industrial='true']) .notebook-cover {
   width: var(--cover-card);
@@ -404,31 +412,54 @@ html .study-workspace .notebook-add-card[data-selected='true'] { outline: 2px so
 }
 @container (max-width: 999px) {
   .notebook-covers--cards:not([data-industrial='true']) {
-    --cover-card: 210px;
-    --cover-step: 135px;
-    min-height: calc(24px + var(--cover-card) * 1.125 + 16px + 120px + 16px);
-  }
-  .notebook-covers--cards:not([data-industrial='true']) .notebook-add-card {
-    top: calc(24px + var(--cover-card) * 1.125 + 16px);
-    left: 50%;
-    width: var(--cover-card);
-    height: 120px;
-    min-height: 0;
-    padding: 16px;
-    gap: 8px;
-    transform: translateX(-50%);
+    --cover-card: 200px;
+    --cover-step: 130px;
+    --add-gap: 58px;
   }
 }
-@container (max-width: 700px) {
+@container (max-width: 799px) {
   .notebook-covers--cards:not([data-industrial='true']) {
-    --cover-card: 190px;
-    --cover-step: 110px;
+    --cover-card: 170px;
+    --cover-step: 105px;
+    --add-gap: 50px;
   }
 }
-@container (min-width: 1000px) {
+@container (max-width: 649px) {
+  .notebook-covers--cards:not([data-industrial='true']) {
+    --cover-card: 140px;
+    --cover-step: 90px;
+    --add-gap: 38px;
+  }
+}
+@container (max-width: 519px) {
+  .notebook-covers--cards:not([data-industrial='true']) {
+    --cover-card: 120px;
+    --cover-step: 74px;
+    --add-gap: 28px;
+  }
   .notebook-covers--cards:not([data-industrial='true']) .notebook-add-card {
-    transform: translateX(calc(-50% + var(--cover-distance) * var(--cover-step) + 72px))
-      translateZ(calc(var(--cover-depth) * -110px))
-      rotateY(clamp(-48deg, calc(var(--cover-distance) * -38deg), 48deg));
+    padding: 12px;
+    gap: 6px;
+  }
+}
+@container (max-width: 449px) {
+  .notebook-covers--cards:not([data-industrial='true']) {
+    --cover-card: 100px;
+    --cover-step: 60px;
+    --add-gap: 28px;
+  }
+  .notebook-covers--cards:not([data-industrial='true']) .notebook-add-card span {
+    display: none;
+  }
+}
+@container (max-width: 319px) {
+  .notebook-covers--cards:not([data-industrial='true']) {
+    --cover-card: 84px;
+    --cover-step: 48px;
+    --add-gap: 26px;
+  }
+  .notebook-covers--cards:not([data-industrial='true']) .notebook-add-card svg {
+    width: 24px;
+    height: 24px;
   }
 }
