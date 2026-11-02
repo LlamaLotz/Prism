@@ -1,6 +1,29 @@
 import { readNote, writeNote } from '../services/noteIO';
 import { invoke } from '@tauri-apps/api/core';
 
+// Contract mirrors for the offline structure commands. The service owns the
+// implementation and request/response docs; these re-exports keep the shared
+// type surface in one place for callers that import from `../types`.
+export type {
+  NoteFormatPreview,
+  NoteFormatRequest,
+  NoteSplitPlan,
+  NoteSplitRequest,
+  OutlineNode,
+  SectionPlan,
+  SplitOption,
+  SplitStats,
+  StructureBlock,
+  StructureBlockKind,
+  StructureErrorCode,
+  StructureErrorInfo,
+  StructureInspection,
+  StructureInspectRequest,
+  StructureModelState,
+  StructureModelStatus,
+  StructureSplitMode,
+} from '../services/structure';
+
 export type AppPage = 'editor' | 'graph' | 'split' | 'topics' | 'notebook';
 export const APP_PAGES: AppPage[] = ['editor', 'graph', 'split', 'topics', 'notebook'];
 
