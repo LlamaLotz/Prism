@@ -376,7 +376,7 @@ html .study-workspace .notebook-add-card {
   transition: transform .45s cubic-bezier(.22,.8,.25,1); box-shadow: none;
 }
 .notebook-add-card span { font-size: 12px; color: var(--nb-secondary); }
-.notebook-covers--cards:not([data-industrial='true']) .notebook-add-card { position: absolute; left: 50%; top: 24px; transform: translateX(calc(-50% + var(--cover-distance) * var(--cover-step, 165px) + var(--add-gap, 72px))) translateZ(calc(var(--cover-depth) * -110px)) rotateY(clamp(-48deg, calc(var(--cover-distance) * -38deg), 48deg)); height: 270px; }
+.notebook-covers--cards:not([data-industrial='true']) .notebook-add-card { position: absolute; left: 50%; top: 24px; transform: translateX(calc(-50% + var(--cover-distance) * var(--cover-step, 165px) + var(--add-gap, 72px))) translateZ(calc(var(--add-depth, 2) * -110px)) rotateY(var(--add-tilt, -48deg)); height: 270px; }
 .notebook-covers--cards[data-industrial='true'] .notebook-add-card { scroll-snap-align: center; height: 330px; }
 html .study-workspace .notebook-covers--grid .notebook-add-card { width: 100%; min-height: 280px; }
 html .study-workspace .notebook-add-card[data-selected='true'] { outline: 2px solid var(--nb-focus); outline-offset: 3px; }
@@ -398,8 +398,12 @@ html .study-workspace .notebook-add-card[data-selected='true'] { outline: 2px so
    together so the three-card composition fits the library. */
 .notebook-covers--cards:not([data-industrial='true']) {
   --cover-card: 240px;
-  --cover-step: 165px;
-  --add-gap: 72px;
+  --cover-step: 158px;
+  --add-gap: 82px;
+  /* The add card is an action, not a notebook: a gentler turn and shallower
+     depth keep it at cover size instead of shrinking it into a chip. */
+  --add-tilt: -24deg;
+  --add-depth: 1;
 }
 .notebook-covers--cards:not([data-industrial='true']) .notebook-cover {
   width: var(--cover-card);
@@ -413,15 +417,15 @@ html .study-workspace .notebook-add-card[data-selected='true'] { outline: 2px so
 @container (max-width: 999px) {
   .notebook-covers--cards:not([data-industrial='true']) {
     --cover-card: 200px;
-    --cover-step: 130px;
-    --add-gap: 58px;
+    --cover-step: 124px;
+    --add-gap: 72px;
   }
 }
 @container (max-width: 799px) {
   .notebook-covers--cards:not([data-industrial='true']) {
     --cover-card: 170px;
-    --cover-step: 105px;
-    --add-gap: 50px;
+    --cover-step: 96px;
+    --add-gap: 70px;
   }
 }
 @container (max-width: 649px) {
@@ -429,6 +433,10 @@ html .study-workspace .notebook-add-card[data-selected='true'] { outline: 2px so
     --cover-card: 140px;
     --cover-step: 90px;
     --add-gap: 38px;
+    /* Below this the three-card shelf is too tight for a near-full-size add
+       card; keep the deeper pose so it still fits inside the fan. */
+    --add-tilt: -48deg;
+    --add-depth: 2;
   }
 }
 @container (max-width: 519px) {
