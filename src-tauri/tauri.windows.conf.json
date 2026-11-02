@@ -1,6 +1,12 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "bundle": {
-    "resources": ["../Extractor Final", "onnxruntime/*.dll"]
+    "resources": [
+      "../Extractor Final",
+      "onnxruntime/*.dll",
+      "resources/models",
+      "resources/bin",
+      "resources/licenses"
+    ]
   }
 }

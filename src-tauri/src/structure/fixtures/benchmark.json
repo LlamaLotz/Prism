@@ -1,0 +1,82 @@
+{
+  "documents": [
+    {
+      "file": "pdf-photosynthesis.md",
+      "title": "Plant physiology and energy",
+      "expected": [
+        { "startText": "Photosynthesis converts", "heading": "Photosynthesis" },
+        { "startText": "Water moves through", "heading": "Water transport" },
+        { "startText": "Growth begins", "heading": "Growth and hormones" }
+      ]
+    },
+    {
+      "file": "web-article.md",
+      "title": "Coral reef resilience",
+      "expected": [
+        { "startText": "Coral reefs are", "heading": "Reef ecosystems" },
+        { "startText": "The partnership", "heading": "Coral and algae" },
+        { "startText": "Reefs protect", "heading": "Coastal value" },
+        { "startText": "Restoration projects", "heading": "Restoration" },
+        { "startText": "Local threats", "heading": "Local threats" },
+        { "startText": "Monitoring tracks", "heading": "Monitoring" }
+      ]
+    },
+    {
+      "file": "transcript.md",
+      "title": "City water during drought",
+      "expected": [
+        { "startText": "00:00", "heading": "Introduction" },
+        { "startText": "02:10", "heading": "Leaks and reservoirs" },
+        { "startText": "04:30", "heading": "Forecasting" },
+        { "startText": "08:00", "heading": "Farm irrigation" },
+        { "startText": "09:40", "heading": "Urban shade" },
+        { "startText": "11:15", "heading": "Equity" }
+      ]
+    },
+    {
+      "file": "research-paper.md",
+      "title": "Local document structure model",
+      "expected": [
+        { "startText": "Abstract", "heading": "Abstract" },
+        { "startText": "Introduction", "heading": "Introduction" },
+        { "startText": "Methods", "heading": "Methods" },
+        { "startText": "Results", "heading": "Results" },
+        { "startText": "Discussion", "heading": "Discussion" }
+      ]
+    },
+    {
+      "file": "textbook.md",
+      "title": "Atmosphere, weather and climate",
+      "expected": [
+        { "startText": "CHAPTER ONE", "heading": "The atmosphere" },
+        { "startText": "CHAPTER TWO", "heading": "Weather systems" },
+        { "startText": "CHAPTER THREE", "heading": "Climate" }
+      ]
+    },
+    {
+      "file": "report.md",
+      "title": "Quarterly operations review",
+      "expected": [
+        { "startText": "Executive Summary", "heading": "Executive summary" },
+        { "startText": "Customer Support", "heading": "Customer support" },
+        { "startText": "Engineering", "heading": "Engineering" },
+        { "startText": "Hiring", "heading": "Hiring" },
+        { "startText": "Risks", "heading": "Risks" },
+        { "startText": "Next Quarter", "heading": "Next quarter" }
+      ]
+    },
+    {
+      "file": "../../../../docs/v2-runtime.md",
+      "title": "Prism v2 runtime foundations",
+      "expected": [
+        { "startText": "## Storage and identity", "heading": "Storage and identity" },
+        { "startText": "## Service contracts", "heading": "Service contracts" },
+        { "startText": "## Execution and privacy", "heading": "Execution and privacy" },
+        { "startText": "## Phase 2a", "heading": "Phase 2a" },
+        { "startText": "## Phase 2b", "heading": "Phase 2b" },
+        { "startText": "## Validation and release", "heading": "Validation and release" },
+        { "startText": "## Phase 3", "heading": "Phase 3" }
+      ]
+    }
+  ]
+}

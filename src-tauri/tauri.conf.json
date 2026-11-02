@@ -10,6 +10,7 @@
     "beforeBuildCommand": "npm run build-frontend"
   },
   "app": {
+    "macOSPrivateApi": true,
     "windows": [
       {
         "title": "Prism",
@@ -31,7 +32,10 @@
     "createUpdaterArtifacts": true,
     "targets": ["app", "nsis", "msi", "dmg"],
     "resources": [
-      "../Extractor Final"
+      "../Extractor Final",
+      "resources/models",
+      "resources/bin",
+      "resources/licenses"
     ],
     "windows": {
       "nsis": {

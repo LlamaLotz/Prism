@@ -22,6 +22,7 @@ mod search;
 pub mod linker;
 pub mod menu;
 mod path_util;
+mod structure;
 mod watcher;
 
 use linker::{LinkMention, LinkerEngine, NoteLinker};
@@ -1329,6 +1330,11 @@ fn resolve_resource_file(app: &tauri::AppHandle, relative_subpath: &str) -> Path
         if p2.exists() {
             return p2;
         }
+        // 2b. Directory resources are copied under their configured parent.
+        let p2b = resource_dir.join("resources").join(relative_subpath);
+        if p2b.exists() {
+            return p2b;
+        }
         // 3. Tauri may flatten globs — also try just the filename at the resource root
         if let Some(filename) = std::path::Path::new(relative_subpath).file_name() {
             let p3 = resource_dir.join(filename);
@@ -1347,6 +1353,10 @@ fn resolve_resource_file(app: &tauri::AppHandle, relative_subpath: &str) -> Path
         let p1 = cwd.join(relative_subpath);
         if p1.exists() {
             return p1;
+        }
+        let p1b = cwd.join("resources").join(relative_subpath);
+        if p1b.exists() {
+            return p1b;
         }
         let p2 = cwd.parent().unwrap_or(&cwd).join(relative_subpath);
         if p2.exists() {
@@ -2310,6 +2320,10 @@ pub fn run() {
             backfill_embeddings,
             setup_omniroute_environment,
             format_note_content,
+            structure::get_structure_model_status,
+            structure::inspect_note_structure,
+            structure::preview_note_format,
+            structure::plan_note_split,
             record_note_version,
             reconstruct_note_version,
             get_note_history,

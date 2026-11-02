@@ -2,7 +2,10 @@
   "bundle": {
     "resources": [
       "../Extractor Final",
-      "ingest-runtime/"
+      "ingest-runtime/",
+      "resources/models",
+      "resources/bin",
+      "resources/licenses"
     ]
   }
 }

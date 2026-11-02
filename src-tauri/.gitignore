@@ -2,3 +2,11 @@
 # will have compiled files and executables
 /target/
 /gen/schemas
+
+# Local structure model payloads are staged by scripts/ and are not committed.
+# The license, notices and manifest remain tracked.
+resources/models/*.gguf
+resources/models/*.part
+resources/bin/*
+!resources/bin/.gitkeep
+scripts/__pycache__/
