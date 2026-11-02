@@ -88,6 +88,335 @@ if (query.has('gemini')) {
 const noteContents: Record<string,string> = {};
 const documentId = 'a'.repeat(64);
 let annotationFile = JSON.parse(localStorage.getItem('fixture-annotations') || 'null') || { version: 1, documentId, revision: 0, entries: [] };
+
+// ---- Offline structure command fixtures ---------------------------------
+// These mocks mirror the contract shapes closely enough to exercise the real
+// UI without a bundled model. Query flags:
+//   ?structure-model=ready|missing|invalid|unavailable  (default missing)
+//   ?structure-error=status|inspect|format|plan
+//   ?structure-error-code=EXACT_PREFIX
+const structureModelState = query.get('structure-model') || 'missing';
+const structureErrorTarget = query.get('structure-error');
+const structureErrorCode = query.get('structure-error-code');
+
+function failStructureCommand(target: string, fallbackCode: string) {
+  if (structureErrorTarget === target) {
+    throw new Error(`${structureErrorCode || fallbackCode}: fixture ${target} failure`);
+  }
+}
+
+function headingText(text: string) {
+  return text.trim().replace(/^#{1,6}\s*/, '').replace(/\s*#+\s*$/, '').trim();
+}
+
+function fixtureStructureInspect(request: any) {
+  failStructureCommand('inspect', 'LIMIT');
+  const title = String(request?.title ?? 'Note');
+  const content = String(request?.content ?? '').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  const lines = content.split('\n');
+  const blocks: any[] = [];
+  let inFence = false;
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (!line.trim()) continue;
+    const trimmed = line.trimStart();
+    if (trimmed.startsWith('```') || trimmed.startsWith('~~~')) {
+      const marker = trimmed[0];
+      const start = i;
+      inFence = true;
+      i++;
+      while (i < lines.length) {
+        if (lines[i].trimStart().startsWith(marker.repeat(3))) {
+          inFence = false;
+          break;
+        }
+        i++;
+      }
+      blocks.push({
+        id: `b${blocks.length}`,
+        kind: 'code',
+        level: null,
+        text: lines.slice(start, Math.min(i + 1, lines.length)).join('\n'),
+        startLine: start + 1,
+        endLine: Math.min(i + 1, lines.length),
+      });
+      continue;
+    }
+    if (inFence) continue;
+
+    const heading = line.match(/^(#{1,6})\s+/);
+    if (heading) {
+      blocks.push({
+        id: `b${blocks.length}`,
+        kind: 'heading',
+        level: heading[1].length,
+        text: line,
+        startLine: i + 1,
+        endLine: i + 1,
+      });
+      continue;
+    }
+
+    const start = i;
+    i++;
+    while (
+      i < lines.length &&
+      lines[i].trim() &&
+      !/^(#{1,6})\s+/.test(lines[i]) &&
+      !lines[i].trimStart().startsWith('```') &&
+      !lines[i].trimStart().startsWith('~~~')
+    ) {
+      i++;
+    }
+    i--;
+    blocks.push({
+      id: `b${blocks.length}`,
+      kind: 'paragraph',
+      level: null,
+      text: lines.slice(start, i + 1).join('\n'),
+      startLine: start + 1,
+      endLine: i + 1,
+    });
+  }
+
+  const limit = Number(request?.maxBlocks ?? 5000);
+  if (blocks.length > limit) {
+    throw new Error(`LIMIT: structure inspection found ${blocks.length} blocks (limit ${limit})`);
+  }
+
+  const outline: any[] = [];
+  const stack: any[] = [];
+  for (const block of blocks) {
+    for (const node of stack) node.endBlock = block.id;
+    if (block.kind !== 'heading') continue;
+    const node = {
+      id: block.id,
+      title: headingText(block.text) || 'Untitled heading',
+      level: block.level,
+      startBlock: block.id,
+      endBlock: block.id,
+      children: [] as any[],
+    };
+    while (stack.length > 0 && stack[stack.length - 1].level >= node.level) stack.pop();
+    if (stack.length > 0) stack[stack.length - 1].children.push(node);
+    else outline.push(node);
+    stack.push(node);
+  }
+
+  const counts: Record<number, number> = {};
+  for (const block of blocks) {
+    if (block.kind === 'heading') counts[block.level] = (counts[block.level] ?? 0) + 1;
+  }
+  const splitOptions: any[] = [];
+  for (let level = 1; level <= 6; level++) {
+    const count = counts[level] ?? 0;
+    if (count === 0) continue;
+    splitOptions.push({
+      mode: 'headings',
+      level,
+      sections: count,
+      label: `Heading ${level} · ${count} section${count === 1 ? '' : 's'}`,
+    });
+  }
+  const paragraphBlocks = blocks.filter((block) => block.kind !== 'heading').length;
+  const chunks = blocks.length > 0 ? Math.max(1, Math.ceil(paragraphBlocks / 2)) : 0;
+  if (chunks > 0) {
+    splitOptions.push({
+      mode: 'paragraph',
+      level: null,
+      sections: chunks,
+      label: `Paragraph chunks · ${chunks} section${chunks === 1 ? '' : 's'}`,
+    });
+  }
+  splitOptions.push({ mode: 'topics', level: null, sections: 0, label: 'Topics · local model' });
+
+  const warnings: string[] = [];
+  if (Object.keys(counts).length === 0) {
+    warnings.push('No headings found; topic analysis or paragraph chunks are required.');
+  }
+  if (blocks.length === 0) warnings.push('The note has no content blocks.');
+
+  return { title, blocks, outline, splitOptions, warnings };
+}
+
+function fixturePreviewFormat(request: any) {
+  failStructureCommand('format', 'LIMIT');
+  const content = String(request?.content ?? '').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  const title = String(request?.title ?? '').trim() || 'Note';
+  const frontmatterMatch = content.match(/^---\n[\s\S]*?\n---\n+/);
+  const frontmatter = frontmatterMatch?.[0] ?? '';
+  const body = content.slice(frontmatter.length);
+  const out: string[] = [];
+  let inFence = false;
+
+  for (const rawLine of body.split('\n')) {
+    const line = rawLine.replace(/[ \t]+$/, '');
+    const trimmed = line.trimStart();
+    if (trimmed.startsWith('```') || trimmed.startsWith('~~~')) {
+      inFence = !inFence;
+      out.push(line);
+      continue;
+    }
+    if (inFence) {
+      out.push(line);
+      continue;
+    }
+    const match = line.match(/^(#{1,6})[ \t]*(.*?)[ \t]*#*[ \t]*$/);
+    if (!match) {
+      out.push(line);
+      continue;
+    }
+    const text = match[2].trim();
+    if (match[1].length === 1 && text.toLowerCase() === title.toLowerCase()) continue;
+    const level = match[1].length === 1 ? 2 : match[1].length;
+    out.push(`${'#'.repeat(level)}${text ? ` ${text}` : ''}`);
+  }
+
+  const normalizedBody = out.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+  const formatted = `${frontmatter}# ${title}\n${normalizedBody ? `\n${normalizedBody}\n` : ''}`;
+  return {
+    content: formatted,
+    changed: formatted !== content,
+    outline: fixtureStructureInspect({ title, content: formatted }).outline,
+    warnings: [],
+  };
+}
+
+function fixtureParagraphStarts(blocks: any[], targetChars: number) {
+  const starts = [0];
+  let chars = 0;
+  for (let i = 0; i < blocks.length; i++) {
+    const length = blocks[i].text.length;
+    if (i > 0 && chars + length > targetChars) {
+      starts.push(i);
+      chars = 0;
+    }
+    chars += length + 2;
+  }
+  if (starts.length === 1 && blocks.length > 1) starts.push(Math.floor(blocks.length / 2));
+  return starts;
+}
+
+function fixturePlanSplit(request: any) {
+  failStructureCommand('plan', 'INVALID_OUTPUT');
+  const title = String(request?.title ?? 'Note');
+  const content = String(request?.content ?? '');
+  const inspection = fixtureStructureInspect({ title, content });
+  const blocks = inspection.blocks;
+  if (blocks.length === 0) throw new Error('INVALID_INPUT: the note has no content');
+
+  const requestedMode = String(request?.mode ?? 'auto');
+  const targetChars = Number(request?.targetChars ?? 6000);
+  const headingsAt = (level: number) =>
+    blocks.map((block, index) => (block.kind === 'heading' && block.level === level ? index : -1)).filter((index) => index >= 0);
+  const usableHeadingLevel = [2, 1, 3, 4, 5, 6].find((level) => headingsAt(level).length >= 2) ?? null;
+
+  let mode = requestedMode;
+  let level: number | null = null;
+  let starts: number[] = [];
+  let modelUsed = false;
+  const warnings: string[] = [];
+
+  if (requestedMode === 'headings') {
+    level = Number(request?.level ?? 0);
+    starts = headingsAt(level);
+    if (starts.length < 2) {
+      throw new Error(`INVALID_INPUT: found ${starts.length} H${level} sections; need at least two`);
+    }
+  } else if (requestedMode === 'topics') {
+    if (usableHeadingLevel) {
+      mode = 'topics';
+      level = usableHeadingLevel;
+      starts = headingsAt(level);
+      warnings.push('Usable headings found; using the deterministic heading split instead of the local model.');
+    } else if (structureModelState !== 'ready') {
+      throw new Error('MODEL_UNAVAILABLE: fixture structure model is not staged');
+    } else {
+      mode = 'topics';
+      level = 2;
+      starts = fixtureParagraphStarts(blocks, targetChars);
+      modelUsed = true;
+      warnings.push('Local model proposed section boundaries; review the preview before applying.');
+    }
+  } else if (requestedMode === 'paragraph') {
+    mode = 'paragraph';
+    starts = fixtureParagraphStarts(blocks, targetChars);
+  } else {
+    if (usableHeadingLevel) {
+      mode = 'auto';
+      level = usableHeadingLevel;
+      starts = headingsAt(level);
+    } else {
+      mode = 'paragraph';
+      starts = fixtureParagraphStarts(blocks, targetChars);
+    }
+  }
+
+  if (starts.length < 2) {
+    throw new Error('INVALID_INPUT: not enough content blocks to split');
+  }
+
+  const existingFileNames = new Set(
+    (request?.existingPaths ?? []).map((path: string) =>
+      (path.split(/[\\/]/).pop() ?? '').toLowerCase()
+    )
+  );
+  const used = new Set<string>();
+  const sections = starts.map((start, index) => {
+    const end = index + 1 < starts.length ? starts[index + 1] - 1 : blocks.length - 1;
+    const first = blocks[start];
+    const sectionTitle =
+      first.kind === 'heading' ? headingText(first.text) || `Section ${index + 1}` : `Section ${index + 1}`;
+    let fileName =
+      sectionTitle
+        .replace(/[<>:"/\\|?*\u0000-\u001f]/g, '')
+        .replace(/[. ]+$/g, '')
+        .trim()
+        .slice(0, 80) || 'Section';
+    let candidate = fileName;
+    let n = 2;
+    while (used.has(candidate.toLowerCase()) || existingFileNames.has(`${candidate}.md`.toLowerCase())) {
+      candidate = `${fileName}-${n++}`;
+    }
+    fileName = candidate;
+    used.add(fileName.toLowerCase());
+
+    const bodyBlocks = blocks.slice(start + (first.kind === 'heading' ? 1 : 0), end + 1);
+    const sectionBody = bodyBlocks.map((block) => block.text).join('\n\n');
+    return {
+      title: sectionTitle,
+      fileName,
+      content: `# ${sectionTitle}\n\n> Part of [[${title}]] · Section ${index + 1} of ${starts.length}\n\n${sectionBody}\n`,
+      startBlock: blocks[start].id,
+      endBlock: blocks[end].id,
+    };
+  });
+
+  const intro = blocks
+    .slice(0, starts[0])
+    .map((block) => block.text)
+    .join('\n\n');
+  const parentContent = `${intro ? `${intro}\n\n` : ''}## Sections\n\n${sections
+    .map((section) => `- [[${section.title}]]`)
+    .join('\n')}\n`;
+  const plan = {
+    mode,
+    level,
+    modelUsed,
+    parentContent,
+    sections,
+    warnings,
+    stats: {
+      blocks: blocks.length,
+      sections: sections.length,
+      modelMs: modelUsed ? 123 : 0,
+    },
+  };
+  (window as any).fixtureStructurePlan = plan;
+  return plan;
+}
+
 Object.assign(window, { fixtureCalls: calls, fixtureSettings: settings, fixtureNoteContents: noteContents });
 Object.defineProperty(window, '__TAURI_EVENT_PLUGIN_INTERNALS__', { value: { unregisterListener: () => {} } });
 Object.defineProperty(window, '__TAURI_INTERNALS__', {
@@ -113,6 +442,33 @@ Object.defineProperty(window, '__TAURI_INTERNALS__', {
           return structuredClone(annotationFile);
         }
         case 'write_file': if (query.has('research')) noteContents[args.filePath] = args.content; return null;
+        case 'get_structure_model_status': {
+          if (structureErrorTarget === 'status') {
+            throw new Error(`${structureErrorCode || 'MODEL_INVALID'}: fixture status failure`);
+          }
+          return {
+            state: structureModelState,
+            model: 'LFM2.5-1.2B-Instruct-Q4_K_M',
+            modelPath:
+              structureModelState === 'missing'
+                ? null
+                : '/fixtures/models/LFM2.5-1.2B-Instruct-Q4_K_M.gguf',
+            memoryLimitMb: 2048,
+            contextTokens: 8192,
+            threads: 2,
+            message:
+              structureModelState === 'ready'
+                ? 'Local structure model is ready.'
+                : structureModelState === 'missing'
+                  ? 'Bundled structure model is missing at /fixtures/models/LFM2.5-1.2B-Instruct-Q4_K_M.gguf'
+                  : structureModelState === 'invalid'
+                    ? 'Bundled structure model failed its checksum; reinstall Prism.'
+                    : 'llama.cpp runtime is missing at /fixtures/bin/llama-cli',
+          };
+        }
+        case 'inspect_note_structure': return fixtureStructureInspect(args.request);
+        case 'preview_note_format': return fixturePreviewFormat(args.request);
+        case 'plan_note_split': return fixturePlanSplit(args.request);
         case 'get_runtime_config': return structuredClone(settings);
         case 'save_runtime_config':
           if (query.has('settings-save-error')) throw new Error('Disk unavailable');
