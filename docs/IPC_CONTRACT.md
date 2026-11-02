@@ -105,6 +105,34 @@ Frontend is read-only here. Every change ships through main.
 - Deterministic; never calls the model.
 - Errors: `LIMIT: …`, `INVALID_INPUT: …`
 
+### preview_note_format
+
+- Status: draft
+- Rust: `fn preview_note_format(request: NoteFormatRequest) -> Result<NoteFormatPreview, String>`
+- Request:
+
+```json
+{
+  "title": "Research notes",
+  "content": "# Research notes\n\n##  Methods\n\nBody"
+}
+```
+
+- Response:
+
+```json
+{
+  "content": "# Research notes\n\n## Methods\n\nBody\n",
+  "changed": true,
+  "outline": [],
+  "warnings": []
+}
+```
+
+- Deterministic and offline. Performs only safe normalization: LF line endings, heading syntax/spacing, one H1 matching `title`, demotes other H1s to H2, trims trailing whitespace, collapses excess blank lines, and preserves code fences, tables, lists, links, frontmatter, and paragraph line breaks. It never joins lines or invents headings.
+- `outline` uses the `inspect_note_structure` outline shape.
+- Errors: `INVALID_INPUT: …`, `LIMIT: …`
+
 ### plan_note_split
 
 - Status: draft
