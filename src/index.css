@@ -1191,10 +1191,10 @@ button.titlebar-menu-dropdown:hover {
 
 /* Gloss controls: icon actions stay compact; text actions get a stable
    capsule with enough horizontal breathing room for their labels. */
-.theme-gloss button:not(.titlebar-menu):not(.titlebar-menu-dropdown):not(.titlebar-window-control):not(.titlebar-action):not(:where(.study-workspace *, .study-assistant *, .prism-navigation-menu *, .pdf-reader *)) {
+.theme-gloss button:not(.titlebar-menu):not(.titlebar-menu-dropdown):not(.titlebar-window-control):not(.titlebar-action):not(:where(.study-workspace *, .study-assistant *, .prism-navigation-menu *, .pdf-reader *, .squish-switch-root *, .jelly-radio *, .wake-slider *)) {
   border-radius: var(--radius-button, 9999px) !important;
 }
-.theme-gloss button:not(.titlebar-menu):not(.titlebar-menu-dropdown):not(.titlebar-window-control):not(.titlebar-action):has(span:not(.sr-only)):not(:where(.study-workspace *, .study-assistant *, .prism-navigation-menu *, .pdf-reader *)) {
+.theme-gloss button:not(.titlebar-menu):not(.titlebar-menu-dropdown):not(.titlebar-window-control):not(.titlebar-action):has(span:not(.sr-only)):not(:where(.study-workspace *, .study-assistant *, .prism-navigation-menu *, .pdf-reader *, .squish-switch-root *, .jelly-radio *, .wake-slider *)) {
   min-height: 32px;
   padding-inline: 16px;
   padding-block: 6px;

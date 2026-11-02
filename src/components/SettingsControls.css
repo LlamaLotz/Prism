@@ -1,0 +1,110 @@
+/* Liquid Gloss settings controls: WakeSlider, SquishSwitch and JellyRadio.
+   These sit inside the generic settings overlay, whose shared button rules
+   predate the motion controls. Keep the component chrome isolated here. */
+
+.settings-page-overlay {
+  --settings-switch-track: var(--color-slate-800);
+}
+
+.mode-light .settings-page-overlay {
+  --settings-switch-track: #e2e8f0;
+}
+
+/* ---- WakeSlider ------------------------------------------------------- */
+
+.settings-page-overlay .settings-wake-slider .wake-slider {
+  width: 100%;
+}
+
+/* The RangeField wrapper already fades the whole row when disabled. */
+.settings-page-overlay .wake-slider[aria-disabled='true'] {
+  opacity: 1;
+}
+
+.settings-page-overlay .wake-slider__handle {
+  min-height: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 12px !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+.settings-page-overlay .wake-slider__handle:hover,
+.settings-page-overlay .wake-slider__handle:active {
+  border-color: transparent !important;
+  box-shadow: none !important;
+}
+
+/* ---- SquishSwitch ----------------------------------------------------- */
+
+.settings-page-overlay .squish-switch {
+  min-height: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 9999px;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+.settings-page-overlay .squish-switch:hover,
+.settings-page-overlay .squish-switch:active {
+  border-color: transparent !important;
+  box-shadow: none !important;
+}
+
+.settings-page-overlay .squish-switch__track {
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-border) 55%, transparent);
+}
+
+.settings-page-overlay .squish-switch__thumb {
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3), 0 0 0 1px rgba(0, 0, 0, 0.05);
+}
+
+.mode-light .settings-page-overlay .squish-switch__thumb {
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2), 0 0 0 1px rgba(0, 0, 0, 0.08);
+}
+
+/* ---- JellyRadio ------------------------------------------------------- */
+
+.settings-page-overlay .settings-jelly-radio {
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 9999px;
+}
+
+.settings-page-overlay .settings-jelly-radio::-webkit-scrollbar {
+  display: none;
+}
+
+.settings-page-overlay .settings-jelly-radio .jelly-radio__chip {
+  min-height: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: var(--jr-radius) !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  /* Motion owns the chip transform; the shared button transition would lag it. */
+  transition: none;
+}
+
+.settings-page-overlay .settings-jelly-radio .jelly-radio__chip:hover,
+.settings-page-overlay .settings-jelly-radio .jelly-radio__chip:active {
+  border-color: transparent !important;
+  box-shadow: none !important;
+}
+
+/* Let the widest radio group wrap under its label instead of overflowing the
+   field row at narrower window sizes. */
+.settings-page-overlay .settings-field-row:has(.settings-jelly-radio) {
+  flex-wrap: wrap;
+  row-gap: 12px;
+}
+
+.settings-page-overlay .settings-field-row:has(.settings-jelly-radio) > :last-child {
+  max-width: 100%;
+}

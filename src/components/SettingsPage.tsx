@@ -46,6 +46,10 @@ import {
 import { APP_ICON_GROUPS, getAppIcon } from '../services/appIcon';
 import { createErrorDetails } from '../utils/errors';
 import { useDialogFocus } from '../utils/useDialogFocus';
+import WakeSlider from './WakeSlider';
+import SquishSwitch from './SquishSwitch';
+import JellyRadio from './JellyRadio';
+import './SettingsControls.css';
 
 interface SettingsPageProps {
   isOpen: boolean;
@@ -97,7 +101,7 @@ const Field: React.FC<{ label: string; hint?: string; children: React.ReactNode 
   children,
 }) => (
   <div className="py-3.5 border-b border-slate-800/60 last:border-b-0">
-    <div className="flex items-center justify-between gap-6">
+    <div className="settings-field-row flex items-center justify-between gap-6">
       <div className="min-w-0">
         <div className="text-[13px] font-medium text-slate-300">{label}</div>
         {hint && <div className="text-xs text-slate-500 mt-0.5 leading-relaxed">{hint}</div>}
@@ -512,29 +516,46 @@ const Toggle: React.FC<{
   checked: boolean;
   onChange: (v: boolean) => void;
   disabled?: boolean;
-  /** Theme style: 'industrial' = square, 'gloss' = pill/circle */
+  /** Theme style: 'industrial' = square, 'gloss' = squish switch */
   themeStyle?: 'industrial' | 'gloss';
-}> = ({ checked, onChange, disabled, themeStyle = 'industrial' }) => {
-  const isRounded = themeStyle === 'gloss';
+  /** Accessible name — the visible Field label lives outside the control. */
+  ariaLabel?: string;
+}> = ({ checked, onChange, disabled, themeStyle = 'industrial', ariaLabel }) => {
+  if (themeStyle === 'gloss') {
+    return (
+      <SquishSwitch
+        checked={checked}
+        onChange={onChange}
+        disabled={disabled}
+        ariaLabel={ariaLabel}
+        width={48}
+        height={28}
+        radius={14}
+        trackColor="var(--settings-switch-track, var(--color-slate-800))"
+        trackOnColor="var(--color-brand-500)"
+        thumbColor="#ffffff"
+        thumbOnColor="#ffffff"
+        speed={55}
+        stretch={28}
+        hoverScale={1.03}
+        colorDuration={300}
+      />
+    );
+  }
   return (
-  <button
-    type="button"
-    role="switch"
-    aria-checked={checked}
-    disabled={disabled}
-    onClick={() => onChange(!checked)}
-    className={`switch-track relative inline-flex h-7 w-12 shrink-0 items-center border p-0.5 transition-colors ${
-      isRounded ? 'rounded-full' : ''
-    } ${
-      checked ? 'bg-brand-500 border-brand-500' : 'bg-zinc-900 border-zinc-700'
-    } ${disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
-  >
-    <span
-      className={`switch-thumb inline-block h-6 w-6 shrink-0 bg-white transition-transform ${
-        isRounded ? 'rounded-full shadow-sm' : ''
-      }`}
-    />
-  </button>
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      aria-label={ariaLabel}
+      disabled={disabled}
+      onClick={() => onChange(!checked)}
+      className={`switch-track relative inline-flex h-7 w-12 shrink-0 items-center border p-0.5 transition-colors ${
+        checked ? 'bg-brand-500 border-brand-500' : 'bg-zinc-900 border-zinc-700'
+      } ${disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+    >
+      <span className="switch-thumb inline-block h-6 w-6 shrink-0 bg-white transition-transform" />
+    </button>
   );
 };
 
@@ -572,7 +593,9 @@ const RangeField: React.FC<{
   step: number;
   format?: (v: number) => string;
   disabled?: boolean;
-}> = ({ label, value, onChange, min, max, step, format, disabled }) => {
+  /** Gloss swaps the native range for the branched wake slider. */
+  themeStyle?: 'industrial' | 'gloss';
+}> = ({ label, value, onChange, min, max, step, format, disabled, themeStyle = 'industrial' }) => {
   // Clicking the readout turns it into a text input (max two decimals);
   // Enter/blur commits clamped to [min, max], Esc cancels.
   const [editing, setEditing] = useState(false);
@@ -594,20 +617,41 @@ const RangeField: React.FC<{
 
   return (
     <div className={`flex items-center gap-3 ${disabled ? 'opacity-50' : ''}`}>
-      <input
-        type="range"
-        value={value}
-        min={min}
-        max={max}
-        step={step}
-        onChange={(e) => onChange(Number(e.target.value))}
-        className="w-40 accent-brand-500 slider-range"
-        aria-label={label}
-        disabled={disabled}
-        style={{
-          background: `linear-gradient(to right, var(--color-brand-500) ${((value - min) / (max - min)) * 100}%, var(--range-track-bg) ${((value - min) / (max - min)) * 100}%)`,
-        }}
-      />
+      {themeStyle === 'gloss' ? (
+        <div className="settings-wake-slider w-48 min-w-0">
+          <WakeSlider
+            value={value}
+            min={min}
+            max={max}
+            step={step}
+            onChange={onChange}
+            disabled={disabled}
+            ariaLabel={label}
+            formatValue={format}
+            bars={24}
+            height={40}
+            restHeight={9}
+            gap={3}
+            fillColor="var(--color-brand-500)"
+            trackColor="var(--range-track-bg)"
+          />
+        </div>
+      ) : (
+        <input
+          type="range"
+          value={value}
+          min={min}
+          max={max}
+          step={step}
+          onChange={(e) => onChange(Number(e.target.value))}
+          className="w-40 accent-brand-500 slider-range"
+          aria-label={label}
+          disabled={disabled}
+          style={{
+            background: `linear-gradient(to right, var(--color-brand-500) ${((value - min) / (max - min)) * 100}%, var(--range-track-bg) ${((value - min) / (max - min)) * 100}%)`,
+          }}
+        />
+      )}
       {editing ? (
         <input
           autoFocus
@@ -627,8 +671,9 @@ const RangeField: React.FC<{
         <button
           type="button"
           onClick={startEdit}
+          disabled={disabled}
           title="Click to type a value"
-          className="w-14 text-right text-xs text-[var(--color-text-body)] font-semibold hover:text-[var(--color-brand-500,#38BDF8)] tabular-nums cursor-text transition-colors"
+          className="w-14 text-right text-xs text-[var(--color-text-body)] font-semibold hover:text-[var(--color-brand-500,#38BDF8)] tabular-nums cursor-text transition-colors disabled:cursor-not-allowed"
         >
           {display}
         </button>
@@ -641,29 +686,57 @@ const Segmented: React.FC<{
   options: { value: string; label: string }[];
   value: string;
   onChange: (v: string) => void;
-  /** Theme style: 'industrial' = square blocks, 'gloss' = pill capsules */
+  /** Theme style: 'industrial' = square blocks, 'gloss' = jelly chips */
   themeStyle?: 'industrial' | 'gloss';
-}> = ({ options, value, onChange, themeStyle = 'industrial' }) => {
-  const isRounded = themeStyle === 'gloss';
+  /** Accessible name for the radio group. */
+  ariaLabel?: string;
+}> = ({ options, value, onChange, themeStyle = 'industrial', ariaLabel }) => {
+  if (themeStyle === 'gloss') {
+    return (
+      <JellyRadio
+        items={options}
+        value={value}
+        onChange={onChange}
+        ariaLabel={ariaLabel}
+        size="sm"
+        gap={6}
+        radius={14}
+        swell={0.16}
+        barge={4}
+        shrink={0.04}
+        jelly={1}
+        bounce={0.25}
+        stagger={18}
+        stiffness={580}
+        className="settings-jelly-radio"
+        chipColor="transparent"
+        activeColor="var(--color-brand-500)"
+        textColor="var(--color-slate-400)"
+        activeTextColor="var(--color-brand-contrast, #000000)"
+      />
+    );
+  }
   return (
-  <div className={`flex items-center bg-[var(--color-surface)] border border-[var(--color-border)] p-0.5 ${isRounded ? 'rounded-full' : ''}`}>
-    {options.map((o) => (
-      <button
-        key={o.value}
-        type="button"
-        onClick={() => onChange(o.value)}
-        className={`px-3 py-1.5 text-xs transition-colors ${
-          isRounded ? 'rounded-full' : ''
-        } ${
-          value === o.value
-            ? 'bg-brand-500 text-[color:var(--color-brand-contrast)] font-semibold'
-            : 'text-slate-400 hover:text-slate-200'
-        }`}
-      >
-        {o.label}
-      </button>
-    ))}
-  </div>
+    <div
+      role="group"
+      aria-label={ariaLabel}
+      className="flex items-center bg-[var(--color-surface)] border border-[var(--color-border)] p-0.5"
+    >
+      {options.map((o) => (
+        <button
+          key={o.value}
+          type="button"
+          onClick={() => onChange(o.value)}
+          className={`px-3 py-1.5 text-xs transition-colors ${
+            value === o.value
+              ? 'bg-brand-500 text-[color:var(--color-brand-contrast)] font-semibold'
+              : 'text-slate-400 hover:text-slate-200'
+          }`}
+        >
+          {o.label}
+        </button>
+      ))}
+    </div>
   );
 };
 
@@ -1296,7 +1369,8 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                         max={2}
                         step={0.1}
                         format={(v) => v.toFixed(1)}
-                        disabled={!aiProvider}
+                        disabled={!aiProvider || isSaving}
+                        themeStyle={draft.appearance.themeStyle}
                       />
                     </Field>
                     <Field
@@ -1305,6 +1379,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                     >
                       <Toggle
                         themeStyle={draft.appearance.themeStyle}
+                        ariaLabel="Inject user profile into prompts"
                         checked={draft.omniRoute.injectUserProfile}
                         onChange={(v) =>
                           patchNested('omniRoute', { ...draft.omniRoute, injectUserProfile: v })
@@ -1402,6 +1477,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                       </div>
                       <Segmented
                         themeStyle={draft.appearance.themeStyle}
+                        ariaLabel="Color Scheme"
                         options={[
                           { value: 'dark', label: 'Dark' },
                           { value: 'light', label: 'Light' },
@@ -1420,6 +1496,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                   <Field label="Startup view" hint="Which workspace layout to land on when the app opens.">
                     <Segmented
                       themeStyle={draft.appearance.themeStyle}
+                      ariaLabel="Startup view"
                       options={[
                         { value: 'graph', label: 'Graph' },
                         { value: 'editor', label: 'Notes' },
@@ -1439,6 +1516,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                   <Field label="Default graph mode" hint="2D is the default and lighter on CPU; 3D remains available.">
                     <Segmented
                       themeStyle={draft.appearance.themeStyle}
+                      ariaLabel="Default graph mode"
                       options={[
                         { value: '2d', label: '2D' },
                         { value: '3d', label: '3D' },
@@ -1455,6 +1533,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                   <Field label="Graph background pattern" hint="The grid/mesh backdrop behind the knowledge graph.">
                     <Segmented
                       themeStyle={draft.appearance.themeStyle}
+                      ariaLabel="Graph background pattern"
                       options={[
                         { value: 'grid', label: 'Grid' },
                         { value: 'mesh', label: 'Mesh' },
@@ -1472,6 +1551,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                   <Field label="Label quality" hint="'High' renders crisp 3D labels at higher DPI (slightly more GPU).">
                     <Segmented
                       themeStyle={draft.appearance.themeStyle}
+                      ariaLabel="Label quality"
                       options={[
                         { value: 'standard', label: 'Standard' },
                         { value: 'high', label: 'High' },
@@ -1488,6 +1568,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                   <Field label="Open AI assistant on start">
                     <Toggle
                       themeStyle={draft.appearance.themeStyle}
+                      ariaLabel="Open AI assistant on start"
                       checked={draft.appearance.aiPanelOpenOnStart}
                       onChange={(v) =>
                         patchNested('appearance', { ...draft.appearance, aiPanelOpenOnStart: v })
@@ -1497,6 +1578,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                   <Field label="Start with sidebar collapsed">
                     <Toggle
                       themeStyle={draft.appearance.themeStyle}
+                      ariaLabel="Start with sidebar collapsed"
                       checked={draft.appearance.sidebarCollapsedOnStart}
                       onChange={(v) =>
                         patchNested('appearance', {
@@ -1509,6 +1591,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                   <Field label="Show LinkHub by default" hint="The link suggestion panel docked at the bottom of the editor.">
                     <Toggle
                       themeStyle={draft.appearance.themeStyle}
+                      ariaLabel="Show LinkHub by default"
                       checked={draft.appearance.linkHubVisibleByDefault}
                       onChange={(v) =>
                         patchNested('appearance', {
@@ -1535,6 +1618,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                   <Field label="Auto-rotate 3D graph on load" hint="Slowly orbits the camera around the graph when it opens.">
                     <Toggle
                       themeStyle={draft.appearance.themeStyle}
+                      ariaLabel="Auto-rotate 3D graph on load"
                       checked={draft.appearance.autoRotateOnLoad}
                       onChange={(v) =>
                         patchNested('appearance', { ...draft.appearance, autoRotateOnLoad: v })
@@ -1552,6 +1636,8 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                       max={3}
                       step={0.05}
                       format={(v) => `${v.toFixed(2)}×`}
+                      disabled={isSaving}
+                      themeStyle={draft.appearance.themeStyle}
                     />
                   </Field>
                   <Field label="Accent color" hint="Brand accent used across buttons, links, graph nodes and highlights. Applies instantly.">
@@ -1600,12 +1686,15 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                         max={1}
                         step={0.01}
                         format={(v) => `${Math.round(v * 100)}%`}
+                        disabled={isSaving}
+                        themeStyle={draft.appearance.themeStyle}
                       />
                     </Field>
                   )}
                   <Field label="Background environment" hint="Viewport-level backdrop rendered behind the application canvas.">
                     <Segmented
                       themeStyle={draft.appearance.themeStyle}
+                      ariaLabel="Background environment"
                       options={[
                         { value: 'none', label: 'None' },
                         { value: 'solar-system', label: 'Solar' },
@@ -1759,6 +1848,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                   <Field label="Auto-link on save" hint="Re-scan the note for link suggestions whenever it is saved.">
                     <Toggle
                       themeStyle={draft.appearance.themeStyle}
+                      ariaLabel="Auto-link on save"
                       checked={draft.linking.autoLinkOnSave}
                       onChange={(v) => patchNested('linking', { ...draft.linking, autoLinkOnSave: v })}
                     />
@@ -1777,6 +1867,8 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                       max={1}
                       step={0.01}
                       format={(v) => v.toFixed(2)}
+                      disabled={isSaving}
+                      themeStyle={draft.appearance.themeStyle}
                     />
                   </Field>
                   <Field label="Embedding debounce" hint="Pause after a save before the note is re-embedded (debounced + coalesced).">
@@ -1792,6 +1884,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                   <Field label="Backfill embeddings on vault open" hint="Embed every note without an embedding when a vault is first opened.">
                     <Toggle
                       themeStyle={draft.appearance.themeStyle}
+                      ariaLabel="Backfill embeddings on vault open"
                       checked={draft.linking.backfillOnVaultOpen}
                       onChange={(v) =>
                         patchNested('linking', { ...draft.linking, backfillOnVaultOpen: v })
@@ -1826,6 +1919,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                   <Field label="Persist node positions" hint="Remember where you dragged nodes in the 2D graph between sessions.">
                     <Toggle
                       themeStyle={draft.appearance.themeStyle}
+                      ariaLabel="Persist node positions"
                       checked={draft.linking.persistNodePositions}
                       onChange={(v) =>
                         patchNested('linking', { ...draft.linking, persistNodePositions: v })
@@ -1846,6 +1940,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                   <Field label="Watch the vault" hint="React to external file changes so the sidebar and graph stay in sync.">
                     <Toggle
                       themeStyle={draft.appearance.themeStyle}
+                      ariaLabel="Watch the vault"
                       checked={draft.system.watchVault}
                       onChange={(v) => patchNested('system', { ...draft.system, watchVault: v })}
                     />
@@ -1853,6 +1948,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                   <Field label="Sync H1 headings on startup" hint="Rewrite each note's H1 to match its filename if they've drifted.">
                     <Toggle
                       themeStyle={draft.appearance.themeStyle}
+                      ariaLabel="Sync H1 headings on startup"
                       checked={draft.system.syncH1OnStartup}
                       onChange={(v) => patchNested('system', { ...draft.system, syncH1OnStartup: v })}
                     />
