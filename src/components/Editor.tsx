@@ -16,7 +16,20 @@ import { Eye, Edit2, FileText, Calendar, Link2, ChevronUp, ChevronDown, X, Searc
 import { NoteFile, WikiLink, ReconstructedVersion, AppSettings } from '../types';
 import { segmentContent, extractWikiLinks, findBlockLine, findLinkAtOffset } from '../utils/markdownParser';
 import { formatNote } from '../utils/formatter';
-import { countH2Headings, planNoteSplit, sanitizeFolderName } from '../utils/splitter';
+import { planNoteSplit, sanitizeFolderName } from '../utils/splitter';
+import { markdownOutline, type OutlineEntry } from '../utils/structurePreview';
+import {
+  parseStructureError,
+  structure,
+  type NoteFormatPreview,
+  type NoteSplitPlan,
+  type StructureErrorInfo,
+  type StructureInspection,
+  type StructureModelStatus,
+  type StructureSplitMode,
+} from '../services/structure';
+import { FormatPreviewDialog } from './editor/FormatPreviewDialog';
+import { SplitPreviewDialog, type SplitPreviewPlan } from './editor/SplitPreviewDialog';
 import { LinkerToolbar } from './LinkerToolbar';
 import { LinkHub } from './LinkHub';
 import { VersionHistoryRuler } from './VersionHistoryRuler';
@@ -356,6 +369,43 @@ interface EditorProps {
   onEditorModeChange?: (mode: EditorMode) => void;
 }
 
+/** The TS formatter is a fallback only; skip it on enormous notes so the UI
+ *  never blocks trying to build a preview. */
+const MAX_FALLBACK_FORMAT_CHARS = 2_000_000;
+
+interface FormatDialogState {
+  requestContent: string;
+  preview: NoteFormatPreview | null;
+  outlineBefore: OutlineEntry[];
+  loading: boolean;
+  usedFallback: boolean;
+  error: StructureErrorInfo | null;
+  staleError: string | null;
+  applying: boolean;
+}
+
+interface SplitDialogState {
+  requestContent: string;
+  inspection: StructureInspection | null;
+  loading: boolean;
+  loadError: StructureErrorInfo | null;
+  modelStatus: StructureModelStatus | null;
+  modelStatusError: StructureErrorInfo | null;
+  fallbackPlan: SplitPreviewPlan | null;
+  mode: StructureSplitMode;
+  headingLevel: number | null;
+  plan: SplitPreviewPlan | null;
+  planContent: string | null;
+  planning: boolean;
+  planError: StructureErrorInfo | null;
+  applyError: StructureErrorInfo | null;
+  staleError: string | null;
+  applying: boolean;
+}
+
+const normalizeAbsolutePath = (value: string) =>
+  value.replace(/\\/g, '/').replace(/\/+/g, '/').replace(/\/+$/, '').toLowerCase();
+
 export const Editor: React.FC<EditorProps> = ({
   note,
   allNotes,
@@ -452,6 +502,16 @@ export const Editor: React.FC<EditorProps> = ({
   // note body on purpose so it only ever surfaces in the Note Metadata modal.
   const [sidecarMeta, setSidecarMeta] = useState<{ source: string | null; extractionMethod: string | null } | null>(null);
   const [formatSnapshot, setFormatSnapshot] = useState<string | null>(null);
+  // Safe format preview (backend command, with the TypeScript formatter as a
+  // fallback when the command is missing or fails).
+  const [formatDialog, setFormatDialog] = useState<FormatDialogState | null>(null);
+  const formatRequestSeq = useRef(0);
+  // Split preview state: inspection options come from
+  // inspect_note_structure; the section plan comes from plan_note_split.
+  const [splitDialog, setSplitDialog] = useState<SplitDialogState | null>(null);
+  const splitLoadSeq = useRef(0);
+  const splitPlanSeq = useRef(0);
+  const dialogReturnFocusRef = useRef<HTMLElement | null>(null);
   // Snapshot of the last split: the parent's pre-split content plus the
   // absolute paths of the section files it created, so Undo Split can roll
   // the whole operation back (restore content + delete the new notes).
@@ -1038,6 +1098,11 @@ export const Editor: React.FC<EditorProps> = ({
     setBlockMatches([]);
     setLinkError(null);
     setSplitSnapshot(null);
+    formatRequestSeq.current++;
+    splitLoadSeq.current++;
+    splitPlanSeq.current++;
+    setFormatDialog(null);
+    setSplitDialog(null);
     runScan(note.content ?? '', true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [note?.path]);
@@ -1627,72 +1692,621 @@ export const Editor: React.FC<EditorProps> = ({
       });
   };
 
-  // Number of `##` sections in the active note (code-fence aware) — gates the
-  // Split button, which needs at least 2 sections to be useful.
-  const h2Count = useMemo(() => countH2Headings(content), [content]);
-
-  // Format the note: normalize headings/spacing and keep H1 in sync with title.
-  const handleFormat = () => {
-    if (!note) return;
-    const formatted = formatNote(content, note.title);
-    if (formatted === content) return;
-    setFormatSnapshot(content);
-    updateContent(formatted);
-    onSaveContent(note.path, formatted);
-    tauriAPI.recordNoteVersion(note.path, formatted).catch(() => {});
+  // ---- Safe formatting preview -------------------------------------------
+  // Format is always previewed before applying. The backend command is the
+  // primary path; the deterministic TypeScript formatter supplies a fallback
+  // preview when the command is unavailable or fails.
+  const buildFormatPreview = async (source: string, title: string) => {
+    const seq = ++formatRequestSeq.current;
+    setFormatDialog((prev) =>
+      prev && prev.requestContent === source
+        ? { ...prev, loading: true, error: null, staleError: null, usedFallback: false }
+        : prev
+    );
+    try {
+      const response = await structure.previewFormat({ title, content: source });
+      if (
+        !response ||
+        typeof response.content !== 'string' ||
+        typeof response.changed !== 'boolean'
+      ) {
+        throw new Error('INVALID_OUTPUT: format preview returned an unexpected response.');
+      }
+      if (formatRequestSeq.current !== seq) return;
+      setFormatDialog((prev) =>
+        prev && prev.requestContent === source
+          ? {
+              ...prev,
+              loading: false,
+              error: null,
+              usedFallback: false,
+              preview: {
+                content: response.content,
+                changed: response.changed,
+                outline: Array.isArray(response.outline) ? response.outline : [],
+                warnings: Array.isArray(response.warnings) ? response.warnings : [],
+              },
+            }
+          : prev
+      );
+    } catch (error) {
+      if (formatRequestSeq.current !== seq) return;
+      const info = parseStructureError(error);
+      let formatted: string | null = null;
+      if (source.length <= MAX_FALLBACK_FORMAT_CHARS) {
+        try {
+          formatted = formatNote(source, title);
+        } catch (fallbackError) {
+          appLogger.error('Built-in formatter fallback failed', fallbackError);
+        }
+      }
+      appLogger.error('Safe format preview failed', error);
+      setFormatDialog((prev) =>
+        prev && prev.requestContent === source
+          ? {
+              ...prev,
+              loading: false,
+              error: info,
+              usedFallback: formatted !== null,
+              preview:
+                formatted === null
+                  ? null
+                  : {
+                      content: formatted,
+                      changed: formatted !== source,
+                      outline: [],
+                      warnings: [],
+                    },
+            }
+          : prev
+      );
+    }
   };
 
-  // Split the note into one new note per `##` section. The original note
-  // becomes an index of [[Section]] links; each section file lands in the same
-  // folder with an H1 + a [[Parent]] back-link. Writes are masked in Rust, so
-  // the vault refresh below (notes + graph) picks everything up in one pass.
-  const handleSplit = async () => {
-    if (!note || isSplitting) return;
-    const plan = planNoteSplit(content, note.title, allNotes.map((n) => n.path));
-    if (!plan) return;
-    const names = plan.sections.map((s) => s.title);
+  const openFormatPreview = () => {
+    const currentNote = noteRef.current;
+    if (!currentNote) return;
+    dialogReturnFocusRef.current =
+      toolsRef.current?.querySelector<HTMLElement>('button') ?? null;
+    const source = contentRef.current;
+    setFormatDialog({
+      requestContent: source,
+      preview: null,
+      outlineBefore: markdownOutline(source),
+      loading: true,
+      usedFallback: false,
+      error: null,
+      staleError: null,
+      applying: false,
+    });
+    void buildFormatPreview(source, currentNote.title);
+  };
+
+  const closeFormatPreview = () => {
+    formatRequestSeq.current++;
+    setFormatDialog(null);
+  };
+
+  const retryFormatPreview = () => {
+    const dialog = formatDialog;
+    const currentNote = noteRef.current;
+    if (!dialog || !currentNote) return;
+    const source = contentRef.current;
+    setFormatDialog((prev) =>
+      prev
+        ? {
+            ...prev,
+            requestContent: source,
+            outlineBefore: markdownOutline(source),
+            preview: null,
+            loading: true,
+            error: null,
+            staleError: null,
+            usedFallback: false,
+            applying: false,
+          }
+        : prev
+    );
+    void buildFormatPreview(source, currentNote.title);
+  };
+
+  const applyFormatPreview = () => {
+    const dialog = formatDialog;
+    const currentNote = noteRef.current;
+    if (!dialog?.preview || !currentNote || !dialog.preview.changed) return;
+    if (contentRef.current !== dialog.requestContent) {
+      setFormatDialog((prev) =>
+        prev
+          ? {
+              ...prev,
+              staleError: 'The note content changed while the preview was open.',
+            }
+          : prev
+      );
+      return;
+    }
+
+    const formatted = dialog.preview.content;
+    // Keep the immediately-before content for the existing Undo format action,
+    // and route the change through the editor's normal autosave path.
+    setFormatSnapshot(dialog.requestContent);
+    formatRequestSeq.current++;
+    updateContent(formatted);
+    setFormatDialog(null);
+    void onSaveContent(currentNote.path, formatted)
+      .then(() => {
+        tauriAPI.recordNoteVersion(currentNote.path, formatted).catch(() => {});
+      })
+      .catch((error) => {
+        appLogger.error(`Failed to save formatted note: ${currentNote.path}`, error);
+      });
+  };
+
+  // ---- Split preview ------------------------------------------------------
+  const planToSplitPreview = (plan: NoteSplitPlan): SplitPreviewPlan => {
+    if (
+      !plan ||
+      typeof plan.parentContent !== 'string' ||
+      !Array.isArray(plan.sections) ||
+      plan.sections.length === 0 ||
+      plan.sections.some(
+        (section) =>
+          typeof section.title !== 'string' ||
+          typeof section.fileName !== 'string' ||
+          typeof section.content !== 'string'
+      )
+    ) {
+      throw new Error('INVALID_OUTPUT: split preview returned an unexpected plan.');
+    }
+    return {
+      mode: plan.mode,
+      level: plan.level ?? null,
+      modelUsed: !!plan.modelUsed,
+      parentContent: plan.parentContent,
+      sections: plan.sections.map((section) => ({
+        title: section.title,
+        fileName: section.fileName,
+        content: section.content,
+        startBlock: section.startBlock ?? null,
+        endBlock: section.endBlock ?? null,
+      })),
+      warnings: Array.isArray(plan.warnings) ? plan.warnings : [],
+      stats: plan.stats ?? {
+        blocks: 0,
+        sections: plan.sections.length,
+        modelMs: 0,
+      },
+      source: 'command',
+    };
+  };
+
+  /** Existing H2 splitter, kept available if a preview command fails. */
+  const buildSplitFallback = (source: string): SplitPreviewPlan | null => {
+    const currentNote = noteRef.current;
+    if (!currentNote) return null;
+    const plan = planNoteSplit(source, currentNote.title, allNotes.map((n) => n.path));
+    if (!plan) return null;
+    return {
+      mode: 'headings',
+      level: 2,
+      modelUsed: false,
+      parentContent: plan.parentContent,
+      sections: plan.sections.map((section) => ({
+        title: section.title,
+        fileName: section.fileName,
+        content: section.content,
+        startBlock: null,
+        endBlock: null,
+      })),
+      warnings: [
+        'The structure preview was unavailable; this is the built-in H2 split.',
+      ],
+      stats: {
+        blocks: source.split(/\n\s*\n/).filter((block) => block.trim()).length,
+        sections: plan.sections.length,
+        modelMs: 0,
+      },
+      source: 'builtin',
+    };
+  };
+
+  const buildSplitPlan = async (
+    source: string,
+    title: string,
+    mode: StructureSplitMode,
+    level: number | null
+  ) => {
+    const seq = ++splitPlanSeq.current;
+    setSplitDialog((prev) =>
+      prev && prev.requestContent === source
+        ? {
+            ...prev,
+            mode,
+            headingLevel: mode === 'headings' ? level : null,
+            plan: null,
+            planContent: null,
+            planning: true,
+            planError: null,
+            applyError: null,
+            staleError: null,
+          }
+        : prev
+    );
+    try {
+      const response = await structure.planSplit({
+        title,
+        content: source,
+        mode,
+        level: mode === 'headings' ? level : null,
+        targetChars: 6000,
+        existingPaths: allNotes.map((n) => n.path),
+        allowModel: true,
+      });
+      const preview = planToSplitPreview(response);
+      if (splitPlanSeq.current !== seq) return;
+      setSplitDialog((prev) =>
+        prev && prev.requestContent === source
+          ? {
+              ...prev,
+              planning: false,
+              plan: preview,
+              planContent: source,
+              planError: null,
+            }
+          : prev
+      );
+    } catch (error) {
+      if (splitPlanSeq.current !== seq) return;
+      const info = parseStructureError(error);
+      appLogger.error('Split preview failed', error);
+      setSplitDialog((prev) =>
+        prev && prev.requestContent === source
+          ? {
+              ...prev,
+              planning: false,
+              plan: null,
+              planContent: null,
+              planError: info,
+              fallbackPlan: prev.fallbackPlan ?? buildSplitFallback(source),
+            }
+          : prev
+      );
+    }
+  };
+
+  const loadSplitInspection = async (source: string, title: string) => {
+    splitPlanSeq.current++;
+    const seq = ++splitLoadSeq.current;
+    setSplitDialog((prev) =>
+      prev
+        ? {
+            ...prev,
+            requestContent: source,
+            loading: true,
+            inspection: null,
+            loadError: null,
+            modelStatus: null,
+            modelStatusError: null,
+            plan: null,
+            planContent: null,
+            planError: null,
+            applyError: null,
+            staleError: null,
+          }
+        : prev
+    );
+
+    const [statusResult, inspectResult] = await Promise.allSettled([
+      structure.modelStatus(),
+      structure.inspect({ title, content: source, maxBlocks: 5000 }),
+    ]);
+    if (splitLoadSeq.current !== seq) return;
+
+    const modelStatus =
+      statusResult.status === 'fulfilled' && statusResult.value
+        ? statusResult.value
+        : null;
+    const modelStatusError =
+      statusResult.status === 'rejected'
+        ? parseStructureError(statusResult.reason)
+        : statusResult.status === 'fulfilled' && !statusResult.value
+          ? parseStructureError('MODEL_INVALID: empty model status response')
+          : null;
+    const inspection =
+      inspectResult.status === 'fulfilled' && inspectResult.value
+        ? inspectResult.value
+        : null;
+    const loadError =
+      inspectResult.status === 'rejected'
+        ? parseStructureError(inspectResult.reason)
+        : inspectResult.status === 'fulfilled' && !inspectResult.value
+          ? parseStructureError('INVALID_OUTPUT: empty structure inspection response')
+          : null;
+
+    setSplitDialog((prev) =>
+      prev
+        ? {
+            ...prev,
+            requestContent: source,
+            loading: false,
+            inspection,
+            loadError,
+            modelStatus,
+            modelStatusError,
+            fallbackPlan: loadError ? buildSplitFallback(source) : null,
+            mode: 'auto',
+            headingLevel: null,
+          }
+        : prev
+    );
+
+    if (inspection) void buildSplitPlan(source, title, 'auto', null);
+  };
+
+  const openSplitPreview = () => {
+    const currentNote = noteRef.current;
+    if (!currentNote || isSplitting) return;
+    dialogReturnFocusRef.current =
+      toolsRef.current?.querySelector<HTMLElement>('button') ?? null;
+    const source = contentRef.current;
+    splitPlanSeq.current++;
+    setSplitDialog({
+      requestContent: source,
+      inspection: null,
+      loading: true,
+      loadError: null,
+      modelStatus: null,
+      modelStatusError: null,
+      fallbackPlan: null,
+      mode: 'auto',
+      headingLevel: null,
+      plan: null,
+      planContent: null,
+      planning: false,
+      planError: null,
+      applyError: null,
+      staleError: null,
+      applying: false,
+    });
+    void loadSplitInspection(source, currentNote.title);
+  };
+
+  const closeSplitPreview = () => {
+    splitLoadSeq.current++;
+    splitPlanSeq.current++;
+    setSplitDialog(null);
+  };
+
+  const retrySplitLoad = () => {
+    const dialog = splitDialog;
+    const currentNote = noteRef.current;
+    if (!dialog || !currentNote) return;
+    void loadSplitInspection(contentRef.current, currentNote.title);
+  };
+
+  const changeSplitMode = (mode: StructureSplitMode) => {
+    const dialog = splitDialog;
+    if (!dialog) return;
+    if (mode === 'topics' && dialog.modelStatus?.state !== 'ready') return;
+    const headingOptions =
+      dialog.inspection?.splitOptions?.filter((option) => option.mode === 'headings') ?? [];
+    const level =
+      mode === 'headings'
+        ? (dialog.headingLevel ??
+          headingOptions.find((option) => option.sections >= 2)?.level ??
+          headingOptions[0]?.level ??
+          null)
+        : null;
+
+    splitPlanSeq.current++;
+    setSplitDialog((prev) =>
+      prev
+        ? {
+            ...prev,
+            mode,
+            headingLevel: level,
+            plan: null,
+            planContent: null,
+            planning: false,
+            planError: null,
+            applyError: null,
+            staleError: null,
+          }
+        : prev
+    );
+    if (mode !== 'topics' && dialog.inspection) {
+      void buildSplitPlan(
+        dialog.requestContent,
+        noteRef.current?.title ?? '',
+        mode,
+        level
+      );
+    }
+  };
+
+  const changeHeadingLevel = (level: number) => {
+    const dialog = splitDialog;
+    if (!dialog) return;
+    setSplitDialog((prev) => (prev ? { ...prev, headingLevel: level } : prev));
+    if (dialog.mode === 'headings') {
+      void buildSplitPlan(dialog.requestContent, noteRef.current?.title ?? '', 'headings', level);
+    }
+  };
+
+  const planSplitPreview = () => {
+    const dialog = splitDialog;
+    if (!dialog || dialog.loading) return;
+    const currentNote = noteRef.current;
+    if (!currentNote) return;
+    const source = contentRef.current;
+    if (source !== dialog.requestContent) {
+      void loadSplitInspection(source, currentNote.title);
+      return;
+    }
+    if (dialog.mode === 'topics' && dialog.modelStatus?.state !== 'ready') return;
+    void buildSplitPlan(
+      source,
+      currentNote.title,
+      dialog.mode,
+      dialog.mode === 'headings' ? dialog.headingLevel : null
+    );
+  };
+
+  const useSplitFallback = () => {
+    const dialog = splitDialog;
+    if (!dialog) return;
+    const fallback = buildSplitFallback(dialog.requestContent);
+    if (!fallback) {
+      setSplitDialog((prev) =>
+        prev
+          ? {
+              ...prev,
+              planError: parseStructureError(
+                'INVALID_INPUT: the built-in splitter needs at least two H2 headings'
+              ),
+            }
+          : prev
+      );
+      return;
+    }
+    setSplitDialog((prev) =>
+      prev
+        ? {
+            ...prev,
+            plan: fallback,
+            planContent: dialog.requestContent,
+            planning: false,
+            planError: null,
+            applyError: null,
+            staleError: null,
+          }
+        : prev
+    );
+  };
+
+  const applySplitPreview = async () => {
+    const dialog = splitDialog;
+    const currentNote = noteRef.current;
+    if (!dialog?.plan || !currentNote || isSplitting) return;
+    const source = contentRef.current;
+    if (
+      source !== dialog.requestContent ||
+      (dialog.planContent !== null && dialog.planContent !== source)
+    ) {
+      setSplitDialog((prev) =>
+        prev
+          ? {
+              ...prev,
+              staleError:
+                'The note content changed after this split plan was built. Refresh the preview before applying it.',
+            }
+          : prev
+      );
+      return;
+    }
+
+    const plan = dialog.plan;
     // Section notes go in a NEW subfolder named after the note, inside the
     // source folder — the original note itself stays where it is.
-    const subfolder = sanitizeFolderName(note.title);
-    const ok = await confirm(
-      `Split this note into ${plan.sections.length} section notes?\n\n` +
-        names.map((n) => `• ${n}`).join('\n') +
-        `\n\nThey will be created in the \"${subfolder}\" folder (inside the note's folder).\nThe original note will become an index of links.`,
-      { title: 'Split note', confirmLabel: 'Split' }
+    const subfolder = sanitizeFolderName(currentNote.title);
+    const folder = currentNote.relativePath.includes('/')
+      ? currentNote.relativePath.slice(0, currentNote.relativePath.lastIndexOf('/'))
+      : '';
+    const sectionDir = folder ? `${folder}/${subfolder}` : subfolder;
+
+    // A note created after the preview could now occupy a target path. The
+    // backend already de-duplicates against the existingPaths snapshot; this
+    // guards the window between preview and apply.
+    const existingPaths = new Set(allNotes.map((item) => normalizeAbsolutePath(item.path)));
+    const root = vaultPath.replace(/[\\/]+$/, '');
+    const conflicts = plan.sections.filter((section) =>
+      existingPaths.has(normalizeAbsolutePath(`${root}/${sectionDir}/${section.fileName}.md`))
     );
-    if (!ok) return;
+    if (conflicts.length > 0) {
+      setSplitDialog((prev) =>
+        prev
+          ? {
+              ...prev,
+              staleError: `A section file already exists (${conflicts[0].fileName}.md). Refresh the preview to choose new names.`,
+            }
+          : prev
+      );
+      return;
+    }
 
     setIsSplitting(true);
+    setSplitDialog((prev) =>
+      prev ? { ...prev, applying: true, applyError: null, staleError: null } : prev
+    );
+    const createdPaths: string[] = [];
     try {
-      const folder = note.relativePath.includes('/')
-        ? note.relativePath.slice(0, note.relativePath.lastIndexOf('/'))
-        : '';
-      const sectionDir = folder ? `${folder}/${subfolder}` : subfolder;
-      const createdPaths: string[] = [];
-      for (const s of plan.sections) {
-        const rel = `${sectionDir}/${s.fileName}.md`;
-        const res = await tauriAPI.createFile({
+      for (const section of plan.sections) {
+        const relativePath = `${sectionDir}/${section.fileName}.md`;
+        const result = await tauriAPI.createFile({
           vaultPath,
-          relativePath: rel,
-          content: s.content,
+          relativePath,
+          content: section.content,
         });
-        if (!res.success || !res.fullPath) throw new Error(res.error || `Failed to create ${rel}`);
-        createdPaths.push(res.fullPath);
-        appLogger.info(`Split: created ${rel}`);
+        if (!result.success || !result.fullPath) {
+          throw new Error(result.error || `Failed to create ${relativePath}`);
+        }
+        createdPaths.push(result.fullPath);
+        appLogger.info(`Split: created ${relativePath}`);
       }
-      // Replace the parent with the index of links. Snapshot the original
-      // content + created paths so Undo Split can fully roll this back.
-      setSplitSnapshot({ parentContent: content, createdPaths, sectionDir });
+
+      // Replace the parent with the index of links only after every section
+      // file exists. Snapshot the original content + created paths so Undo
+      // Split can fully roll this back.
       updateContent(plan.parentContent);
-      await onSaveContent(note.path, plan.parentContent);
-      tauriAPI.recordNoteVersion(note.path, plan.parentContent).catch(() => {});
+      await onSaveContent(currentNote.path, plan.parentContent);
+      tauriAPI.recordNoteVersion(currentNote.path, plan.parentContent).catch(() => {});
+      setSplitSnapshot({ parentContent: source, createdPaths, sectionDir });
+      setSplitDialog(null);
       onVaultChanged?.();
-    } catch (e) {
-      console.error('Split failed:', e);
-      appLogger.error('Split failed', e);
+    } catch (error) {
+      // File creation is not transactional: remove any files this attempt
+      // created and restore the parent note so a failed split leaves no
+      // half-written sections behind.
+      for (const path of [...createdPaths].reverse()) {
+        await tauriAPI.deleteFile(path).catch(() => {});
+      }
+      if (sectionDir) {
+        await tauriAPI
+          .deleteFolder({ vaultPath, relativePath: sectionDir, onlyIfEmpty: true })
+          .catch(() => {});
+      }
+      if (contentRef.current !== source) updateContent(source);
+      const message = error instanceof Error ? error.message : String(error);
+      appLogger.error('Split failed', error);
+      setSplitDialog((prev) =>
+        prev
+          ? {
+              ...prev,
+              applying: false,
+              staleError: null,
+              applyError: {
+                code: 'UNKNOWN',
+                detail: message,
+                title: 'The split could not be completed.',
+                action:
+                  'No section files were kept and the note content was restored. Check the error and try again.',
+                raw: message,
+              },
+            }
+          : prev
+      );
+      console.error('Split failed:', error);
     } finally {
       setIsSplitting(false);
     }
+  };
+
+  const handleFormat = () => {
+    openFormatPreview();
+  };
+
+  const handleSplit = () => {
+    openSplitPreview();
   };
 
   const handleUndoFormat = () => {
@@ -2544,7 +3158,7 @@ const sidecarPath = (notePath: string): string => {
                 <div className="editor-menu-sep" />
                 <button
                   onClick={() => { handleSplit(); setToolsOpen(false); }}
-                  disabled={h2Count < 2 || isSplitting}
+                  disabled={!content.trim() || isSplitting}
                   className="editor-menu-item"
                 >
                   <Scissors className="w-3.5 h-3.5" /> {isSplitting ? 'Splitting…' : 'Split note'}
@@ -2852,6 +3466,51 @@ const sidecarPath = (notePath: string): string => {
           restoring={restoringVersion}
           onRestore={(v) => restoreVersion(v)}
           onClose={() => setShowHistory(false)}
+        />
+      )}
+
+      {/* Safe formatting preview: apply only after explicit confirmation. */}
+      {formatDialog && (
+        <FormatPreviewDialog
+          loading={formatDialog.loading}
+          preview={formatDialog.preview}
+          outlineBefore={formatDialog.outlineBefore}
+          usedFallback={formatDialog.usedFallback}
+          error={formatDialog.error}
+          staleError={formatDialog.staleError}
+          applying={formatDialog.applying}
+          returnFocus={dialogReturnFocusRef.current}
+          onRetry={retryFormatPreview}
+          onApply={applyFormatPreview}
+          onClose={closeFormatPreview}
+        />
+      )}
+
+      {/* Split preview: inspect options, plan sections, then apply exactly. */}
+      {splitDialog && (
+        <SplitPreviewDialog
+          loading={splitDialog.loading}
+          loadError={splitDialog.loadError}
+          inspection={splitDialog.inspection}
+          modelStatus={splitDialog.modelStatus}
+          modelStatusError={splitDialog.modelStatusError}
+          fallbackPlan={splitDialog.fallbackPlan}
+          mode={splitDialog.mode}
+          headingLevel={splitDialog.headingLevel}
+          plan={splitDialog.plan}
+          planning={splitDialog.planning}
+          planError={splitDialog.planError}
+          applyError={splitDialog.applyError}
+          staleError={splitDialog.staleError}
+          applying={splitDialog.applying}
+          returnFocus={dialogReturnFocusRef.current}
+          onModeChange={changeSplitMode}
+          onHeadingLevelChange={changeHeadingLevel}
+          onPlan={planSplitPreview}
+          onUseFallback={useSplitFallback}
+          onApply={() => { void applySplitPreview(); }}
+          onRetryLoad={retrySplitLoad}
+          onClose={closeSplitPreview}
         />
       )}
 
