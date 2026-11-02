@@ -17,8 +17,14 @@ for (const theme of ['industrial', 'gloss']) for (const mode of ['light', 'dark'
       await page.getByRole('button', { name: layout, exact: true }).click();
       await options(page);
       await expect(page.getByRole('button', { name: 'Rename', exact: true })).toBeVisible();
-      const bounds = await page.locator('.notebook-cover__menu[open] .study-menu-body').boundingBox();
-      expect(bounds).not.toBeNull(); expect(bounds!.x).toBeGreaterThanOrEqual(0); expect(bounds!.y).toBeGreaterThanOrEqual(0);
+      // The gloss coverflow animates cards for 450ms, and the menu is a child
+      // of the card, so it moves with it. Wait for the menu to settle fully
+      // on-screen instead of measuring an in-flight frame.
+      const menu = page.locator('.notebook-cover__menu[open] .study-menu-body');
+      await expect.poll(async () => {
+        const bounds = await menu.boundingBox();
+        return bounds !== null && bounds.x >= 0 && bounds.y >= 0;
+      }, { timeout: 3000 }).toBe(true);
       await page.getByRole('button', { name: 'Rename', exact: true }).click();
       await expect(page.getByRole('dialog')).toBeVisible();
       await page.getByRole('button', { name: 'Cancel', exact: true }).click();
