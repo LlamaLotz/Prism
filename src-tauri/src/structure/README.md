@@ -21,7 +21,7 @@ Optional, offline topic segmentation for notes and reviewed imports.
 
 - Bundled model: `LFM2.5-1.2B-Instruct-Q4_K_M.gguf` (Q4_K_M, 731 MB) or the QAD-Q4_0 benchmark candidate.
 - Worker: short-lived `llama-cli` process, CPU-only, 2 threads, 8K context.
-- Budget: 2 GB worker memory. Linux/macOS use a process limit; all platforms monitor resident memory and kill the worker if it exceeds the budget.
+- Budget: 2 GB worker memory. Linux/macOS set an address-space limit; Windows assigns the worker to a Job Object with a process-memory ceiling when permitted; all platforms also monitor resident memory and kill the worker if it exceeds the budget.
 - Lazy: the worker is never started at app startup, on note save, or on format.
 
 ## Staging

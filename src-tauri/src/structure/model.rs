@@ -395,6 +395,8 @@ fn run_once(
         .spawn()
         .map_err(|e| format!("MODEL_UNAVAILABLE: failed to start llama.cpp: {e}"))?;
     let pid = child.id();
+    #[cfg(windows)]
+    let _job = windows_job::assign(pid);
     let mut stdout = child
         .stdout
         .take()
@@ -566,6 +568,69 @@ pub fn analyze(
         sections,
         elapsed_ms: start.elapsed().as_millis() as u64,
     })
+}
+
+#[cfg(windows)]
+mod windows_job {
+    use std::mem::size_of;
+    use windows_sys::Win32::Foundation::{CloseHandle, HANDLE};
+    use windows_sys::Win32::System::JobObjects::{
+        AssignProcessToJobObject, CreateJobObjectW, JobObjectExtendedLimitInformation,
+        SetInformationJobObject, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
+        JOB_OBJECT_LIMIT_PROCESS_MEMORY,
+    };
+    use windows_sys::Win32::System::Threading::{
+        OpenProcess, PROCESS_SET_QUOTA, PROCESS_TERMINATE,
+    };
+
+    pub struct Job(HANDLE);
+
+    impl Drop for Job {
+        fn drop(&mut self) {
+            unsafe {
+                CloseHandle(self.0);
+            }
+        }
+    }
+
+    /// Best-effort kernel-enforced process-memory ceiling. The breed of
+    /// Windows/CI containers can already place the child in a job, in which
+    /// case assignment fails and the supervisor's RSS monitor remains the
+    /// backstop.
+    pub fn assign(pid: u32) -> Option<Job> {
+        unsafe {
+            let job = CreateJobObjectW(std::ptr::null(), std::ptr::null());
+            if job.is_null() {
+                return None;
+            }
+            let mut info: JOBOBJECT_EXTENDED_LIMIT_INFORMATION = std::mem::zeroed();
+            info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_PROCESS_MEMORY;
+            info.ProcessMemoryLimit = super::MEMORY_LIMIT_MB as usize * 1024 * 1024;
+            let size = size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32;
+            if SetInformationJobObject(
+                job,
+                JobObjectExtendedLimitInformation,
+                &info as *const _ as *const std::ffi::c_void,
+                size,
+            ) == 0
+            {
+                CloseHandle(job);
+                return None;
+            }
+            let process = OpenProcess(PROCESS_SET_QUOTA | PROCESS_TERMINATE, 0, pid);
+            if process.is_null() {
+                CloseHandle(job);
+                return None;
+            }
+            let assigned = AssignProcessToJobObject(job, process);
+            CloseHandle(process);
+            if assigned == 0 {
+                CloseHandle(job);
+                return None;
+            }
+            Some(Job(job))
+        }
+    }
 }
 
 #[cfg(unix)]
