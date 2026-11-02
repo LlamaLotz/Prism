@@ -212,7 +212,8 @@ html .study-workspace .notebook-cover__caption small {
   gap: 22px;
   overflow-x: auto;
   scroll-snap-type: x mandatory;
-  padding: 16px 2px;
+  scroll-padding-inline: 12px;
+  padding: 16px 12px;
   touch-action: pan-x pan-y;
 }
 .notebook-covers--cards[data-industrial='true'] .notebook-cover {
@@ -383,3 +384,58 @@ html .study-workspace .notebook-add-card[data-selected='true'] { outline: 2px so
 .notebook-cover-dialog .study-field { margin: 16px 0; }
 .notebook-cover-dialog .study-field > span { display: flex; align-items: center; gap: 8px; }
 @media (prefers-reduced-motion: reduce) { .notebook-add-card { transition: none !important; } }
+
+
+/* Coverflow fallback: below the width where the 3D stack fits, use the same
+   rounded cards in a horizontal rail. This keeps the covers, captions and add
+   tile usable without the absolute stack clipping them. The coverflow remains
+   in place at wide widths. */
+@container (max-width: 999px) {
+  .notebook-covers--cards:not([data-industrial='true']) {
+    display: flex;
+    align-items: center;
+    gap: 22px;
+    min-height: 330px;
+    padding: 16px 12px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scroll-padding-inline: 12px;
+    scroll-snap-type: x mandatory;
+    perspective: none;
+    touch-action: pan-x pan-y;
+  }
+  .notebook-covers--cards:not([data-industrial='true']) .notebook-cover {
+    position: relative;
+    left: auto;
+    top: auto;
+    width: 240px;
+    height: 330px;
+    transform: none;
+    scroll-snap-align: center;
+  }
+  .notebook-covers--cards:not([data-industrial='true']) .notebook-cover__art {
+    height: 240px;
+  }
+  .notebook-covers--cards:not([data-industrial='true']) .notebook-cover__caption {
+    display: flex;
+  }
+  .notebook-covers--cards:not([data-industrial='true']) .notebook-add-card {
+    position: relative;
+    left: auto;
+    top: auto;
+    width: 240px;
+    height: 330px;
+    transform: none;
+    scroll-snap-align: center;
+  }
+}
+
+/* Wide coverflow only: reserve the gap between the last cover and the add
+   tile. Without this, the 240px add tile overlaps the rotated second cover. */
+@container (min-width: 1000px) {
+  .notebook-covers--cards:not([data-industrial='true']) .notebook-add-card {
+    transform: translateX(calc(-50% + var(--cover-distance) * 165px + 72px))
+      translateZ(calc(var(--cover-depth) * -110px))
+      rotateY(clamp(-48deg, calc(var(--cover-distance) * -38deg), 48deg));
+  }
+}

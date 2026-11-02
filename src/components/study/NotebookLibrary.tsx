@@ -57,7 +57,20 @@ export function NotebookLibrary({ vaultPath, notebooks, materials, onOpen, onCre
   const index = selected === '__new__' ? rows.length : Math.max(0, rows.findIndex(n => n.id === selected));
   const active = rows[index];
   const select = (next: number) => { const i = Math.max(0, Math.min(rows.length, next)); setSelected(rows[i]?.id ?? '__new__'); };
-  useEffect(() => { if (industrial && mode === 'cards') track.current?.querySelector('[data-selected="true"]')?.scrollIntoView({ block: 'nearest', inline: 'center', behavior: 'instant' }); }, [selected, industrial, mode]);
+  useEffect(() => {
+    if (mode !== 'cards') return;
+    const el = track.current;
+    if (!el || getComputedStyle(el).overflowX !== 'auto') return;
+    const selectedEl = el.querySelector<HTMLElement>('[data-selected="true"]');
+    if (!selectedEl || index === 0) {
+      const reset = () => { if (el.scrollLeft !== 0) el.scrollLeft = 0; };
+      reset();
+      requestAnimationFrame(reset);
+      const timer = window.setTimeout(reset, 80);
+      return () => window.clearTimeout(timer);
+    }
+    selectedEl.scrollIntoView({ block: 'nearest', inline: 'center', behavior: 'instant' });
+  }, [selected, index, mode]);
   const changeMode = (value: string) => { setMode(value); try { localStorage.setItem(key, value); } catch { /* in-memory preference still works */ } };
   return <section className="notebook-library" aria-label="Notebook library">
     <header className="notebook-library__header"><div><span className="study-eyebrow">YOUR KNOWLEDGE, CONNECTED</span><h1>Notebooks</h1><p className="study-muted">A place for your sources, conversations, and study materials.</p></div></header>

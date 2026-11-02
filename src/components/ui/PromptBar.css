@@ -64,8 +64,8 @@ html .prompt-bar textarea:focus-visible {
 .prompt-bar__controls {
   display: flex;
   align-items: center;
-  flex-wrap: wrap;
-  gap: 6px;
+  flex-wrap: nowrap;
+  gap: 4px;
   min-width: 0;
 }
 .prompt-bar__context {
@@ -75,7 +75,8 @@ html .prompt-bar textarea:focus-visible {
   overflow-wrap: anywhere;
 }
 .prompt-bar__spacer {
-  flex: 1;
+  flex: 1 1 0;
+  min-width: 0;
 }
 
 /* Icon-only companion to "Approve for me": reopens its disclaimer after the
@@ -150,7 +151,13 @@ html .prompt-bar__controls button:hover:not(:disabled) {
   border-color: var(--nb-focus);
 }
 .prompt-bar__controls .model-picker {
-  max-width: 100%;
+  max-width: 104px;
+  min-width: 0;
+}
+.prompt-bar__controls .model-picker__trigger {
+  max-width: 104px;
+  height: 30px;
+  padding: 0 6px;
 }
 
 /* Pressed toggles (Agent ON/OFF, Web) sit on neutral panes, not on the accent,
@@ -163,8 +170,8 @@ html .prompt-bar__controls button[aria-pressed='true'] {
 
 /* Accent action tile: ink is derived from the accent's luminance. */
 html .prompt-bar__controls .prompt-bar__send {
-  width: 34px;
-  height: 34px;
+  width: 32px;
+  height: 32px;
   justify-content: center;
   padding: 0;
   flex-shrink: 0;
@@ -207,5 +214,37 @@ html .prompt-bar__controls button:disabled {
 @media (prefers-reduced-motion: reduce) {
   html .prompt-bar {
     transition: none;
+  }
+}
+
+
+/* Narrow assistant panes keep the composer on one row: the model chip
+   truncates, the split search control loses its caret, and the send tile
+   becomes a compact 30px square. */
+@container assistant (max-width: 359px) {
+  .prompt-bar__controls {
+    gap: 3px;
+  }
+  .prompt-bar__controls .model-picker,
+  .prompt-bar__controls .model-picker__trigger {
+    max-width: 92px;
+  }
+  .prompt-bar__controls .ai-search-caret {
+    display: none;
+  }
+  .prompt-bar__controls button {
+    min-height: 28px;
+    padding: 5px;
+  }
+  .prompt-bar__controls .prompt-bar__send {
+    width: 30px;
+    height: 30px;
+  }
+  .prompt-bar__context {
+    max-width: 58px;
+    overflow: hidden;
+    font-size: 11px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 }

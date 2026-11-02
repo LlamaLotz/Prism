@@ -1480,6 +1480,13 @@ export default function App() {
     setScrollRequest(null);
     setActiveNote(note);
     navigateWorkspace('editor', true);
+    // At narrow widths the AI panel auto-expands and fills the workspace. Opening
+    // a note should reveal it, not leave a 24px editor strip behind the chat.
+    if (windowWidth < 1000 && showAICoPilot) {
+      animatePanels();
+      setPanelOverrides(null);
+      setShowAICoPilot(false);
+    }
     appLogger.info(`Note opened: ${note.title}`);
   };
 

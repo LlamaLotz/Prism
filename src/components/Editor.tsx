@@ -2756,7 +2756,7 @@ const sidecarPath = (notePath: string): string => {
             <FileText className="w-8 h-8" />
           </div>
           <h3 className="text-sm font-semibold text-slate-300">No Note Selected</h3><button className="runtime-button" onClick={() => openPdf()}>Open PDF</button>
-          <p className="text-xs text-slate-500 leading-relaxed">
+          <p className="text-xs text-slate-400 leading-relaxed">
             Select an existing markdown note from the sidebar or create a new one to begin connecting your knowledge.
           </p>
         </div>
