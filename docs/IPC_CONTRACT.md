@@ -154,7 +154,7 @@ Frontend is read-only here. Every change ships through main.
 - `mode`: `auto` | `headings` | `paragraph` | `topics`
 - `level`: required only for `headings`; `1..=6`; ignored otherwise.
 - `targetChars`: optional paragraph/topic target, clamped `500..=50000`; default `6000`.
-- `allowModel`: optional, default `true`; `topics` requires the local model. When the model is unavailable, `topics` falls back to deterministic auto and reports a warning.
+- `allowModel`: optional, default `true`. `topics` uses the local model only when the note has no usable outline. If the note already has at least two headings at a usable level, `topics` returns the deterministic heading split without starting the model. When the model is unavailable or unusable, `topics` falls back to deterministic auto and reports a warning.
 - Response:
 
 ```json
