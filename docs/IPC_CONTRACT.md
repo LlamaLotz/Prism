@@ -155,7 +155,7 @@ Frontend is read-only here. Every change ships through main.
 
 - `parentContent` keeps frontmatter and intro content, then appends a `## Sections` link index.
 - `sections[].fileName` has no `.md` extension and is de-duplicated against `existingPaths` and earlier sections.
-- `sections[].content` starts with an H1 (the section title), then a parent breadcrumb/backlink. Original block text is preserved byte-for-byte inside the section.
+- `sections[].content` starts with an H1 (the section title), then a parent breadcrumb/backlink. Original block text is preserved inside the section; the boundary heading block is rendered as that H1 rather than duplicated.
 - `topics` may only propose block boundaries and relative heading levels. Rust validates coverage and never accepts generated note text.
 - Errors:
   - `INVALID_INPUT: …`
