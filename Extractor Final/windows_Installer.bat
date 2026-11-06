@@ -99,21 +99,14 @@ if not errorlevel 1 (
 
 echo.
 echo ====================================================
-echo Installing / Upgrading Python Packages...
+echo Python packages
 echo ====================================================
-
-%PYCMD% -m pip install --upgrade pip
-if errorlevel 1 exit /b 1
-%PYCMD% -m pip install --upgrade yt-dlp faster-whisper torch crawl4ai docling omniroute tqdm
-if errorlevel 1 exit /b 1
-
+echo Prism keeps its Python packages in an isolated environment at
+echo   %USERPROFILE%\.prism\env
+echo The extractor creates and populates it automatically on the first
+echo ingestion run, using the interpreter installed above. This keeps the
+echo system Python untouched and avoids version conflicts.
 echo.
-echo ====================================================
-echo Setting up Playwright Headless Browsers...
-echo ====================================================
-
-%PYCMD% -m playwright install chromium
-if errorlevel 1 exit /b 1
 
 echo.
 echo ====================================================

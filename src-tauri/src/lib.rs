@@ -1532,6 +1532,10 @@ async fn extract_to_stage_async(
                     }
 
                     let python_cmd = find_prism_python(&app);
+                    let _ = window.emit(
+                        "ingestion-progress",
+                        format!("[Prism] Python interpreter: {python_cmd}"),
+                    );
 
                     // The legacy extractor writes logs/downloads relative to its script.
                     // Run a copy in staging so it cannot publish into installed resources.
@@ -1592,6 +1596,11 @@ async fn extract_to_stage_async(
                     let stdout = child.stdout.take().unwrap();
                     let stderr = child.stderr.take().unwrap();
 
+                    // Keep the last stderr lines so a silent failure (or a
+                    // successful exit with no note) can explain itself instead
+                    // of surfacing only "Extraction produced no Markdown".
+                    let stderr_tail = Arc::new(Mutex::new(Vec::<String>::new()));
+
                     let window_clone = window.clone();
                     std::thread::spawn(move || {
                         use std::io::{BufRead, BufReader};
@@ -1604,12 +1613,19 @@ async fn extract_to_stage_async(
                     });
 
                     let window_clone_err = window.clone();
+                    let tail_clone = Arc::clone(&stderr_tail);
                     std::thread::spawn(move || {
                         use std::io::{BufRead, BufReader};
                         let reader = BufReader::new(stderr);
                         for line in reader.lines() {
                             if let Ok(l) = line {
-                                let _ = window_clone_err.emit("ingestion-error", l);
+                                let _ = window_clone_err.emit("ingestion-error", &l);
+                                if let Ok(mut tail) = tail_clone.lock() {
+                                    tail.push(l);
+                                    if tail.len() > 40 {
+                                        tail.remove(0);
+                                    }
+                                }
                             }
                         }
                     });
@@ -1631,10 +1647,44 @@ async fn extract_to_stage_async(
                         std::thread::sleep(std::time::Duration::from_millis(100));
                     };
 
-                    if status.success() {
+                    // Give the pipe readers a moment to drain the final lines.
+                    // Do not join: a helper process spawned by the extractor
+                    // could keep the inherited pipe open after it exits.
+                    std::thread::sleep(std::time::Duration::from_millis(100));
+
+                    let tail = stderr_tail
+                        .lock()
+                        .map(|lines| lines.join("\n"))
+                        .unwrap_or_default();
+                    let detail = if tail.trim().is_empty() {
+                        String::new()
+                    } else {
+                        format!("\nExtractor stderr:\n{tail}")
+                    };
+
+                    if !status.success() {
+                        return Err(if detail.is_empty() {
+                            "Extraction failed. Check logs for details.".to_string()
+                        } else {
+                            format!("Extraction failed.{detail}")
+                        });
+                    }
+
+                    // A restarted/re-exec'd extractor used to exit 0 before
+                    // the replacement process wrote anything. Keep that from
+                    // looking like success to the import pipeline.
+                    let has_markdown = fs::read_dir(&vault_path)
+                        .ok()
+                        .into_iter()
+                        .flatten()
+                        .filter_map(Result::ok)
+                        .any(|entry| entry.path().extension().is_some_and(|ext| ext == "md"));
+                    if has_markdown {
                         Ok("Extraction completed successfully.".to_string())
                     } else {
-                        Err("Extraction failed. Check logs for details.".to_string())
+                        Err(format!(
+                            "Extractor exited without producing a Markdown document.{detail}"
+                        ))
                     }
                 }
             },

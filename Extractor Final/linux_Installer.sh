@@ -11,20 +11,14 @@ elif command -v pacman &> /dev/null; then
     sudo pacman -S --noconfirm ffmpeg python-tk
 fi
 
-echo "Upgrading pip..."
-python3 -m pip install --upgrade pip
-
-echo "Installing Python Libraries..."
-python3 -m pip install --upgrade \
-    yt-dlp \
-    faster-whisper \
-    torch \
-    crawl4ai \
-    docling \
-    omniroute \
-    tqdm
-
-echo "Setting up Playwright for Crawl4AI..."
-python3 -m playwright install chromium
+echo "===================================================="
+echo "Python packages"
+echo "===================================================="
+echo "Prism keeps its Python packages in an isolated environment at"
+echo "  $HOME/.prism/env"
+echo "The extractor creates and populates it automatically on the first"
+echo "ingestion run, using Python 3.10+ installed on this system. This keeps"
+echo "the system Python untouched and avoids version conflicts."
+echo
 
 echo "Linux setup complete! Run: python3 master_extractor.py"

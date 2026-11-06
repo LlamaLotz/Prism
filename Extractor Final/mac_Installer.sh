@@ -63,17 +63,14 @@ if command -v rustup >/dev/null 2>&1; then
     rustup target add aarch64-apple-darwin x86_64-apple-darwin 2>/dev/null || true
 fi
 
-echo "Installing Python libraries..."
-"$PYTHON_BIN" -m pip install --break-system-packages --upgrade \
-    yt-dlp \
-    faster-whisper \
-    torch \
-    crawl4ai \
-    docling \
-    omniroute \
-    tqdm
-
-echo "Setting up Playwright for Crawl4AI..."
-"$PYTHON_BIN" -m playwright install chromium
+echo "===================================================="
+echo "Python packages"
+echo "===================================================="
+echo "Prism keeps its Python packages in an isolated environment at"
+echo "  $HOME/.prism/env"
+echo "The extractor creates and populates it automatically on the first"
+echo "ingestion run, using Python 3.12 installed above. This keeps the"
+echo "system Python untouched and avoids version conflicts."
+echo
 
 echo "macOS setup complete. The extractor will use Python 3.12 automatically."

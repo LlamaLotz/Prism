@@ -1085,8 +1085,9 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                   </div>
                   <div className="text-xs text-slate-500 mb-3">
                     Prism uses a built-in Python extractor. Click{' '}
-                    <strong className="text-slate-300">Run Auto-Installer</strong> to set up FFmpeg,
-                    Python 3.12, yt-dlp, faster-whisper and docling. <code>{'{vault_path}'}</code>{' '}
+                    <strong className="text-slate-300">Run Auto-Installer</strong> to set up FFmpeg and
+                    Python 3.12. The isolated extractor environment (yt-dlp, faster-whisper, docling)
+                    is created automatically on the first ingestion run. <code>{'{vault_path}'}</code>{' '}
                     is replaced with the vault path at runtime.
                   </div>
                   <div className="flex items-center justify-between gap-4 mb-1.5">
