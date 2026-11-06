@@ -705,7 +705,13 @@ finally:
     _release_env_lock(_ENV_LOCK_TOKEN, _ENV_LOCK_OWNS)
 
 if "--bootstrap-only" in sys.argv:
-    print("[Prism Ingestion] Extractor environment ready.")
+    # The readiness marker is authoritative. A closed stdout pipe on Windows
+    # must not turn an already-completed setup into a failed one.
+    try:
+        print("[Prism Ingestion] Extractor environment ready.")
+        sys.stdout.flush()
+    except Exception:
+        pass
     raise SystemExit(0)
 
 import re

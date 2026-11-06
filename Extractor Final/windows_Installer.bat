@@ -1,5 +1,7 @@
 @echo off
 setlocal EnableExtensions EnableDelayedExpansion
+set "PYTHONIOENCODING=utf-8"
+set "PYTHONUTF8=1"
 
 echo ====================================================
 echo PRISM EXTRACTOR INSTALLER - WINDOWS

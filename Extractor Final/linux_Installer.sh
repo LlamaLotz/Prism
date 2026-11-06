@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -e
 
+export PYTHONIOENCODING=utf-8
+export PYTHONUTF8=1
+
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 echo "Installing System Dependencies (FFmpeg & Tkinter)..."

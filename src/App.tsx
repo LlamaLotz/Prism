@@ -384,11 +384,13 @@ export default function App() {
           return;
         }
         addLog({ level: 'info', message: 'Preparing document extractor (one-time setup)…' });
+        updateProgress({ status: 'ingesting', current: 0, total: 0, currentFileName: '' });
         const prepared = await tauriAPI.prepareExtractorEnvironment();
         addLog({
           level: prepared.state === 'ready' ? 'success' : 'warn',
           message: prepared.detail,
         });
+        updateProgress({ status: prepared.state === 'ready' ? 'completed' : 'error' });
       } catch (error) {
         const details = createErrorDetails(
           error,
@@ -398,9 +400,10 @@ export default function App() {
           level: 'error',
           message: `${details.human}\nRaw error:\n${details.raw}`,
         });
+        updateProgress({ status: 'error' });
       }
     })();
-  }, [addLog]);
+  }, [addLog, updateProgress]);
 
   // Debounced snapshot of the graph inputs: updates immediately on note switch,
   // but only after a typing pause (1s) when the active note is being edited,

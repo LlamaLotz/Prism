@@ -1432,6 +1432,33 @@ pub(crate) struct PythonRun {
     pub stderr_tail: String,
 }
 
+/// Read a child pipe without assuming UTF-8. Windows Python/pip can emit
+/// locale-encoded bytes; a strict `lines()` reader stops on the first invalid
+/// sequence and closes the pipe, which makes the child's next write fail with
+/// an opaque "Invalid argument" error.
+fn stream_child_lines<R: std::io::Read>(stream: R, mut on_line: impl FnMut(String)) {
+    use std::io::{BufRead, BufReader};
+    let mut reader = BufReader::new(stream);
+    let mut buffer = Vec::new();
+    loop {
+        buffer.clear();
+        match reader.read_until(b'\n', &mut buffer) {
+            Ok(0) => break,
+            Ok(_) => {
+                let mut line = String::from_utf8_lossy(&buffer).into_owned();
+                if line.ends_with('\n') {
+                    line.pop();
+                }
+                if line.ends_with('\r') {
+                    line.pop();
+                }
+                on_line(line);
+            }
+            Err(_) => break,
+        }
+    }
+}
+
 /// Launch the Python extractor for one or more sources and wait for it.
 ///
 /// The caller decides what success means: a single-source import expects a
@@ -1501,7 +1528,11 @@ pub(crate) fn run_python_extractor(
     let mut cmd = Command::new(&python_cmd);
     // Unbuffered so extractor progress streams to the panel instead of
     // arriving in one block on exit (block-buffered pipe symptom: frozen %).
-    cmd.env("PYTHONUNBUFFERED", "1").arg("-u");
+    // UTF-8 keeps Windows pipes from carrying locale-encoded bytes.
+    cmd.env("PYTHONUNBUFFERED", "1")
+        .env("PYTHONIOENCODING", "utf-8")
+        .env("PYTHONUTF8", "1")
+        .arg("-u");
     cmd.arg(clean_script_path);
     cmd.arg("--vault");
     cmd.arg(vault_path);
@@ -1559,31 +1590,23 @@ pub(crate) fn run_python_extractor(
 
     let window_clone = window.clone();
     std::thread::spawn(move || {
-        use std::io::{BufRead, BufReader};
-        let reader = BufReader::new(stdout);
-        for line in reader.lines() {
-            if let Ok(l) = line {
-                let _ = window_clone.emit("ingestion-progress", l);
-            }
-        }
+        stream_child_lines(stdout, |line| {
+            let _ = window_clone.emit("ingestion-progress", line);
+        });
     });
 
     let window_clone_err = window.clone();
     let tail_clone = Arc::clone(&stderr_tail);
     std::thread::spawn(move || {
-        use std::io::{BufRead, BufReader};
-        let reader = BufReader::new(stderr);
-        for line in reader.lines() {
-            if let Ok(l) = line {
-                let _ = window_clone_err.emit("ingestion-error", &l);
-                if let Ok(mut tail) = tail_clone.lock() {
-                    tail.push(l);
-                    if tail.len() > 40 {
-                        tail.remove(0);
-                    }
+        stream_child_lines(stderr, |line| {
+            let _ = window_clone_err.emit("ingestion-error", &line);
+            if let Ok(mut tail) = tail_clone.lock() {
+                tail.push(line);
+                if tail.len() > 40 {
+                    tail.remove(0);
                 }
             }
-        }
+        });
     });
 
     let status = loop {
@@ -1838,6 +1861,8 @@ async fn prepare_extractor_environment(
         );
         let mut cmd = Command::new(&python);
         cmd.env("PYTHONUNBUFFERED", "1")
+            .env("PYTHONIOENCODING", "utf-8")
+            .env("PYTHONUTF8", "1")
             .arg("-u")
             .arg(&script)
             .arg("--bootstrap-only")
@@ -1853,16 +1878,14 @@ async fn prepare_extractor_environment(
         let tail = Arc::new(Mutex::new(Vec::<String>::new()));
         let out_window = window.clone();
         std::thread::spawn(move || {
-            use std::io::{BufRead, BufReader};
-            for line in BufReader::new(stdout).lines().map_while(Result::ok) {
+            stream_child_lines(stdout, |line| {
                 let _ = out_window.emit("ingestion-progress", format!("[Prism Setup] {line}"));
-            }
+            });
         });
         let err_window = window.clone();
         let err_tail = Arc::clone(&tail);
         std::thread::spawn(move || {
-            use std::io::{BufRead, BufReader};
-            for line in BufReader::new(stderr).lines().map_while(Result::ok) {
+            stream_child_lines(stderr, |line| {
                 let _ = err_window.emit("ingestion-error", format!("[Prism Setup] {line}"));
                 if let Ok(mut lines) = err_tail.lock() {
                     lines.push(line);
@@ -1870,7 +1893,7 @@ async fn prepare_extractor_environment(
                         lines.remove(0);
                     }
                 }
-            }
+            });
         });
         let status = child
             .wait()
@@ -1881,7 +1904,7 @@ async fn prepare_extractor_environment(
             .map(|lines| lines.join("\n"))
             .unwrap_or_default();
         let after = extractor_env_status_inner(&app);
-        if status.success() && after.state == "ready" {
+        if after.state == "ready" {
             let _ = window.emit(
                 "ingestion-progress",
                 "[Prism Setup] Extractor environment ready.",
@@ -2617,4 +2640,19 @@ pub use settings_smoke::run as run_settings_smoke;
 
 fn app_context() -> tauri::Context<tauri::Wry> {
     tauri::generate_context!()
+}
+
+#[cfg(test)]
+mod child_pipe_tests {
+    use super::stream_child_lines;
+
+    #[test]
+    fn reader_survives_invalid_utf8_and_keeps_later_lines() {
+        let mut lines = Vec::new();
+        stream_child_lines(
+            std::io::Cursor::new(b"first\r\n\x85invalid\nthird\n".to_vec()),
+            |line| lines.push(line),
+        );
+        assert_eq!(lines, vec!["first", "\u{FFFD}invalid", "third"]);
+    }
 }
