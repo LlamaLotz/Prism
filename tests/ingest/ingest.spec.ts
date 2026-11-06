@@ -5,13 +5,44 @@ test('URL method stays compatible with native adapter', async ({ page }) => {
   await page.getByLabel('Vault folder', { exact: true }).getByRole('option', { name: 'Notes/Deep', exact: true }).click();
   await page.getByRole('button', { name: 'Whisper', exact: true }).click();
   await page.getByRole('button', { name: 'Start Ingestion' }).click();
-  expect(await page.evaluate(() => (window as any).ingestFixture.calls)).toEqual([['url', 'https://youtu.be/example', 'whisper', 'Notes/Deep']]);
+  expect(await page.evaluate(() => (window as any).ingestFixture.calls)).toEqual([
+    [{ type: 'url', value: 'https://youtu.be/example', method: 'whisper' }, 'Notes/Deep'],
+  ]);
 });
-test('file OCR choice keeps the per-source override', async ({ page }) => {
+test('multi-file OCR choice carries every selected file', async ({ page }) => {
   await page.goto('/tests/ingest/harness.html');
-  await page.getByRole('button', { name: 'Local Document / Media' }).click();
-  await page.getByPlaceholder('Click Browse to select file...').fill('/fixtures/document.pdf');
+  await page.getByRole('button', { name: 'Files / Folder' }).click();
+  await page.getByRole('button', { name: 'Add files' }).click();
   await page.getByRole('button', { name: 'Off', exact: true }).click();
   await page.getByRole('button', { name: 'Start Ingestion' }).click();
-  expect(await page.evaluate(() => (window as any).ingestFixture.calls)).toEqual([['file', '/fixtures/document.pdf|N', undefined, '']]);
+  expect(await page.evaluate(() => (window as any).ingestFixture.calls)).toEqual([
+    [
+      {
+        type: 'files',
+        files: ['/fixtures/document.pdf'],
+        folders: [],
+        includeSubfolders: true,
+        ocr: 'N',
+      },
+      '',
+    ],
+  ]);
+});
+test('folder ingestion carries the folder and subfolder preference', async ({ page }) => {
+  await page.goto('/tests/ingest/harness.html');
+  await page.getByRole('button', { name: 'Files / Folder' }).click();
+  await page.getByRole('button', { name: 'Add folder' }).click();
+  await page.getByRole('button', { name: 'Start Ingestion' }).click();
+  expect(await page.evaluate(() => (window as any).ingestFixture.calls)).toEqual([
+    [
+      {
+        type: 'files',
+        files: [],
+        folders: ['/fixtures/folder'],
+        includeSubfolders: true,
+        ocr: 'A',
+      },
+      '',
+    ],
+  ]);
 });

@@ -22,7 +22,8 @@ import { TopicsView } from './components/TopicsView';
 import type { ChatModelPicker } from './components/study/SharedChat';
 import type { ModelPickerOption } from './components/ui/ModelPicker';
 import { SettingsPage, type SectionId } from './components/SettingsPage';
-import { IngestModal } from './components/IngestModal';
+import { IngestModal, type IngestRequest } from './components/IngestModal';
+import { BatchImportReview } from './components/BatchImportReview';
 import { IngestionLogPanel } from './components/IngestionLogPanel';
 import { useIngestion } from './services/ingestionStore';
 import { AppSettings, SettingsApplyError, NoteFile, GraphNode, GraphLink, GraphPayload, tauriAPI } from './types';
@@ -44,7 +45,7 @@ import { TitleBar } from './components/TitleBar';
 import { MaterialSurface } from './components/MaterialSurface';
 import { createErrorDetails, createRawErrorDetails, errorDialogMessage, ErrorDetails } from './utils/errors';
 
-import { documents } from './services/documents';
+import { documents, type BatchPrepareResult } from './services/documents';
 import { DocumentImports } from './components/DocumentImports';
 import { RuntimeActivity, JobsButton } from './components/RuntimeActivity';
 import { SplashScreen } from './components/SplashScreen';
@@ -116,6 +117,7 @@ export default function App() {
   const [isIngesting, setIsIngesting] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [documentReviewRequest, setDocumentReviewRequest] = useState<{id:string;ts:number;vault:string}|null>(null);
+  const [batchReview, setBatchReview] = useState<BatchPrepareResult | null>(null);
   const [isIngestModalOpen, setIsIngestModalOpen] = useState(false);
   // Which Settings section to land on when the window opens (the AI Co-Pilot
   // "Configure Now" link jumps straight to the AI page).
@@ -359,6 +361,46 @@ export default function App() {
 
 
   const { addLog, updateProgress, isHidden: isIngestionHidden, setHidden: setIngestionHidden } = useIngestion();
+
+  // Prepare the isolated Python extractor once, at first launch (and after an
+  // update changes the extractor/requirements), instead of making the first
+  // ingestion wait through a multi-minute pip install.
+  const extractorSetupStartedRef = useRef(false);
+  useEffect(() => {
+    if (extractorSetupStartedRef.current) return;
+    if (!('__TAURI_INTERNALS__' in window) && !('__TAURI__' in window)) return;
+    extractorSetupStartedRef.current = true;
+    void (async () => {
+      try {
+        const status = await tauriAPI.extractorEnvStatus();
+        if (status.state === 'ready') return;
+        if (status.state === 'needs_python') {
+          addLog({
+            level: 'warn',
+            message:
+              status.detail +
+              ' Open Settings → Extractor and click Run Auto-Installer to finish setup.',
+          });
+          return;
+        }
+        addLog({ level: 'info', message: 'Preparing document extractor (one-time setup)…' });
+        const prepared = await tauriAPI.prepareExtractorEnvironment();
+        addLog({
+          level: prepared.state === 'ready' ? 'success' : 'warn',
+          message: prepared.detail,
+        });
+      } catch (error) {
+        const details = createErrorDetails(
+          error,
+          'Extractor setup failed. Open Settings → Extractor and click Run Auto-Installer to retry.',
+        );
+        addLog({
+          level: 'error',
+          message: `${details.human}\nRaw error:\n${details.raw}`,
+        });
+      }
+    })();
+  }, [addLog]);
 
   // Debounced snapshot of the graph inputs: updates immediately on note switch,
   // but only after a typing pause (1s) when the active note is being edited,
@@ -1025,7 +1067,7 @@ export default function App() {
   };
 
   // 5. Native Ingest Engine Action
-  const handleRunIngest = async (type: 'url' | 'file', value: string, method: string = 'yt-dlp', folder = '') => {
+  const handleRunIngest = async (request: IngestRequest, folder = '') => {
     if (!settings.vaultPath) {
       await alert('Please connect a notes vault folder in settings first.', {
         title: 'No vault connected',
@@ -1034,37 +1076,62 @@ export default function App() {
     }
 
     setIsIngesting(true);
-    appLogger.info(`Ingestion started: ${type} (${value.slice(0, 120)})`);
+    setBatchReview(null);
+    const label =
+      request.type === 'url'
+        ? `url (${request.value.slice(0, 120)})`
+        : `${request.files.length} file(s), ${request.folders.length} folder(s)`;
+    appLogger.info(`Ingestion started: ${label}`);
     addLog({ level: 'info', message: 'Initializing ingestion pipeline...' });
     updateProgress({ status: 'ingesting', current: 0, total: 0, currentFileName: '' });
 
     try {
-      // Background output is collected by the IngestionProvider listeners
-      // (ingestion-progress / ingestion-error) while the panel is minimized.
-      const prepared = await documents.prepare(type, value, method, null, folder);
-      setDocumentReviewRequest({id:prepared.id,ts:Date.now(),vault:settings.vaultPath});
-      const result = {success:true,output:'Extraction ready for review. No notes have been published.',error:''};
-
-      if (result.success) {
-        addLog({ level: 'success', message: 'DONE: ' + result.output });
-        updateProgress({ status: 'completed' });
-        setIsIngestModalOpen(false);
-        addLog({ level: 'info', message: 'Open Jobs → Review import to preview and confirm your notes.' });
-        appLogger.info(`Extraction ready for review: ${type}`);
+      if (request.type === 'url') {
+        // Background output is collected by the IngestionProvider listeners
+        // (ingestion-progress / ingestion-error) while the panel is minimized.
+        const prepared = await documents.prepare('url', request.value, request.method, null, folder);
+        setDocumentReviewRequest({ id: prepared.id, ts: Date.now(), vault: settings.vaultPath });
+        addLog({
+          level: 'success',
+          message: 'DONE: Extraction ready for review. No notes have been published.',
+        });
+        addLog({
+          level: 'info',
+          message: 'Open Jobs → Review import to preview and confirm your notes.',
+        });
+        appLogger.info(`Extraction ready for review: ${label}`);
       } else {
-        const details = createRawErrorDetails(
-          result.error || result.output,
-          'The extractor could not complete the import.'
-        );
-        addLog({ level: 'error', message: `${details.human}\nRaw error:\n${details.raw}` });
-        updateProgress({ status: 'error' });
-        appLogger.error(`Ingestion failed: ${type}`, details.raw);
+        const prepared = await documents.prepareBatch({
+          files: request.files,
+          folders: request.folders,
+          includeSubfolders: request.includeSubfolders,
+          ocr: request.ocr,
+          method: 'yt-dlp',
+          folder,
+        });
+        setBatchReview(prepared);
+        const failed = prepared.failures.slice(0, 5).map((failure) => `- ${failure.source}: ${failure.error}`).join('\n');
+        addLog({
+          level: prepared.failures.length ? 'warn' : 'success',
+          message:
+            `DONE: ${prepared.imports.length} import(s) ready for review.` +
+            (prepared.failures.length
+              ? `\n${prepared.failures.length} file(s) failed${failed ? `:\n${failed}` : '.'}`
+              : ''),
+        });
+        addLog({
+          level: 'info',
+          message: 'Open the batch review dialog to review each file or commit all clean imports.',
+        });
+        appLogger.info(`Batch extraction ready for review: ${prepared.imports.length} import(s)`);
       }
+      updateProgress({ status: 'completed' });
+      setIsIngestModalOpen(false);
     } catch (err) {
       const details = createErrorDetails(err, 'The extractor encountered an unexpected error.');
       addLog({ level: 'error', message: `${details.human}\nRaw error:\n${details.raw}` });
       updateProgress({ status: 'error' });
-      appLogger.error(`Ingestion critical error: ${type}`, details.raw);
+      appLogger.error(`Ingestion critical error: ${label}`, details.raw);
     } finally {
       setIsIngesting(false);
       // Small delay to allow OS filesystem to finalize writes before refreshing notes
@@ -1777,6 +1844,18 @@ export default function App() {
         isOpen={isIngestModalOpen}
         onClose={() => setIsIngestModalOpen(false)}
         onIngest={handleRunIngest}
+      />
+
+      <BatchImportReview
+        batch={batchReview}
+        onClose={() => setBatchReview(null)}
+        onReview={(id) =>
+          setDocumentReviewRequest({ id, ts: Date.now(), vault: settings.vaultPath })
+        }
+        onPublished={() => {
+          void fetchNotes();
+          void handleAgentVaultChanged();
+        }}
       />
 
       {/* Persistent, reopenable ingestion log (minimizable badge + drawer) */}

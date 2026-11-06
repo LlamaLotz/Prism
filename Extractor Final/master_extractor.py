@@ -2,6 +2,10 @@ import os
 import sys
 import subprocess
 import shutil
+import hashlib
+import json
+import time
+import threading
 import importlib.metadata
 import importlib.util
 from pathlib import Path
@@ -247,6 +251,113 @@ def required_packages(version=None):
         "pydantic-settings",
         "typer",
     ]
+
+
+ENV_READY_MARKER = PRISM_ENV_DIR / ".prism-ready"
+ENV_LOCK_FILE = PRISM_ENV_DIR.parent / ".env-bootstrap.lock"
+
+
+def _script_hash():
+    try:
+        return hashlib.sha256(Path(__file__).resolve().read_bytes()).hexdigest()
+    except OSError:
+        return ""
+
+
+def _write_env_ready_marker():
+    """Record that the isolated environment is fully prepared.
+
+    The app uses this marker to skip the one-time setup on later launches and
+    to detect when a new build changed the extractor or its requirements.
+    """
+    try:
+        PRISM_ENV_DIR.mkdir(parents=True, exist_ok=True)
+        payload = {
+            "scriptHash": _script_hash(),
+            "python": f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}",
+            "requirements": required_packages(),
+            "completedAt": int(time.time()),
+        }
+        temp = ENV_READY_MARKER.with_suffix(".tmp")
+        temp.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        os.replace(temp, ENV_READY_MARKER)
+    except OSError as exc:
+        print(f"[Prism Ingestion] Could not write environment marker: {exc}")
+
+
+_ENV_LOCK_STOP = None
+
+
+def _env_lock_heartbeat(stop):
+    while not stop.wait(60):
+        try:
+            os.utime(ENV_LOCK_FILE, None)
+        except OSError:
+            return
+
+
+def _acquire_env_lock(timeout_seconds=1800):
+    """Serialize venv creation/installs across setup and extraction processes.
+
+    Returns ``(token, owns_lock)``.  A child relaunched by this process
+    inherits ``PRISM_ENV_LOCK_TOKEN`` and must not release the parent's lock.
+    """
+    global _ENV_LOCK_STOP
+    inherited = os.environ.get("PRISM_ENV_LOCK_TOKEN")
+    if inherited:
+        return inherited, False
+
+    ENV_LOCK_FILE.parent.mkdir(parents=True, exist_ok=True)
+    token = f"{os.getpid()}-{time.time_ns()}"
+    deadline = time.time() + timeout_seconds
+    while True:
+        try:
+            fd = os.open(ENV_LOCK_FILE, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+            try:
+                os.write(fd, token.encode("utf-8"))
+            finally:
+                os.close(fd)
+            os.environ["PRISM_ENV_LOCK_TOKEN"] = token
+            _ENV_LOCK_STOP = threading.Event()
+            threading.Thread(
+                target=_env_lock_heartbeat,
+                args=(_ENV_LOCK_STOP,),
+                daemon=True,
+            ).start()
+            return token, True
+        except FileExistsError:
+            try:
+                age = time.time() - ENV_LOCK_FILE.stat().st_mtime
+                # The owner refreshes the mtime every minute.  A lock that has
+                # not moved for ten minutes belongs to a crashed setup.
+                if age > 600:
+                    ENV_LOCK_FILE.unlink(missing_ok=True)
+                    continue
+            except OSError:
+                pass
+            if time.time() > deadline:
+                raise SystemExit(
+                    "[Prism Ingestion ERROR] Another Prism environment setup is "
+                    "still running. Wait for it to finish and try again."
+                )
+            time.sleep(1)
+
+
+def _release_env_lock(token, owns_lock):
+    global _ENV_LOCK_STOP
+    if _ENV_LOCK_STOP is not None:
+        _ENV_LOCK_STOP.set()
+        _ENV_LOCK_STOP = None
+    if not owns_lock:
+        return
+    try:
+        if ENV_LOCK_FILE.read_text(encoding="utf-8").strip() == token:
+            ENV_LOCK_FILE.unlink(missing_ok=True)
+    except OSError:
+        pass
+    finally:
+        if os.environ.get("PRISM_ENV_LOCK_TOKEN") == token:
+            os.environ.pop("PRISM_ENV_LOCK_TOKEN", None)
 
 
 def _relaunch_inside_venv(python_bin):
@@ -585,8 +696,17 @@ def auto_heal_environment():
             raise SystemExit(1) from e
 
 
-bootstrap_isolated_environment()
-auto_heal_environment()
+_ENV_LOCK_TOKEN, _ENV_LOCK_OWNS = _acquire_env_lock()
+try:
+    bootstrap_isolated_environment()
+    auto_heal_environment()
+    _write_env_ready_marker()
+finally:
+    _release_env_lock(_ENV_LOCK_TOKEN, _ENV_LOCK_OWNS)
+
+if "--bootstrap-only" in sys.argv:
+    print("[Prism Ingestion] Extractor environment ready.")
+    raise SystemExit(0)
 
 import re
 import json
@@ -1588,6 +1708,11 @@ def run_prism():
     parser = argparse.ArgumentParser(description="Prism Master Extractor Pipeline")
     parser.add_argument("--vault", type=str, help="Outputs clean final notes directly to this folder")
     parser.add_argument("--files", type=str, nargs="+", help="Automated batch files processing list")
+    parser.add_argument(
+        "--files-from",
+        type=str,
+        help="JSON manifest containing local files to process (avoids command-line length limits)",
+    )
     parser.add_argument("--urls", type=str, nargs="+", help="Automated batch URLs processing list")
     parser.add_argument("--yt_method", type=str, default="auto", help="YouTube extraction method: 'auto', 'captions', or 'whisper'")
     parser.add_argument("--ocr", type=str, default="adaptive", choices=["on", "off", "adaptive"], help="OCR mode: 'on', 'off', or 'adaptive' (default)")
@@ -1612,7 +1737,7 @@ def run_prism():
     default_ocr_pref = args.ocr
 
     # CLI / Automated Mode Trigger
-    if args.files or args.urls:
+    if args.files or args.files_from or args.urls:
         automated_mode = True
         
         # If OCR mode is passed via CLI, we need to respect it
@@ -1625,6 +1750,15 @@ def run_prism():
         all_sources = []
         if args.files:
             all_sources.extend(args.files)
+        if args.files_from:
+            try:
+                manifest = json.loads(Path(args.files_from).read_text(encoding="utf-8"))
+                if not isinstance(manifest, list) or not all(isinstance(v, str) for v in manifest):
+                    raise ValueError("expected a JSON array of strings")
+                all_sources.extend(manifest)
+            except (OSError, ValueError) as exc:
+                print(f"ERROR: Could not read --files-from manifest: {exc}")
+                raise SystemExit(2) from exc
         if args.urls:
             all_sources.extend(args.urls)
         

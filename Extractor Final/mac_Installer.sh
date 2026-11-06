@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+
 echo "===================================================="
 echo "PRISM EXTRACTOR INSTALLER - macOS"
 echo "===================================================="
@@ -68,9 +70,11 @@ echo "Python packages"
 echo "===================================================="
 echo "Prism keeps its Python packages in an isolated environment at"
 echo "  $HOME/.prism/env"
-echo "The extractor creates and populates it automatically on the first"
-echo "ingestion run, using Python 3.12 installed above. This keeps the"
-echo "system Python untouched and avoids version conflicts."
-echo
+echo "Preparing that environment now. This is a one-time download and can"
+echo "take several minutes on a slow connection."
+echo "===================================================="
+"$PYTHON_BIN" "$SCRIPT_DIR/master_extractor.py" --bootstrap-only
 
+echo
+echo "[SUCCESS] Extractor environment ready."
 echo "macOS setup complete. The extractor will use Python 3.12 automatically."

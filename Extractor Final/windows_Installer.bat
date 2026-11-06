@@ -103,10 +103,17 @@ echo Python packages
 echo ====================================================
 echo Prism keeps its Python packages in an isolated environment at
 echo   %USERPROFILE%\.prism\env
-echo The extractor creates and populates it automatically on the first
-echo ingestion run, using the interpreter installed above. This keeps the
-echo system Python untouched and avoids version conflicts.
+echo Preparing that environment now. This is a one-time download and can
+echo take several minutes on a slow connection.
+echo ====================================================
+%PYCMD% "%~dp0master_extractor.py" --bootstrap-only
+if errorlevel 1 (
+    echo ERROR: The isolated extractor environment could not be prepared.
+    echo Check your network connection and run the installer again.
+    exit /b 1
+)
 echo.
+echo [SUCCESS] Extractor environment ready.
 
 echo.
 echo ====================================================

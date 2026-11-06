@@ -4,6 +4,7 @@ use crate::document_model::{self as model, Fragment, Output, PrismDocument, Sour
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use std::{
+    collections::{HashMap, HashSet},
     io::Read,
     path::{Path, PathBuf},
 };
@@ -82,6 +83,58 @@ pub struct PrepareRequest {
     pub method: String,
     pub saved_revision: Option<String>,
 }
+#[derive(Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BatchPrepareRequest {
+    #[serde(default)]
+    pub files: Vec<String>,
+    #[serde(default)]
+    pub folders: Vec<String>,
+    #[serde(default = "default_true")]
+    pub include_subfolders: bool,
+    #[serde(default = "default_ocr")]
+    pub ocr: String,
+    pub method: String,
+    #[serde(default)]
+    pub folder: String,
+}
+fn default_true() -> bool {
+    true
+}
+fn default_ocr() -> String {
+    "A".into()
+}
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BatchImportItem {
+    #[serde(flatten)]
+    pub summary: ImportSummary,
+    pub source: String,
+    pub destination: String,
+    pub cached: bool,
+}
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BatchFailure {
+    pub source: String,
+    pub error: String,
+}
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BatchPrepareResult {
+    pub batch_id: String,
+    pub batch_label: String,
+    pub imports: Vec<BatchImportItem>,
+    pub failures: Vec<BatchFailure>,
+    pub skipped: Vec<BatchFailure>,
+}
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BatchCommitResult {
+    pub committed: Vec<String>,
+    pub skipped: Vec<BatchFailure>,
+    pub failed: Vec<BatchFailure>,
+}
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ImportOptions {
@@ -115,6 +168,12 @@ struct Plan {
     outputs: Vec<PlannedOutput>,
     retained: Vec<String>,
     source_copy: Option<String>,
+    #[serde(default)]
+    batch_id: Option<String>,
+    #[serde(default)]
+    batch_label: Option<String>,
+    #[serde(default)]
+    batch_index: Option<usize>,
 }
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -125,6 +184,8 @@ pub struct ImportSummary {
     pub revision: String,
     pub outputs: usize,
     pub needs_refresh: bool,
+    pub batch_id: Option<String>,
+    pub batch_label: Option<String>,
 }
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -372,6 +433,8 @@ fn summary(p: &Plan, state: &str, s: &Scope) -> ImportSummary {
         revision: p.revision.clone(),
         outputs: p.outputs.len(),
         needs_refresh: p.generation != s.generation,
+        batch_id: p.batch_id.clone(),
+        batch_label: p.batch_label.clone(),
     }
 }
 fn runtime_signature(app: &tauri::AppHandle) -> String {
@@ -674,6 +737,9 @@ pub async fn prepare_document_import(
         outputs: vec![],
         retained: vec![],
         source_copy: None,
+        batch_id: None,
+        batch_label: None,
+        batch_index: None,
     };
     regenerate(&c, &s, &mut plan, &doc)?;
     let tx = c.unchecked_transaction().map_err(err)?;
@@ -688,13 +754,836 @@ pub async fn prepare_document_import(
     );
     Ok(summary(&plan, "review", &s))
 }
+const BATCH_MAX_FILES: usize = 200;
+const BATCH_MAX_BYTES: u64 = 4 * 1024 * 1024 * 1024;
+const BATCH_EXTENSIONS: &[&str] = &[
+    "pdf", "docx", "pptx", "xlsx", "mp3", "wav", "m4a", "flac", "aac", "ogg", "mp4", "mov",
+    "mkv", "avi", "webm", "png", "jpg", "jpeg", "webp", "html", "md", "markdown", "txt",
+];
+
+fn batch_extension_supported(path: &Path) -> bool {
+    path.extension()
+        .and_then(|ext| ext.to_str())
+        .map(|ext| BATCH_EXTENSIONS.iter().any(|known| known.eq_ignore_ascii_case(ext)))
+        .unwrap_or(false)
+}
+
+fn batch_component(value: &str) -> String {
+    let cleaned: String = value
+        .chars()
+        .map(|ch| match ch {
+            '\\' | '/' | '*' | '?' | ':' | '"' | '<' | '>' | '|' => ' ',
+            _ => ch,
+        })
+        .collect();
+    let cleaned = cleaned.split_whitespace().collect::<Vec<_>>().join(" ");
+    let cleaned = cleaned.trim().trim_end_matches('.').trim();
+    if cleaned.is_empty() {
+        "document".into()
+    } else {
+        cleaned.chars().take(80).collect()
+    }
+}
+
+fn batch_relative_allowed(relative: &Path) -> bool {
+    relative.components().all(|component| match component {
+        std::path::Component::Normal(value) => {
+            let name = value.to_string_lossy();
+            let lower = name.to_ascii_lowercase();
+            !name.starts_with('.')
+                && !name.starts_with("~$")
+                && lower != "thumbs.db"
+                && lower != "desktop.ini"
+                && lower != "legacy-runtime"
+                && lower != "diagnostics"
+        }
+        _ => true,
+    })
+}
+
+struct BatchSource {
+    path: PathBuf,
+    /// Relative folder below the destination base (mirrored source folder).
+    suffix: String,
+}
+
+fn add_batch_source(
+    path: PathBuf,
+    suffix: String,
+    sources: &mut Vec<BatchSource>,
+    skipped: &mut Vec<BatchFailure>,
+    seen: &mut HashSet<PathBuf>,
+    total_bytes: &mut u64,
+) -> Result<(), String> {
+    if !path.is_file() {
+        skipped.push(BatchFailure {
+            source: path.to_string_lossy().into(),
+            error: "Not a readable file".into(),
+        });
+        return Ok(());
+    }
+    let canonical = std::fs::canonicalize(&path).unwrap_or_else(|_| path.clone());
+    if !seen.insert(canonical) {
+        return Ok(());
+    }
+    let metadata = match std::fs::metadata(&path) {
+        Ok(metadata) => metadata,
+        Err(error) => {
+            skipped.push(BatchFailure {
+                source: path.to_string_lossy().into(),
+                error: error.to_string(),
+            });
+            return Ok(());
+        }
+    };
+    if sources.len() >= BATCH_MAX_FILES {
+        return Err(format!(
+            "This batch contains more than {BATCH_MAX_FILES} supported files. Split it into smaller batches."
+        ));
+    }
+    if total_bytes.saturating_add(metadata.len()) > BATCH_MAX_BYTES {
+        return Err(
+            "This batch is larger than 4 GB. Split it into smaller batches.".into(),
+        );
+    }
+    *total_bytes += metadata.len();
+    sources.push(BatchSource { path, suffix });
+    Ok(())
+}
+
+fn expand_batch_sources(
+    request: &BatchPrepareRequest,
+) -> Result<(Vec<BatchSource>, Vec<BatchFailure>), String> {
+    let mut sources = Vec::new();
+    let mut skipped = Vec::new();
+    let mut seen = HashSet::new();
+    let mut total_bytes = 0u64;
+
+    for file in &request.files {
+        add_batch_source(
+            PathBuf::from(file),
+            String::new(),
+            &mut sources,
+            &mut skipped,
+            &mut seen,
+            &mut total_bytes,
+        )?;
+    }
+
+    let mut root_labels = HashMap::<String, usize>::new();
+    let mut seen_roots = HashSet::new();
+    for folder in &request.folders {
+        let root = PathBuf::from(folder);
+        if !root.is_dir() {
+            skipped.push(BatchFailure {
+                source: folder.clone(),
+                error: "Folder does not exist".into(),
+            });
+            continue;
+        }
+        let canonical_root = std::fs::canonicalize(&root).unwrap_or_else(|_| root.clone());
+        if !seen_roots.insert(canonical_root) {
+            continue;
+        }
+        let base_label = root
+            .file_name()
+            .and_then(|name| name.to_str())
+            .map(batch_component)
+            .unwrap_or_else(|| "Folder".into());
+        let count = root_labels.entry(base_label.to_lowercase()).or_insert(0);
+        *count += 1;
+        let label = if *count == 1 {
+            base_label
+        } else {
+            format!("{base_label} ({count})")
+        };
+
+        let walker = if request.include_subfolders {
+            walkdir::WalkDir::new(&root)
+        } else {
+            walkdir::WalkDir::new(&root).max_depth(1)
+        };
+        for entry in walker.follow_links(false).sort_by_file_name() {
+            let entry = match entry {
+                Ok(entry) => entry,
+                Err(error) => {
+                    skipped.push(BatchFailure {
+                        source: folder.clone(),
+                        error: error.to_string(),
+                    });
+                    continue;
+                }
+            };
+            if entry.path() == root
+                || !entry.file_type().is_file()
+                || entry.file_type().is_symlink()
+            {
+                continue;
+            }
+            let Ok(relative) = entry.path().strip_prefix(&root) else {
+                continue;
+            };
+            if !batch_relative_allowed(relative) || !batch_extension_supported(entry.path()) {
+                continue;
+            }
+            let parent = relative
+                .parent()
+                .map(|path| {
+                    path.components()
+                        .filter_map(|component| match component {
+                            std::path::Component::Normal(value) => {
+                                Some(batch_component(&value.to_string_lossy()))
+                            }
+                            _ => None,
+                        })
+                        .collect::<Vec<_>>()
+                })
+                .unwrap_or_default();
+            let mut parts = vec![label.clone()];
+            parts.extend(parent);
+            add_batch_source(
+                entry.path().to_path_buf(),
+                parts.join("/"),
+                &mut sources,
+                &mut skipped,
+                &mut seen,
+                &mut total_bytes,
+            )?;
+        }
+    }
+
+    sources.sort_by(|a, b| a.path.cmp(&b.path));
+    Ok((sources, skipped))
+}
+
+struct PreparedBatchSource {
+    index: usize,
+    path: PathBuf,
+    title: String,
+    source_hash: String,
+    plan_folder: String,
+    plan_name: String,
+    staged_stem: String,
+    text_direct: bool,
+    was_cached: bool,
+    document: Option<PrismDocument>,
+}
+
+fn batch_join(base: &str, suffix: &str) -> String {
+    let base = base.trim_matches('/').replace('\\', "/");
+    let suffix = suffix.trim_matches('/').replace('\\', "/");
+    match (base.is_empty(), suffix.is_empty()) {
+        (true, true) => String::new(),
+        (true, false) => suffix,
+        (false, true) => base,
+        (false, false) => format!("{base}/{suffix}"),
+    }
+}
+
+fn cached_revision(
+    c: &Connection,
+    s: &Scope,
+    locator: &Path,
+    source_hash: &str,
+    settings: &str,
+    runtime: &str,
+) -> Option<String> {
+    c.query_row(
+        "SELECT revision FROM document_revisions WHERE vault_id=?1 AND document_id=?2 AND source_hash=?3 AND settings=?4 AND runtime=?5 ORDER BY last_used DESC LIMIT 1",
+        params![
+            s.vault_id,
+            model::hash(locator.to_string_lossy().as_bytes()),
+            source_hash,
+            settings,
+            runtime
+        ],
+        |row| row.get(0),
+    )
+    .optional()
+    .ok()
+    .flatten()
+}
+
+fn batch_document(
+    source: &PreparedBatchSource,
+    mut markdown: String,
+    settings: &str,
+) -> PrismDocument {
+    let extractor = if source.text_direct {
+        "Prism text"
+    } else {
+        "Python fallback"
+    };
+    if !source.text_direct {
+        // The extractor names files after the indexed staging copy. Replace
+        // those internal names so the reviewed note carries the real source.
+        let extension = source
+            .path
+            .extension()
+            .and_then(|ext| ext.to_str())
+            .unwrap_or_default();
+        let staged_name = format!("{}.{}", source.staged_stem, extension);
+        if let Some(original_name) = source.path.file_name().and_then(|name| name.to_str()) {
+            markdown = markdown.replace(&staged_name, original_name);
+        }
+        markdown = markdown.replace(&source.staged_stem, &source.title);
+    }
+    let mut document = PrismDocument::new(
+        source.title.clone(),
+        Source {
+            locator: source.path.to_string_lossy().into(),
+            content_hash: source.source_hash.clone(),
+            kind: "file".into(),
+            fingerprint_kind: "bytes".into(),
+        },
+        extractor.into(),
+        env!("CARGO_PKG_VERSION").into(),
+        settings.into(),
+        vec![Fragment {
+            markdown,
+            location: None,
+        }],
+    );
+    if !source.text_direct {
+        document.warnings.push(
+            "Fallback supplied Markdown without verified original-source locations.".into(),
+        );
+    }
+    document
+}
+
+fn create_batch_plan(
+    c: &Connection,
+    s: &Scope,
+    doc: &PrismDocument,
+    source: &PreparedBatchSource,
+    batch_id: &str,
+    batch_label: &str,
+    runtime: &str,
+) -> Result<Plan, String> {
+    if !source.was_cached {
+        store_document(c, s, doc, runtime)?;
+    }
+    let id = uuid::Uuid::new_v4().to_string();
+    let mut plan = Plan {
+        id: id.clone(),
+        revision: doc.revision.clone(),
+        document_id: doc.id.clone(),
+        generation: s.generation.clone(),
+        token: String::new(),
+        options: ImportOptions {
+            require_existing_folder: false,
+            name: source.plan_name.clone(),
+            folder: source.plan_folder.clone(),
+            split_level: None,
+            keep_source: false,
+            separate_copy: false,
+            excluded_outputs: vec![],
+        },
+        outputs: vec![],
+        retained: vec![],
+        source_copy: None,
+        batch_id: Some(batch_id.to_string()),
+        batch_label: Some(batch_label.to_string()),
+        batch_index: Some(source.index),
+    };
+    regenerate(c, s, &mut plan, doc)?;
+    let tx = c.unchecked_transaction().map_err(err)?;
+    tx.execute("INSERT INTO document_imports(id,vault_id,job_id,state,payload) VALUES(?1,?2,?1,'review',?3)",params![id,s.vault_id,serde_json::to_string(&plan).map_err(err)?]).map_err(err)?;
+    tx.execute("INSERT INTO knowledge_jobs(id,vault_id,kind,dedup,priority,state,progress,payload) VALUES(?1,?2,'DOCUMENT_IMPORT',?1,10,'waiting_for_approval',0.8,?3)",params![id,s.vault_id,serde_json::json!({"importId":id}).to_string()]).map_err(err)?;
+    tx.commit().map_err(err)?;
+    Ok(plan)
+}
+
+fn prepare_document_batch_inner(
+    app: &tauri::AppHandle,
+    window: &tauri::Window,
+    request: &BatchPrepareRequest,
+    job: &super::jobs::JobContext,
+) -> Result<BatchPrepareResult, String> {
+    let s = super::current(app)?;
+    let c = crate::db::init_db(app)?;
+    destination(&s, &request.folder, "import.md")?;
+    if !s.root.join(&request.folder).is_dir() {
+        return Err(conflict("Destination folder is unavailable; choose another folder"));
+    }
+
+    let (sources, skipped) = expand_batch_sources(request)?;
+    if sources.is_empty() {
+        if let Some(first) = skipped.first() {
+            return Err(format!("No files could be prepared: {}", first.error));
+        }
+        return Err("No supported files were selected".into());
+    }
+
+    let batch_id = uuid::Uuid::new_v4().to_string();
+    let batch_label = if request.files.len() == 1 && request.folders.is_empty() {
+        Path::new(&request.files[0])
+            .file_stem()
+            .and_then(|stem| stem.to_str())
+            .map(batch_component)
+            .unwrap_or_else(|| "Document".into())
+    } else if request.folders.len() == 1 && request.files.is_empty() {
+        Path::new(&request.folders[0])
+            .file_name()
+            .and_then(|name| name.to_str())
+            .map(batch_component)
+            .unwrap_or_else(|| "Folder".into())
+    } else {
+        format!("{} file(s)", sources.len())
+    };
+    let runtime = runtime_signature(app);
+    let settings = model::hash(
+        serde_json::to_vec(&(
+            "file",
+            request.method.as_str(),
+            format!("|{}", request.ocr),
+        ))
+        .map_err(err)?
+        .as_slice(),
+    );
+
+    let mut prepared = Vec::new();
+    let mut failures = Vec::new();
+    let total_sources = sources.len();
+    for (offset, source) in sources.into_iter().enumerate() {
+        job.check()?;
+        let title = source
+            .path
+            .file_stem()
+            .and_then(|stem| stem.to_str())
+            .map(str::to_string)
+            .unwrap_or_else(|| "Document".into());
+        let source_hash = match file_hash(&source.path) {
+            Ok(hash) => hash,
+            Err(error) => {
+                failures.push(BatchFailure {
+                    source: source.path.to_string_lossy().into(),
+                    error,
+                });
+                continue;
+            }
+        };
+        let extension = source
+            .path
+            .extension()
+            .and_then(|ext| ext.to_str())
+            .unwrap_or_default()
+            .to_ascii_lowercase();
+        let text_direct = matches!(extension.as_str(), "md" | "markdown" | "txt");
+        let plan_folder = batch_join(&request.folder, &source.suffix);
+        let plan_name = batch_component(&title);
+        let index = offset + 1;
+        let staged_stem = format!("{index:04}__{}", batch_component(&title));
+        let mut prepared_source = PreparedBatchSource {
+            index,
+            path: source.path,
+            title,
+            source_hash: source_hash.clone(),
+            plan_folder,
+            plan_name,
+            staged_stem,
+            text_direct,
+            was_cached: false,
+            document: None,
+        };
+        if let Some(revision) = cached_revision(
+            &c,
+            &s,
+            &prepared_source.path,
+            &source_hash,
+            &settings,
+            &runtime,
+        ) {
+            if let Ok(document) = load_document(&c, &s, &revision) {
+                prepared_source.was_cached = true;
+                prepared_source.document = Some(document);
+            }
+        }
+        prepared.push(prepared_source);
+    }
+
+    // Disambiguate note names within each mirrored destination folder.
+    let mut used_names = HashMap::<(String, String), usize>::new();
+    for source in &mut prepared {
+        let key = (
+            source.plan_folder.to_lowercase(),
+            source.plan_name.to_lowercase(),
+        );
+        let count = used_names.entry(key).or_insert(0);
+        *count += 1;
+        if *count > 1 {
+            source.plan_name = format!("{} ({count})", source.plan_name);
+        }
+    }
+
+    let stage = tempfile::Builder::new()
+        .prefix("batch-")
+        .tempdir_in(private_dir(&s, "staging")?)
+        .map_err(err)?;
+    let _logs = ExtractionLogs {
+        stage: stage.path().into(),
+        scope: s.clone(),
+    };
+    let input_dir = stage.path().join("input");
+    std::fs::create_dir(&input_dir).map_err(err)?;
+    let manifest_path = stage.path().join("batch-input.json");
+    let mut manifest = Vec::new();
+
+    for source in &prepared {
+        job.check()?;
+        if source.was_cached {
+            continue;
+        }
+        let _ = window.emit(
+            "ingestion-progress",
+            format!(
+                "[Prism] Staging {}/{}: {}",
+                source.index,
+                total_sources,
+                source
+                    .path
+                    .file_name()
+                    .map(|name| name.to_string_lossy().to_string())
+                    .unwrap_or_default()
+            ),
+        );
+        if source.text_direct {
+            let output = stage.path().join(format!("{}.md", source.staged_stem));
+            match std::fs::read_to_string(&source.path) {
+                Ok(text) => {
+                    if let Err(error) = std::fs::write(&output, text) {
+                        failures.push(BatchFailure {
+                            source: source.path.to_string_lossy().into(),
+                            error: error.to_string(),
+                        });
+                    }
+                }
+                Err(error) => failures.push(BatchFailure {
+                    source: source.path.to_string_lossy().into(),
+                    error: format!("Could not read text source: {error}"),
+                }),
+            }
+        } else {
+            let extension = source
+                .path
+                .extension()
+                .and_then(|ext| ext.to_str())
+                .unwrap_or_default();
+            let staged = input_dir.join(format!("{}.{}", source.staged_stem, extension));
+            match std::fs::copy(&source.path, &staged) {
+                Ok(_) => match file_hash(&staged) {
+                    Ok(hash) if hash == source.source_hash => {
+                        manifest.push(format!("{}|{}", staged.to_string_lossy(), request.ocr));
+                    }
+                    Ok(_) => failures.push(BatchFailure {
+                        source: source.path.to_string_lossy().into(),
+                        error: "Source changed while staging".into(),
+                    }),
+                    Err(error) => failures.push(BatchFailure {
+                        source: source.path.to_string_lossy().into(),
+                        error,
+                    }),
+                },
+                Err(error) => failures.push(BatchFailure {
+                    source: source.path.to_string_lossy().into(),
+                    error: error.to_string(),
+                }),
+            }
+        }
+    }
+
+    let mut extraction_detail = String::new();
+    if !manifest.is_empty() {
+        std::fs::write(
+            &manifest_path,
+            serde_json::to_vec(&manifest).map_err(err)?,
+        )
+        .map_err(err)?;
+        let authorization_sources = prepared
+            .iter()
+            .filter(|source| !source.was_cached)
+            .map(|source| source.path.to_string_lossy().to_string())
+            .collect::<Vec<_>>();
+        let run = crate::run_python_extractor(
+            app,
+            window,
+            stage.path().to_string_lossy().as_ref(),
+            "file",
+            &authorization_sources,
+            &request.ocr,
+            job,
+            Some(&manifest_path),
+        )?;
+        extraction_detail = run.stderr_tail;
+    }
+
+    // Map `<index>__<name>.md` outputs back to their source file.
+    let mut outputs = HashMap::<usize, PathBuf>::new();
+    if let Ok(entries) = std::fs::read_dir(stage.path()) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if !path.is_file() || path.extension().map_or(true, |ext| ext != "md") {
+                continue;
+            }
+            let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
+                continue;
+            };
+            let Some(prefix) = name.split("__").next() else {
+                continue;
+            };
+            if let Ok(index) = prefix.parse::<usize>() {
+                outputs.insert(index, path);
+            }
+        }
+    }
+
+    for source in &mut prepared {
+        if source.was_cached || source.document.is_some() {
+            continue;
+        }
+        job.check()?;
+        let Some(output) = outputs.remove(&source.index) else {
+            failures.push(BatchFailure {
+                source: source.path.to_string_lossy().into(),
+                error: if extraction_detail.trim().is_empty() {
+                    "Extractor produced no Markdown note for this file".into()
+                } else {
+                    format!(
+                        "Extractor produced no Markdown note. {}",
+                        extraction_detail.lines().last().unwrap_or("")
+                    )
+                },
+            });
+            continue;
+        };
+        if file_hash(&source.path)? != source.source_hash {
+            failures.push(BatchFailure {
+                source: source.path.to_string_lossy().into(),
+                error: "Source changed during extraction".into(),
+            });
+            continue;
+        }
+        let bytes = match limited_read(&output) {
+            Ok(bytes) => bytes,
+            Err(error) => {
+                failures.push(BatchFailure {
+                    source: source.path.to_string_lossy().into(),
+                    error,
+                });
+                continue;
+            }
+        };
+        let markdown = match String::from_utf8(bytes) {
+            Ok(markdown) => markdown,
+            Err(_) => {
+                failures.push(BatchFailure {
+                    source: source.path.to_string_lossy().into(),
+                    error: "Extractor output was not UTF-8 Markdown".into(),
+                });
+                continue;
+            }
+        };
+        if markdown.trim().is_empty()
+            || [
+                "No content extracted.",
+                "[PDF extraction produced no text]",
+                "Office conversion failed:",
+            ]
+            .iter()
+            .any(|placeholder| markdown.contains(placeholder))
+        {
+            failures.push(BatchFailure {
+                source: source.path.to_string_lossy().into(),
+                error: "Extractor produced an empty or failure placeholder".into(),
+            });
+            continue;
+        }
+        source.document = Some(batch_document(source, markdown, &settings));
+    }
+
+    if prepared.iter().all(|source| source.document.is_none()) {
+        let detail = failures
+            .first()
+            .map(|failure| failure.error.clone())
+            .unwrap_or_else(|| "Extraction produced no usable notes".into());
+        return Err(format!("Batch extraction failed: {detail}"));
+    }
+
+    let _guard = operations::lock()?;
+    if super::current(app)?.generation != s.generation {
+        return Err(conflict("Vault changed during extraction"));
+    }
+    let mut imports = Vec::new();
+    for source in &mut prepared {
+        let Some(document) = source.document.take() else {
+            continue;
+        };
+        let plan = match create_batch_plan(
+            &c,
+            &s,
+            &document,
+            source,
+            &batch_id,
+            &batch_label,
+            &runtime,
+        ) {
+            Ok(plan) => plan,
+            Err(error) => {
+                failures.push(BatchFailure {
+                    source: source.path.to_string_lossy().into(),
+                    error,
+                });
+                continue;
+            }
+        };
+        let summary = summary(&plan, "review", &s);
+        imports.push(BatchImportItem {
+            summary,
+            source: source.path.to_string_lossy().into(),
+            destination: batch_join(&plan.options.folder, &plan.options.name),
+            cached: source.was_cached,
+        });
+        super::emit(app, &c, &s.vault_id, "document_review_required", &plan.id)?;
+    }
+    if imports.is_empty() {
+        let detail = failures
+            .first()
+            .map(|failure| failure.error.clone())
+            .unwrap_or_else(|| "No import plans could be created".into());
+        return Err(format!("Batch import failed: {detail}"));
+    }
+    evict(&c, &s)?;
+    let _ = window.emit(
+        "ingestion-progress",
+        format!(
+            "Batch prepared: {} import(s), {} failed, {} skipped.",
+            imports.len(),
+            failures.len(),
+            skipped.len()
+        ),
+    );
+    Ok(BatchPrepareResult {
+        batch_id,
+        batch_label,
+        imports,
+        failures,
+        skipped,
+    })
+}
+
+#[tauri::command]
+pub async fn prepare_document_batch(
+    app: tauri::AppHandle,
+    window: tauri::Window,
+    request: BatchPrepareRequest,
+) -> Result<BatchPrepareResult, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut key_parts = request.files.clone();
+        key_parts.extend(request.folders.clone());
+        key_parts.sort();
+        let key = format!(
+            "batch:{}:{}:{}",
+            request.method,
+            request.ocr,
+            model::hash(key_parts.join("\n").as_bytes())
+        );
+        super::jobs::run(
+            &app,
+            "EXTRACT",
+            10,
+            &key,
+            serde_json::json!({"batch": true}),
+            |job| prepare_document_batch_inner(&app, &window, &request, job),
+        )
+    })
+    .await
+    .map_err(|error| error.to_string())?
+}
+
+#[tauri::command]
+pub async fn commit_document_batch(
+    app: tauri::AppHandle,
+    window: tauri::Window,
+    batch_id: String,
+) -> Result<BatchCommitResult, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let s = super::current(&app)?;
+        let c = crate::db::init_db(&app)?;
+        let mut stmt = c
+            .prepare("SELECT id,payload FROM document_imports WHERE vault_id=?1 AND json_extract(payload,'$.batchId')=?2 AND state='review' ORDER BY json_extract(payload,'$.batchIndex')")
+            .map_err(err)?;
+        let rows = stmt
+            .query_map(params![s.vault_id, batch_id], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })
+            .map_err(err)?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(err)?;
+        let total = rows.len();
+        let mut result = BatchCommitResult {
+            committed: vec![],
+            skipped: vec![],
+            failed: vec![],
+        };
+        for (position, (id, payload)) in rows.into_iter().enumerate() {
+            let plan: Plan = match serde_json::from_str(&payload) {
+                Ok(plan) => plan,
+                Err(error) => {
+                    result.failed.push(BatchFailure {
+                        source: id,
+                        error: error.to_string(),
+                    });
+                    continue;
+                }
+            };
+            if plan.generation != s.generation {
+                result.skipped.push(BatchFailure {
+                    source: plan.options.name.clone(),
+                    error: "Vault changed; refresh the import preview".into(),
+                });
+                continue;
+            }
+            if plan
+                .outputs
+                .iter()
+                .any(|output| output.conflict.is_some() || output.mutation.is_none())
+            {
+                result.skipped.push(BatchFailure {
+                    source: plan.options.name.clone(),
+                    error: "Resolve output conflicts before importing".into(),
+                });
+                continue;
+            }
+            let _ = window.emit(
+                "ingestion-progress",
+                format!("[Prism] Committing {}/{}: {}", position + 1, total, plan.options.name),
+            );
+            match commit_document_import_inner(app.clone(), id.clone(), plan.token) {
+                Ok(_) => result.committed.push(id),
+                Err(error) if error.starts_with("CONFLICT:") => result.skipped.push(BatchFailure {
+                    source: plan.options.name,
+                    error,
+                }),
+                Err(error) => result.failed.push(BatchFailure {
+                    source: plan.options.name,
+                    error,
+                }),
+            }
+        }
+        Ok(result)
+    })
+    .await
+    .map_err(|error| error.to_string())?
+}
+
 fn list_document_imports_inner(app: tauri::AppHandle) -> Result<Vec<ImportSummary>, String> {
     let _guard = operations::lock()?;
     let s = super::current(&app)?;
     let c = crate::db::init_db(&app)?;
     recover_batches(&c, &s)?;
     c.execute("UPDATE document_imports SET state='cancelled' WHERE vault_id=?1 AND state='review' AND job_id IN (SELECT id FROM knowledge_jobs WHERE state='cancelled')",[&s.vault_id]).map_err(err)?;
-    let mut stmt=c.prepare("SELECT p.id,p.state,json_extract(p.payload,'$.options.name'),json_extract(p.payload,'$.revision'),json_array_length(p.payload,'$.outputs'),json_extract(p.payload,'$.generation') FROM document_imports p JOIN knowledge_jobs j ON j.id=p.job_id WHERE p.vault_id=?1 AND p.state IN ('review','publishing','recovery_required') AND j.state!='cancelled' ORDER BY p.created_at DESC LIMIT 100").map_err(err)?;
+    let mut stmt=c.prepare("SELECT p.id,p.state,json_extract(p.payload,'$.options.name'),json_extract(p.payload,'$.revision'),json_array_length(p.payload,'$.outputs'),json_extract(p.payload,'$.generation'),json_extract(p.payload,'$.batchId'),json_extract(p.payload,'$.batchLabel') FROM document_imports p JOIN knowledge_jobs j ON j.id=p.job_id WHERE p.vault_id=?1 AND p.state IN ('review','publishing','recovery_required') AND j.state!='cancelled' ORDER BY p.created_at DESC LIMIT 500").map_err(err)?;
     let rows = stmt
         .query_map([&s.vault_id], |r| {
             Ok(ImportSummary {
@@ -704,6 +1593,8 @@ fn list_document_imports_inner(app: tauri::AppHandle) -> Result<Vec<ImportSummar
                 revision: r.get(3)?,
                 outputs: r.get(4)?,
                 needs_refresh: r.get::<_, String>(5)? != s.generation,
+                batch_id: r.get(6)?,
+                batch_label: r.get(7)?,
             })
         })
         .map_err(err)?
@@ -1477,6 +2368,9 @@ mod tests {
             outputs: vec![],
             retained: vec![],
             source_copy: None,
+            batch_id: None,
+            batch_label: None,
+            batch_index: None,
         };
         regenerate(c, s, &mut p, doc).unwrap();
         c.execute("INSERT INTO document_imports(id,vault_id,job_id,state,payload) VALUES(?1,?2,?1,'review',?3)",params![id,s.vault_id,serde_json::to_string(&p).unwrap()]).unwrap();
@@ -1487,6 +2381,95 @@ mod tests {
         let (id, b) = begin_batch(c, s, p).unwrap();
         apply_batch(c, s, &id, &b, || Ok(())).unwrap();
         id
+    }
+    #[test]
+    fn batch_expansion_filters_and_mirrors_folders() {
+        let root = tempfile::tempdir().unwrap();
+        let research = root.path().join("Research");
+        std::fs::create_dir_all(research.join("sub")).unwrap();
+        std::fs::write(research.join("a.pdf"), b"a").unwrap();
+        std::fs::write(research.join("notes.txt"), b"notes").unwrap();
+        std::fs::write(research.join("ignore.bin"), b"ignore").unwrap();
+        std::fs::write(research.join("sub").join("b.docx"), b"b").unwrap();
+        std::fs::write(research.join("sub").join(".hidden.pdf"), b"hidden").unwrap();
+
+        let request = BatchPrepareRequest {
+            files: vec![],
+            folders: vec![research.to_string_lossy().into()],
+            include_subfolders: true,
+            ocr: "A".into(),
+            method: "yt-dlp".into(),
+            folder: String::new(),
+        };
+        let (sources, skipped) = expand_batch_sources(&request).unwrap();
+        assert!(skipped.is_empty());
+        assert_eq!(sources.len(), 3);
+        let names = sources
+            .iter()
+            .map(|source| {
+                (
+                    source.path.file_name().unwrap().to_string_lossy().to_string(),
+                    source.suffix.clone(),
+                )
+            })
+            .collect::<Vec<_>>();
+        assert!(names.contains(&("a.pdf".into(), "Research".into())));
+        assert!(names.contains(&("notes.txt".into(), "Research".into())));
+        assert!(names.contains(&("b.docx".into(), "Research/sub".into())));
+
+        let shallow = BatchPrepareRequest {
+            files: vec![],
+            folders: vec![research.to_string_lossy().into()],
+            include_subfolders: false,
+            ..request.clone()
+        };
+        let (sources, _) = expand_batch_sources(&shallow).unwrap();
+        assert_eq!(sources.len(), 2);
+        assert!(sources.iter().all(|source| !source.path.ends_with("b.docx")));
+
+        let individual = BatchPrepareRequest {
+            files: vec![research.join("a.pdf").to_string_lossy().into()],
+            folders: vec![],
+            include_subfolders: true,
+            ocr: "A".into(),
+            method: "yt-dlp".into(),
+            folder: String::new(),
+        };
+        let (sources, _) = expand_batch_sources(&individual).unwrap();
+        assert_eq!(sources.len(), 1);
+        assert!(sources[0].suffix.is_empty());
+    }
+    #[test]
+    fn batch_join_keeps_relative_mirror_paths() {
+        assert_eq!(batch_join("Imported", "Research/Papers"), "Imported/Research/Papers");
+        assert_eq!(batch_join("", "Research"), "Research");
+        assert_eq!(batch_join("Imported", ""), "Imported");
+        assert_eq!(batch_join("Imported/", ""), "Imported");
+    }
+    #[test]
+    fn batch_plans_create_mirrored_folders_on_commit() {
+        let (_d, db, s) = fixture();
+        let c = &db.conn;
+        let doc = document(&s, "Intro\n\n## Alpha\n\nFirst");
+        let source = PreparedBatchSource {
+            index: 1,
+            path: s.root.join("original.txt"),
+            title: "Q1".into(),
+            source_hash: doc.source.content_hash.clone(),
+            plan_folder: "Imported/Research/Papers".into(),
+            plan_name: "Q1".into(),
+            staged_stem: "0001__Q1".into(),
+            text_direct: true,
+            was_cached: false,
+            document: None,
+        };
+        let p = create_batch_plan(c, &s, &doc, &source, "batch-1", "Research", "runtime")
+            .unwrap();
+        assert_eq!(p.options.folder, "Imported/Research/Papers");
+        assert_eq!(p.batch_id.as_deref(), Some("batch-1"));
+        assert_eq!(p.batch_index, Some(1));
+        publish(c, &s, &p);
+        assert!(s.root.join("Imported/Research/Papers/Q1.md").is_file());
     }
     #[test]
     fn imports_validate_an_existing_destination_folder_on_every_refresh() {
@@ -1512,6 +2495,9 @@ mod tests {
             outputs: vec![],
             retained: vec![],
             source_copy: None,
+            batch_id: None,
+            batch_label: None,
+            batch_index: None,
         };
         // A selected folder that is not (or no longer) available fails the
         // preview instead of silently importing into the vault root.

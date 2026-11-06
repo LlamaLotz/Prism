@@ -77,7 +77,7 @@ export function ImportReview({folders=[], id, state, close, published, vaultPath
     {preview && options && !operation && <>
       <fieldset className="runtime-settings document-options" disabled={busy || state !== 'review'}><legend>Output settings</legend>
         <label>Note name<input value={options.name} onChange={e => change({ name: e.target.value })} /></label>
-        <FolderPicker folders={folders} value={options.folder} onChange={folder=>change({folder,requireExistingFolder:true})}/>
+        <FolderPicker folders={folders} value={options.folder} onChange={folder=>change({folder,requireExistingFolder:folders.includes(folder)})} allowCreate={!options.requireExistingFolder}/>
         <label>Split document<select value={options.splitLevel ?? ''} onChange={e => change({ splitLevel: e.target.value ? Number(e.target.value) : null })}><option value="">One note per source</option>{[2, 1, 3, 4, 5, 6].map(level => <option value={level} key={level}>Heading {level} (H{level})</option>)}</select></label>
         <label className="document-checkbox"><input type="checkbox" checked={options.keepSource} onChange={e => change({ keepSource: e.target.checked })} />Keep source in vault (immutable local copy)</label>
         <label className="document-checkbox"><input type="checkbox" checked={options.separateCopy} onChange={e => change({ separateCopy: e.target.checked })} />Import a separate copy with new filenames</label>

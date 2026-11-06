@@ -637,11 +637,37 @@ fn select_file() -> Option<String> {
         .add_filter(
             "All Supported Files",
             &[
-                "pdf", "docx", "pptx", "xlsx", "mp3", "wav", "m4a", "mp4", "mov", "png", "jpg",
-                "jpeg", "html",
+                "pdf", "docx", "pptx", "xlsx", "mp3", "wav", "m4a", "flac", "mp4", "mov", "mkv",
+                "avi", "webm", "png", "jpg", "jpeg", "webp", "html", "md", "markdown", "txt",
             ],
         )
         .pick_file()
+        .map(|p| p.to_string_lossy().to_string())
+}
+
+#[tauri::command]
+fn select_files() -> Vec<String> {
+    rfd::FileDialog::new()
+        .set_title("Select Files to Ingest")
+        .add_filter(
+            "All Supported Files",
+            &[
+                "pdf", "docx", "pptx", "xlsx", "mp3", "wav", "m4a", "flac", "mp4", "mov", "mkv",
+                "avi", "webm", "png", "jpg", "jpeg", "webp", "html", "md", "markdown", "txt",
+            ],
+        )
+        .pick_files()
+        .unwrap_or_default()
+        .into_iter()
+        .map(|p| p.to_string_lossy().to_string())
+        .collect()
+}
+
+#[tauri::command]
+fn select_ingest_folder() -> Option<String> {
+    rfd::FileDialog::new()
+        .set_title("Select Folder to Ingest")
+        .pick_folder()
         .map(|p| p.to_string_lossy().to_string())
 }
 
@@ -1191,8 +1217,11 @@ fn stop_ingestion_child(child: &mut std::process::Child) {
 fn python_candidates() -> Vec<String> {
     #[cfg(target_os = "windows")]
     return vec![
+        "%LOCALAPPDATA%\\Programs\\Python\\Python313\\python.exe".to_string(),
+        "%ProgramFiles%\\Python313\\python.exe".to_string(),
         "%LOCALAPPDATA%\\Programs\\Python\\Python312\\python.exe".to_string(),
         "%ProgramFiles%\\Python312\\python.exe".to_string(),
+        "%LOCALAPPDATA%\\Programs\\Python\\Python311\\python.exe".to_string(),
         "python".to_string(),
         "py".to_string(),
         "python3".to_string(),
@@ -1230,7 +1259,7 @@ fn python_version(command: &str) -> Option<(u32, u32)> {
     let mut cmd = std::process::Command::new(command);
     #[cfg(target_os = "windows")]
     if command == "py" {
-        cmd.args(["-3.12", "--version"]);
+        cmd.args(["-3", "--version"]);
     } else {
         cmd.arg("--version");
     }
@@ -1267,7 +1296,7 @@ fn find_python() -> String {
     #[cfg(target_os = "windows")]
     if python_version("py").is_some_and(|(major, minor)| (major, minor) >= (3, 10)) {
         if let Ok(output) = std::process::Command::new("py")
-            .args(["-3.12", "-c", "import sys; print(sys.executable)"])
+            .args(["-3", "-c", "import sys; print(sys.executable)"])
             .output()
         {
             let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
@@ -1295,25 +1324,29 @@ fn find_python() -> String {
 // Interpreter for the isolated ingestion venv (~/.prism/env). The extractor
 // bootstraps this venv on first run (see master_extractor.py); prefer it once
 // it exists and fall back to a system interpreter otherwise.
-fn find_prism_python(app: &tauri::AppHandle) -> String {
-    if let Ok(home) = app.path().home_dir() {
-        #[cfg(target_os = "windows")]
-        let candidate = home
-            .join(".prism")
-            .join("env")
-            .join("Scripts")
-            .join("python.exe");
-        #[cfg(not(target_os = "windows"))]
-        let candidate = home.join(".prism").join("env").join("bin").join("python");
-
-        if candidate.exists() {
-            let candidate = candidate.to_string_lossy().to_string();
-            if python_version(&candidate).is_some_and(|(major, minor)| (major, minor) >= (3, 10)) {
-                return candidate;
-            }
-        }
+fn prism_env_python(app: &tauri::AppHandle) -> Option<PathBuf> {
+    let home = app.path().home_dir().ok()?;
+    #[cfg(target_os = "windows")]
+    let candidate = home
+        .join(".prism")
+        .join("env")
+        .join("Scripts")
+        .join("python.exe");
+    #[cfg(not(target_os = "windows"))]
+    let candidate = home.join(".prism").join("env").join("bin").join("python");
+    if !candidate.exists() {
+        return None;
     }
-    find_python()
+    let candidate = candidate.to_string_lossy().to_string();
+    python_version(&candidate)
+        .is_some_and(|(major, minor)| (major, minor) >= (3, 10))
+        .then(|| PathBuf::from(candidate))
+}
+
+fn find_prism_python(app: &tauri::AppHandle) -> String {
+    prism_env_python(app)
+        .map(|p| p.to_string_lossy().to_string())
+        .unwrap_or_else(find_python)
 }
 
 // Helper to find Extractor script
@@ -1394,6 +1427,196 @@ async fn run_builtin_extractor_async(
         plan.id
     ))
 }
+pub(crate) struct PythonRun {
+    pub success: bool,
+    pub stderr_tail: String,
+}
+
+/// Launch the Python extractor for one or more sources and wait for it.
+///
+/// The caller decides what success means: a single-source import expects a
+/// Markdown note, while a batch may accept partial output and report missing
+/// files individually. This helper only owns authorization, environment
+/// preparation, process streaming and cancellation.
+pub(crate) fn run_python_extractor(
+    app: &tauri::AppHandle,
+    window: &tauri::Window,
+    vault_path: &str,
+    ingest_type: &str,
+    values: &[String],
+    yt_method: &str,
+    job: &knowledge::jobs::JobContext,
+    files_from: Option<&Path>,
+) -> Result<PythonRun, String> {
+    let authorization = serde_json::json!({
+        "sources": values,
+        "method": yt_method,
+    })
+    .to_string();
+    knowledge::models::authorize(
+        app,
+        "Python document extractor",
+        "EXTRACT",
+        &authorization,
+        false,
+        false,
+    )?;
+
+    let script_path = resolve_resource_file(app, "Extractor Final/master_extractor.py");
+    if !script_path.exists() {
+        return Err(format!(
+            "Extractor script not found at path: {:?}",
+            script_path
+        ));
+    }
+
+    // If no supported Python is available, install the platform prerequisites
+    // before launching the extractor. This is only reached on first setup (or
+    // after an old environment was removed), so normal ingestion is unchanged.
+    let needs_installer = prism_env_python(app).is_none() && find_supported_python().is_none();
+    if needs_installer {
+        let installer_output = run_extractor_installer(app.clone())?;
+        for line in installer_output.lines() {
+            let _ = window.emit("ingestion-progress", format!("[Prism Installer] {line}"));
+        }
+    }
+
+    let python_cmd = find_prism_python(app);
+    let _ = window.emit(
+        "ingestion-progress",
+        format!("[Prism] Python interpreter: {python_cmd}"),
+    );
+
+    // The legacy extractor writes logs/downloads relative to its script.
+    // Run a copy in staging so it cannot publish into installed resources.
+    let runtime_dir = Path::new(vault_path).join("legacy-runtime");
+    fs::create_dir_all(&runtime_dir).map_err(|e| e.to_string())?;
+    let staged_script = runtime_dir.join("master_extractor.py");
+    fs::copy(&script_path, &staged_script).map_err(|e| e.to_string())?;
+    let clean_script_path = staged_script
+        .to_string_lossy()
+        .trim_start_matches(r"\\?\")
+        .to_string();
+
+    let mut cmd = Command::new(&python_cmd);
+    // Unbuffered so extractor progress streams to the panel instead of
+    // arriving in one block on exit (block-buffered pipe symptom: frozen %).
+    cmd.env("PYTHONUNBUFFERED", "1").arg("-u");
+    cmd.arg(clean_script_path);
+    cmd.arg("--vault");
+    cmd.arg(vault_path);
+    cmd.arg("--yt_method");
+    cmd.arg(yt_method);
+
+    if let Some(manifest) = files_from {
+        cmd.arg("--files-from");
+        cmd.arg(manifest);
+    } else if ingest_type == "url" {
+        cmd.arg("--urls");
+        for value in values {
+            cmd.arg(value);
+        }
+    } else {
+        cmd.arg("--files");
+        for value in values {
+            cmd.arg(value);
+        }
+    }
+
+    #[cfg(target_os = "windows")]
+    cmd.creation_flags(0x08000000);
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        cmd.process_group(0);
+    }
+    job.check()?;
+    if config::load_runtime_config(app)
+        .unwrap_or_default()
+        .models
+        .privacy
+        == knowledge::models::PrivacyMode::StrictLocal
+    {
+        return Err(
+            "Strict Local blocks extractor subprocesses with uncontrolled egress".into(),
+        );
+    }
+    let mut child = cmd
+        .current_dir(vault_path)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|e| format!("Failed to launch extractor: {}", e))?;
+
+    let stdout = child.stdout.take().unwrap();
+    let stderr = child.stderr.take().unwrap();
+
+    // Keep the last stderr lines so a silent failure (or a successful exit
+    // with no note) can explain itself instead of surfacing only a generic
+    // "no output" error.
+    let stderr_tail = Arc::new(Mutex::new(Vec::<String>::new()));
+
+    let window_clone = window.clone();
+    std::thread::spawn(move || {
+        use std::io::{BufRead, BufReader};
+        let reader = BufReader::new(stdout);
+        for line in reader.lines() {
+            if let Ok(l) = line {
+                let _ = window_clone.emit("ingestion-progress", l);
+            }
+        }
+    });
+
+    let window_clone_err = window.clone();
+    let tail_clone = Arc::clone(&stderr_tail);
+    std::thread::spawn(move || {
+        use std::io::{BufRead, BufReader};
+        let reader = BufReader::new(stderr);
+        for line in reader.lines() {
+            if let Ok(l) = line {
+                let _ = window_clone_err.emit("ingestion-error", &l);
+                if let Ok(mut tail) = tail_clone.lock() {
+                    tail.push(l);
+                    if tail.len() > 40 {
+                        tail.remove(0);
+                    }
+                }
+            }
+        }
+    });
+
+    let status = loop {
+        if job.check().is_err()
+            || config::load_runtime_config(app)
+                .unwrap_or_default()
+                .models
+                .privacy
+                == knowledge::models::PrivacyMode::StrictLocal
+        {
+            stop_ingestion_child(&mut child);
+            return Err("Extraction cancelled".into());
+        }
+        if let Some(status) = child.try_wait().map_err(|e| e.to_string())? {
+            break status;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    };
+
+    // Give the pipe readers a moment to drain the final lines. Do not join: a
+    // helper process spawned by the extractor could keep the inherited pipe
+    // open after it exits.
+    std::thread::sleep(std::time::Duration::from_millis(100));
+    let stderr_tail = stderr_tail
+        .lock()
+        .map(|lines| lines.join("\n"))
+        .unwrap_or_default();
+    Ok(PythonRun {
+        success: status.success(),
+        stderr_tail,
+    })
+}
+
 async fn extract_to_stage_async(
     app: tauri::AppHandle,
     window: Window,
@@ -1483,212 +1706,202 @@ async fn extract_to_stage_async(
                     }
                 }
 
-                {
-                    knowledge::models::authorize(
-                        &app,
-                        "Python document extractor",
-                        "EXTRACT",
-                        &authorization,
-                        false,
-                        false,
-                    )?;
-                    let script_path =
-                        resolve_resource_file(&app, "Extractor Final/master_extractor.py");
-                    if !script_path.exists() {
-                        return Err(format!(
-                            "Extractor script not found at path: {:?}",
-                            script_path
-                        ));
-                    }
+                #[cfg(not(feature = "ingest-rust"))]
+                let _ = &authorization;
 
-                    let env_python = if cfg!(target_os = "windows") {
-                        app.path().home_dir().ok().map(|home| {
-                            home.join(".prism")
-                                .join("env")
-                                .join("Scripts")
-                                .join("python.exe")
-                        })
+                let run = run_python_extractor(
+                    &app,
+                    &window,
+                    &vault_path,
+                    &ingest_type,
+                    std::slice::from_ref(&value),
+                    &yt_method,
+                    job,
+                    None,
+                )?;
+                let detail = if run.stderr_tail.trim().is_empty() {
+                    String::new()
+                } else {
+                    format!("\nExtractor stderr:\n{}", run.stderr_tail)
+                };
+                if !run.success {
+                    return Err(if detail.is_empty() {
+                        "Extraction failed. Check logs for details.".to_string()
                     } else {
-                        app.path()
-                            .home_dir()
-                            .ok()
-                            .map(|home| home.join(".prism").join("env").join("bin").join("python"))
-                    };
-
-                    // If no supported Python is available, install the platform prerequisites
-                    // before launching the extractor. This is only reached on first setup (or
-                    // after an old environment was removed), so normal ingestion is unchanged.
-                    let needs_installer = env_python.as_ref().map_or(true, |path| {
-                        !path.exists()
-                            || python_version(&path.to_string_lossy())
-                                .map_or(true, |(major, minor)| (major, minor) < (3, 10))
-                    }) && find_supported_python().is_none();
-                    if needs_installer {
-                        let installer_output = run_extractor_installer(app.clone())?;
-                        for line in installer_output.lines() {
-                            let _ = window
-                                .emit("ingestion-progress", format!("[Prism Installer] {line}"));
-                        }
-                    }
-
-                    let python_cmd = find_prism_python(&app);
-                    let _ = window.emit(
-                        "ingestion-progress",
-                        format!("[Prism] Python interpreter: {python_cmd}"),
-                    );
-
-                    // The legacy extractor writes logs/downloads relative to its script.
-                    // Run a copy in staging so it cannot publish into installed resources.
-                    let runtime_dir = Path::new(&vault_path).join("legacy-runtime");
-                    fs::create_dir_all(&runtime_dir).map_err(|e| e.to_string())?;
-                    let staged_script = runtime_dir.join("master_extractor.py");
-                    fs::copy(&script_path, &staged_script).map_err(|e| e.to_string())?;
-                    let clean_script_path = staged_script
-                        .to_string_lossy()
-                        .trim_start_matches(r"\\?\")
-                        .to_string();
-
-                    let mut cmd = Command::new(&python_cmd);
-                    // Unbuffered so extractor progress streams to the panel instead of
-                    // arriving in one block on exit (block-buffered pipe symptom: frozen %).
-                    cmd.env("PYTHONUNBUFFERED", "1").arg("-u");
-                    cmd.arg(clean_script_path);
-                    cmd.arg("--vault");
-                    cmd.arg(&vault_path);
-                    cmd.arg("--yt_method");
-                    cmd.arg(&yt_method);
-
-                    if ingest_type == "url" {
-                        cmd.arg("--urls");
-                        cmd.arg(&value);
-                    } else {
-                        cmd.arg("--files");
-                        cmd.arg(&value);
-                    }
-
-                    #[cfg(target_os = "windows")]
-                    cmd.creation_flags(0x08000000);
-
-                    #[cfg(unix)]
-                    {
-                        use std::os::unix::process::CommandExt;
-                        cmd.process_group(0);
-                    }
-                    job.check()?;
-                    if config::load_runtime_config(&app)
-                        .unwrap_or_default()
-                        .models
-                        .privacy
-                        == knowledge::models::PrivacyMode::StrictLocal
-                    {
-                        return Err(
-                            "Strict Local blocks extractor subprocesses with uncontrolled egress"
-                                .into(),
-                        );
-                    }
-                    let mut child = cmd
-                        .current_dir(&vault_path)
-                        .stdout(Stdio::piped())
-                        .stderr(Stdio::piped())
-                        .spawn()
-                        .map_err(|e| format!("Failed to launch extractor: {}", e))?;
-
-                    let stdout = child.stdout.take().unwrap();
-                    let stderr = child.stderr.take().unwrap();
-
-                    // Keep the last stderr lines so a silent failure (or a
-                    // successful exit with no note) can explain itself instead
-                    // of surfacing only "Extraction produced no Markdown".
-                    let stderr_tail = Arc::new(Mutex::new(Vec::<String>::new()));
-
-                    let window_clone = window.clone();
-                    std::thread::spawn(move || {
-                        use std::io::{BufRead, BufReader};
-                        let reader = BufReader::new(stdout);
-                        for line in reader.lines() {
-                            if let Ok(l) = line {
-                                let _ = window_clone.emit("ingestion-progress", l);
-                            }
-                        }
+                        format!("Extraction failed.{detail}")
                     });
-
-                    let window_clone_err = window.clone();
-                    let tail_clone = Arc::clone(&stderr_tail);
-                    std::thread::spawn(move || {
-                        use std::io::{BufRead, BufReader};
-                        let reader = BufReader::new(stderr);
-                        for line in reader.lines() {
-                            if let Ok(l) = line {
-                                let _ = window_clone_err.emit("ingestion-error", &l);
-                                if let Ok(mut tail) = tail_clone.lock() {
-                                    tail.push(l);
-                                    if tail.len() > 40 {
-                                        tail.remove(0);
-                                    }
-                                }
-                            }
-                        }
-                    });
-
-                    let status = loop {
-                        if job.check().is_err()
-                            || config::load_runtime_config(&app)
-                                .unwrap_or_default()
-                                .models
-                                .privacy
-                                == knowledge::models::PrivacyMode::StrictLocal
-                        {
-                            stop_ingestion_child(&mut child);
-                            return Err("Extraction cancelled".into());
-                        }
-                        if let Some(status) = child.try_wait().map_err(|e| e.to_string())? {
-                            break status;
-                        }
-                        std::thread::sleep(std::time::Duration::from_millis(100));
-                    };
-
-                    // Give the pipe readers a moment to drain the final lines.
-                    // Do not join: a helper process spawned by the extractor
-                    // could keep the inherited pipe open after it exits.
-                    std::thread::sleep(std::time::Duration::from_millis(100));
-
-                    let tail = stderr_tail
-                        .lock()
-                        .map(|lines| lines.join("\n"))
-                        .unwrap_or_default();
-                    let detail = if tail.trim().is_empty() {
-                        String::new()
-                    } else {
-                        format!("\nExtractor stderr:\n{tail}")
-                    };
-
-                    if !status.success() {
-                        return Err(if detail.is_empty() {
-                            "Extraction failed. Check logs for details.".to_string()
-                        } else {
-                            format!("Extraction failed.{detail}")
-                        });
-                    }
-
-                    // A restarted/re-exec'd extractor used to exit 0 before
-                    // the replacement process wrote anything. Keep that from
-                    // looking like success to the import pipeline.
-                    let has_markdown = fs::read_dir(&vault_path)
-                        .ok()
-                        .into_iter()
-                        .flatten()
-                        .filter_map(Result::ok)
-                        .any(|entry| entry.path().extension().is_some_and(|ext| ext == "md"));
-                    if has_markdown {
-                        Ok("Extraction completed successfully.".to_string())
-                    } else {
-                        Err(format!(
-                            "Extractor exited without producing a Markdown document.{detail}"
-                        ))
-                    }
+                }
+                // A restarted/re-exec'd extractor used to exit 0 before the
+                // replacement process wrote anything. Keep that from looking
+                // like success to the import pipeline.
+                let has_markdown = fs::read_dir(&vault_path)
+                    .ok()
+                    .into_iter()
+                    .flatten()
+                    .filter_map(Result::ok)
+                    .any(|entry| entry.path().extension().is_some_and(|ext| ext == "md"));
+                if has_markdown {
+                    Ok("Extraction completed successfully.".to_string())
+                } else {
+                    Err(format!(
+                        "Extractor exited without producing a Markdown document.{detail}"
+                    ))
                 }
             },
         )
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[derive(Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExtractorEnvStatus {
+    /// ready | needs_setup | needs_python
+    pub state: String,
+    pub detail: String,
+    pub python: Option<String>,
+}
+
+fn extractor_env_marker(app: &tauri::AppHandle) -> Option<PathBuf> {
+    app.path()
+        .home_dir()
+        .ok()
+        .map(|home| home.join(".prism").join("env").join(".prism-ready"))
+}
+
+fn extractor_env_status_inner(app: &tauri::AppHandle) -> ExtractorEnvStatus {
+    let script = resolve_resource_file(app, "Extractor Final/master_extractor.py");
+    let script_hash = crate::knowledge::documents::file_hash(&script).unwrap_or_default();
+    let python = prism_env_python(app);
+    if python.is_none() && find_supported_python().is_none() {
+        return ExtractorEnvStatus {
+            state: "needs_python".into(),
+            detail: "Python 3.10 or newer is required for document extraction.".into(),
+            python: None,
+        };
+    }
+    let python = python.map(|p| p.to_string_lossy().to_string());
+    let marker = extractor_env_marker(app);
+    let marker_json = marker
+        .as_ref()
+        .and_then(|path| std::fs::read_to_string(path).ok())
+        .and_then(|raw| serde_json::from_str::<serde_json::Value>(&raw).ok());
+    let ready = marker_json
+        .as_ref()
+        .and_then(|value| value["scriptHash"].as_str())
+        .is_some_and(|stored| !script_hash.is_empty() && stored == script_hash);
+    if ready {
+        ExtractorEnvStatus {
+            state: "ready".into(),
+            detail: "The isolated extractor environment is ready.".into(),
+            python,
+        }
+    } else {
+        ExtractorEnvStatus {
+            state: "needs_setup".into(),
+            detail: "The isolated extractor environment has not been prepared for this build.".into(),
+            python,
+        }
+    }
+}
+
+static EXTRACTOR_SETUP_LOCK: Mutex<()> = Mutex::new(());
+
+#[tauri::command]
+fn extractor_env_status(app: tauri::AppHandle) -> ExtractorEnvStatus {
+    extractor_env_status_inner(&app)
+}
+
+/// Prepare the isolated Python environment once (first launch, or after an
+/// app update changes the extractor/requirements). The platform installer
+/// calls the same `--bootstrap-only` mode, so both paths share one source of
+/// truth for the dependency list.
+#[tauri::command]
+async fn prepare_extractor_environment(
+    app: tauri::AppHandle,
+    window: Window,
+) -> Result<ExtractorEnvStatus, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let _guard = EXTRACTOR_SETUP_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let current = extractor_env_status_inner(&app);
+        if current.state != "needs_setup" {
+            return Ok(current);
+        }
+        let script = resolve_resource_file(&app, "Extractor Final/master_extractor.py");
+        let python = find_prism_python(&app);
+        let _ = window.emit(
+            "ingestion-progress",
+            format!("[Prism Setup] Preparing document extractor with {python}"),
+        );
+        let mut cmd = Command::new(&python);
+        cmd.env("PYTHONUNBUFFERED", "1")
+            .arg("-u")
+            .arg(&script)
+            .arg("--bootstrap-only")
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+        #[cfg(target_os = "windows")]
+        cmd.creation_flags(0x08000000);
+        let mut child = cmd
+            .spawn()
+            .map_err(|e| format!("Could not start the extractor environment setup: {e}"))?;
+        let stdout = child.stdout.take().unwrap();
+        let stderr = child.stderr.take().unwrap();
+        let tail = Arc::new(Mutex::new(Vec::<String>::new()));
+        let out_window = window.clone();
+        std::thread::spawn(move || {
+            use std::io::{BufRead, BufReader};
+            for line in BufReader::new(stdout).lines().map_while(Result::ok) {
+                let _ = out_window.emit("ingestion-progress", format!("[Prism Setup] {line}"));
+            }
+        });
+        let err_window = window.clone();
+        let err_tail = Arc::clone(&tail);
+        std::thread::spawn(move || {
+            use std::io::{BufRead, BufReader};
+            for line in BufReader::new(stderr).lines().map_while(Result::ok) {
+                let _ = err_window.emit("ingestion-error", format!("[Prism Setup] {line}"));
+                if let Ok(mut lines) = err_tail.lock() {
+                    lines.push(line);
+                    if lines.len() > 40 {
+                        lines.remove(0);
+                    }
+                }
+            }
+        });
+        let status = child
+            .wait()
+            .map_err(|e| format!("Extractor environment setup failed: {e}"))?;
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        let detail = tail
+            .lock()
+            .map(|lines| lines.join("\n"))
+            .unwrap_or_default();
+        let after = extractor_env_status_inner(&app);
+        if status.success() && after.state == "ready" {
+            let _ = window.emit(
+                "ingestion-progress",
+                "[Prism Setup] Extractor environment ready.",
+            );
+            Ok(after)
+        } else if status.success() {
+            Err(format!(
+                "Extractor environment setup finished but the environment is still not ready. {}",
+                after.detail
+            ))
+        } else {
+            Err(format!(
+                "Extractor environment setup failed.{}",
+                if detail.trim().is_empty() {
+                    String::new()
+                } else {
+                    format!("\n{detail}")
+                }
+            ))
+        }
     })
     .await
     .map_err(|e| e.to_string())?
@@ -2291,6 +2504,8 @@ pub fn run() {
             knowledge::retrieval::plan_retrieval,
             knowledge::retrieval::get_context,
             knowledge::documents::prepare_document_import,
+            knowledge::documents::prepare_document_batch,
+            knowledge::documents::commit_document_batch,
             knowledge::documents::list_document_imports,
             knowledge::documents::get_document_preview,
             knowledge::documents::update_document_import,
@@ -2339,6 +2554,8 @@ pub fn run() {
             get_graph,
             index_vault,
             select_file,
+            select_files,
+            select_ingest_folder,
             select_folder,
             write_file,
             read_file,
@@ -2351,6 +2568,8 @@ pub fn run() {
             run_ingestion_script,
             run_builtin_extractor_async,
             run_extractor_installer,
+            extractor_env_status,
+            prepare_extractor_environment,
             append_ingestion_log,
             append_app_log,
             generate_and_store_embedding,

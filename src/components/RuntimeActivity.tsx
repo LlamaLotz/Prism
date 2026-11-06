@@ -68,7 +68,7 @@ export function RuntimeActivity({ children }: { children?: ReactNode }) {
     {children}
     {open && <aside id="runtime-jobs" ref={panel} tabIndex={-1} aria-label="Background jobs" className="runtime-panel runtime-surface" style={{ ...position, maxHeight: `min(560px, calc(100dvh - ${position.top + 12}px))` }} onKeyDown={e => { if (e.key === 'Escape') { e.stopPropagation(); close(); } }}>
       <header className="runtime-heading"><div><h2>Background jobs</h2><p>{active.length ? `${active.length} active` : 'All caught up'}</p></div><button className="runtime-button" aria-label="Close jobs" onClick={close}><X size={16}/></button></header>
-      {imports.imports.map(item => <article className="runtime-job" key={`import:${item.id}`}><strong>{item.title}</strong><p>{item.state === 'review' ? 'Ready for review · no notes published' : item.state.replaceAll('_', ' ')}</p><button className="runtime-button" onClick={() => imports.review(item.id)}>Review import</button></article>)}
+      {imports.imports.map(item => <article className="runtime-job" key={`import:${item.id}`}><strong>{item.title}</strong><p>{item.state === 'review' ? 'Ready for review · no notes published' : item.state.replaceAll('_', ' ')}</p>{item.batchLabel && <p>Batch: {item.batchLabel}</p>}<button className="runtime-button" onClick={() => imports.review(item.id)}>Review import</button></article>)}
       {jobs.length === 0 && <p className="runtime-empty">No recent jobs. Indexing and AI activity will appear here.</p>}
       {jobs.map(job => <article className="runtime-job" key={job.id}>
         <div className="runtime-heading"><strong>{taskLabel(job.kind)}</strong><span className="runtime-state">{job.state.replaceAll('_', ' ')}</span></div>
