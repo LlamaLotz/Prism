@@ -9,6 +9,38 @@ Frontend is read-only here. Every change ships through main.
 - Args: single `request: <Type>` object unless noted. Errors: `Result<T, String>`.
 - TypeScript mirrors live in `src/types/index.ts`.
 
+## Events
+
+Frontend listens with `listen(...)` from `@tauri-apps/api/event`. Event payloads are best-effort telemetry and are not a commit acknowledgement; command responses remain authoritative.
+
+### document-import-progress
+
+- Emitted by: `commit_document_import`, `commit_document_batch` (and their internal commit paths)
+- Channel: `document-import-progress`
+- Payload (`camelCase`):
+
+```json
+{
+  "id": "import-plan-id",
+  "batchId": "batch-id-or-null",
+  "phase": "verifying",
+  "completed": 0,
+  "total": 1,
+  "title": "optional note name"
+}
+```
+
+- `id`: document import plan/job id.
+- `batchId`: outer document batch id for `commit_document_batch` items, or `null` for a direct single import.
+- `phase`:
+  - `verifying`: approval and source/publication preconditions are being verified before publication.
+  - `publishing`: publication is in progress.
+  - `done`: the import item committed successfully.
+  - `error`: the import item failed; the command result carries the authoritative error.
+- `completed` / `total`: non-negative counters. For a single import, `total` is the number of planned outputs and `completed` advances as outputs are published. For a batch import item, `completed` is the 1-based item position and `total` is the number of batch items considered for commit.
+- `title`: optional note/import name when known (for example the planned output name or batch item name); may be `null`.
+- Emission failures must not roll back or fail an otherwise successful import. The frontend may receive duplicate or out-of-order telemetry; treat command success/failure as final.
+
 ## Commands
 
 ### example_command
