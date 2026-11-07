@@ -10,6 +10,39 @@ use std::{
 };
 use tauri::Emitter;
 const CACHE_QUOTA: u64 = 2 * 1024 * 1024 * 1024;
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DocumentImportProgress<'a> {
+    id: &'a str,
+    batch_id: Option<&'a str>,
+    phase: &'a str,
+    completed: usize,
+    total: usize,
+    title: Option<&'a str>,
+}
+
+fn emit_document_import_progress(
+    app: &tauri::AppHandle,
+    id: &str,
+    batch_id: Option<&str>,
+    phase: &str,
+    completed: usize,
+    total: usize,
+    title: Option<&str>,
+) {
+    let _ = app.emit(
+        "document-import-progress",
+        DocumentImportProgress {
+            id,
+            batch_id,
+            phase,
+            completed,
+            total,
+            title,
+        },
+    );
+}
 fn err(e: impl std::fmt::Display) -> String {
     format!("PERSISTENCE: {e}")
 }
@@ -1508,6 +1541,7 @@ pub async fn commit_document_batch(
     batch_id: String,
 ) -> Result<BatchCommitResult, String> {
     tauri::async_runtime::spawn_blocking(move || {
+        let batch_started = std::time::Instant::now();
         let s = super::current(&app)?;
         let c = crate::db::init_db(&app)?;
         let mut stmt = c
@@ -1527,9 +1561,28 @@ pub async fn commit_document_batch(
             failed: vec![],
         };
         for (position, (id, payload)) in rows.into_iter().enumerate() {
+            let completed = position + 1;
             let plan: Plan = match serde_json::from_str(&payload) {
                 Ok(plan) => plan,
                 Err(error) => {
+                    emit_document_import_progress(
+                        &app,
+                        &id,
+                        Some(batch_id.as_str()),
+                        "publishing",
+                        completed,
+                        total,
+                        Some(id.as_str()),
+                    );
+                    emit_document_import_progress(
+                        &app,
+                        &id,
+                        Some(batch_id.as_str()),
+                        "error",
+                        completed,
+                        total,
+                        Some(id.as_str()),
+                    );
                     result.failed.push(BatchFailure {
                         source: id,
                         error: error.to_string(),
@@ -1537,10 +1590,30 @@ pub async fn commit_document_batch(
                     continue;
                 }
             };
+            let title = plan.options.name.clone();
+            emit_document_import_progress(
+                &app,
+                &id,
+                Some(batch_id.as_str()),
+                "publishing",
+                completed,
+                total,
+                Some(title.as_str()),
+            );
             if plan.generation != s.generation {
+                let error = "Vault changed; refresh the import preview".to_string();
+                emit_document_import_progress(
+                    &app,
+                    &id,
+                    Some(batch_id.as_str()),
+                    "error",
+                    completed,
+                    total,
+                    Some(title.as_str()),
+                );
                 result.skipped.push(BatchFailure {
-                    source: plan.options.name.clone(),
-                    error: "Vault changed; refresh the import preview".into(),
+                    source: title,
+                    error,
                 });
                 continue;
             }
@@ -1549,28 +1622,77 @@ pub async fn commit_document_batch(
                 .iter()
                 .any(|output| output.conflict.is_some() || output.mutation.is_none())
             {
+                let error = "Resolve output conflicts before importing".to_string();
+                emit_document_import_progress(
+                    &app,
+                    &id,
+                    Some(batch_id.as_str()),
+                    "error",
+                    completed,
+                    total,
+                    Some(title.as_str()),
+                );
                 result.skipped.push(BatchFailure {
-                    source: plan.options.name.clone(),
-                    error: "Resolve output conflicts before importing".into(),
+                    source: title,
+                    error,
                 });
                 continue;
             }
             let _ = window.emit(
                 "ingestion-progress",
-                format!("[Prism] Committing {}/{}: {}", position + 1, total, plan.options.name),
+                format!("[Prism] Committing {}/{}: {}", completed, total, plan.options.name),
             );
             match commit_document_import_inner(app.clone(), id.clone(), plan.token) {
-                Ok(_) => result.committed.push(id),
-                Err(error) if error.starts_with("CONFLICT:") => result.skipped.push(BatchFailure {
-                    source: plan.options.name,
-                    error,
-                }),
-                Err(error) => result.failed.push(BatchFailure {
-                    source: plan.options.name,
-                    error,
-                }),
+                Ok(_) => {
+                    emit_document_import_progress(
+                        &app,
+                        &id,
+                        Some(batch_id.as_str()),
+                        "done",
+                        completed,
+                        total,
+                        Some(title.as_str()),
+                    );
+                    result.committed.push(id);
+                }
+                Err(error) if error.starts_with("CONFLICT:") => {
+                    emit_document_import_progress(
+                        &app,
+                        &id,
+                        Some(batch_id.as_str()),
+                        "error",
+                        completed,
+                        total,
+                        Some(title.as_str()),
+                    );
+                    result.skipped.push(BatchFailure {
+                        source: title,
+                        error,
+                    });
+                }
+                Err(error) => {
+                    emit_document_import_progress(
+                        &app,
+                        &id,
+                        Some(batch_id.as_str()),
+                        "error",
+                        completed,
+                        total,
+                        Some(title.as_str()),
+                    );
+                    result.failed.push(BatchFailure { source: title, error });
+                }
             }
         }
+        log::info!(
+            "[Prism] document batch commit batch_id={} total={} committed={} skipped={} failed={} elapsed_ms={}",
+            batch_id,
+            total,
+            result.committed.len(),
+            result.skipped.len(),
+            result.failed.len(),
+            batch_started.elapsed().as_millis()
+        );
         Ok(result)
     })
     .await
@@ -1862,105 +1984,186 @@ fn commit_document_import_inner(
     id: String,
     token: String,
 ) -> Result<serde_json::Value, String> {
+    let commit_started = std::time::Instant::now();
+    let lock_started = std::time::Instant::now();
     let _guard = operations::lock()?;
-    let s = super::current(&app)?;
-    let c = crate::db::init_db(&app)?;
-    let (state, mut p) = load_plan(&c, &s, &id)?;
-    if p.options.require_existing_folder && !s.root.join(&p.options.folder).is_dir(){return Err(conflict("Destination folder is unavailable; choose another folder"));}
-    if state != "review" || p.token != token || p.generation != s.generation {
-        return Err(conflict("Import approval is stale"));
-    }
-    let job_state: String = c
-        .query_row("SELECT state FROM knowledge_jobs WHERE id=?1", [&id], |r| {
-            r.get(0)
-        })
-        .map_err(err)?;
-    if job_state != "waiting_for_approval" {
-        return Err(conflict("Import job is no longer awaiting approval"));
-    }
-    let doc = load_document(&c, &s, &p.revision)?;
-    if doc.source.fingerprint_kind == "bytes"
-        && file_hash(Path::new(&doc.source.locator))? != doc.source.content_hash
-    {
-        return Err(conflict("Original source changed"));
-    }
-    let mut total = 0usize;
-    for output in &p.outputs {
-        let m = output
-            .mutation
-            .as_ref()
-            .ok_or_else(|| conflict("Resolve output conflicts before importing"))?;
-        operations::verify_approval(&c, &s, m)?;
-        total = total.saturating_add(
-            m.before
-                .values()
-                .chain(m.after.values())
-                .filter_map(|e| e.data.as_ref())
-                .map(|v| v.len())
-                .sum::<usize>(),
-        );
-    }
-    if total > 64 * 1024 * 1024 * 4 / 3 {
-        return Err("LIMIT: Combined recovery versions exceed 64 MiB; divide the import".into());
-    }
-    if p.options.keep_source && doc.source.fingerprint_kind == "bytes" {
-        let extension = Path::new(&doc.source.locator)
-            .extension()
-            .unwrap_or_default()
-            .to_string_lossy();
-        let dest = private_dir(&s, "sources")?.join(format!(
-            "{}.{}",
-            doc.source.content_hash,
-            model::safe_name(&extension)
-        ));
-        operations::validate(&s.root, &dest)?;
-        if !dest.exists() {
-            let mut temp = tempfile::NamedTempFile::new_in(dest.parent().unwrap()).map_err(err)?;
-            let mut source = std::fs::File::open(&doc.source.locator).map_err(err)?;
-            std::io::copy(&mut source, &mut temp).map_err(err)?;
-            temp.as_file().sync_all().map_err(err)?;
-            if file_hash(temp.path())? != doc.source.content_hash {
-                return Err(conflict("Source changed while retaining it"));
-            }
-            temp.persist_noclobber(&dest).map_err(err)?;
+    let lock_wait_ms = lock_started.elapsed().as_millis();
+    let progress_title = |plan: &Plan| -> Option<String> {
+        plan.outputs
+            .first()
+            .map(|o| o.output.name.clone())
+            .or_else(|| Some(plan.options.name.clone()))
+    };
+    let result = (|| -> Result<serde_json::Value, String> {
+        let s = super::current(&app)?;
+        let c = crate::db::init_db(&app)?;
+        let (state, mut p) = load_plan(&c, &s, &id)?;
+        if p.options.require_existing_folder && !s.root.join(&p.options.folder).is_dir() {
+            return Err(conflict("Destination folder is unavailable; choose another folder"));
         }
-        if file_hash(&dest)? != doc.source.content_hash {
-            return Err("CACHE_CORRUPT: Retained source failed verification".into());
+        if state != "review" || p.token != token || p.generation != s.generation {
+            return Err(conflict("Import approval is stale"));
         }
-        p.source_copy = Some(dest.to_string_lossy().into());
-    }
-    save_plan(&c, &p, "review")?;
-    let (batch_id, batch) = begin_batch(&c, &s, &p)?;
-    let result = apply_batch(&c, &s, &batch_id, &batch, || {
-        if super::current(&app)?.generation != s.generation {
-            return Err(conflict("Vault changed during publication"));
-        }
-        let state: String = c
+        let job_state: String = c
             .query_row("SELECT state FROM knowledge_jobs WHERE id=?1", [&id], |r| {
                 r.get(0)
             })
             .map_err(err)?;
-        if state == "cancelled" {
-            return Err("Import cancelled; partial publication requires recovery".into());
+        if job_state != "waiting_for_approval" {
+            return Err(conflict("Import job is no longer awaiting approval"));
         }
-        Ok(())
-    });
-    if let Err(e) = result {
-        set_batch(&c, &batch_id, "recovery_required", Some(&e))?;
-        save_plan(&c, &p, "recovery_required")?;
-        c.execute(
-            "UPDATE knowledge_jobs SET state='failed',error=?2 WHERE id=?1",
-            params![id, e],
+        let doc = load_document(&c, &s, &p.revision)?;
+        if doc.source.fingerprint_kind == "bytes"
+            && file_hash(Path::new(&doc.source.locator))? != doc.source.content_hash
+        {
+            return Err(conflict("Original source changed"));
+        }
+        let mut approval_bytes = 0usize;
+        for output in &p.outputs {
+            let m = output
+                .mutation
+                .as_ref()
+                .ok_or_else(|| conflict("Resolve output conflicts before importing"))?;
+            operations::verify_approval(&c, &s, m)?;
+            approval_bytes = approval_bytes.saturating_add(
+                m.before
+                    .values()
+                    .chain(m.after.values())
+                    .filter_map(|e| e.data.as_ref())
+                    .map(|v| v.len())
+                    .sum::<usize>(),
+            );
+        }
+        if approval_bytes > 64 * 1024 * 1024 * 4 / 3 {
+            return Err("LIMIT: Combined recovery versions exceed 64 MiB; divide the import".into());
+        }
+        let outputs_total = p.outputs.len();
+        let title = progress_title(&p);
+        emit_document_import_progress(
+            &app,
+            &id,
+            None,
+            "verifying",
+            0,
+            outputs_total,
+            title.as_deref(),
+        );
+        if p.options.keep_source && doc.source.fingerprint_kind == "bytes" {
+            let extension = Path::new(&doc.source.locator)
+                .extension()
+                .unwrap_or_default()
+                .to_string_lossy();
+            let dest = private_dir(&s, "sources")?.join(format!(
+                "{}.{}",
+                doc.source.content_hash,
+                model::safe_name(&extension)
+            ));
+            operations::validate(&s.root, &dest)?;
+            if !dest.exists() {
+                let mut temp =
+                    tempfile::NamedTempFile::new_in(dest.parent().unwrap()).map_err(err)?;
+                let mut source = std::fs::File::open(&doc.source.locator).map_err(err)?;
+                std::io::copy(&mut source, &mut temp).map_err(err)?;
+                temp.as_file().sync_all().map_err(err)?;
+                if file_hash(temp.path())? != doc.source.content_hash {
+                    return Err(conflict("Source changed while retaining it"));
+                }
+                temp.persist_noclobber(&dest).map_err(err)?;
+            }
+            if file_hash(&dest)? != doc.source.content_hash {
+                return Err("CACHE_CORRUPT: Retained source failed verification".into());
+            }
+            p.source_copy = Some(dest.to_string_lossy().into());
+        }
+        save_plan(&c, &p, "review")?;
+        let (batch_id, batch) = begin_batch(&c, &s, &p)?;
+        emit_document_import_progress(
+            &app,
+            &id,
+            None,
+            "publishing",
+            0,
+            outputs_total,
+            title.as_deref(),
+        );
+        let result = apply_batch(
+            &c,
+            &s,
+            &batch_id,
+            &batch,
+            || {
+                if super::current(&app)?.generation != s.generation {
+                    return Err(conflict("Vault changed during publication"));
+                }
+                let state: String = c
+                    .query_row("SELECT state FROM knowledge_jobs WHERE id=?1", [&id], |r| {
+                        r.get(0)
+                    })
+                    .map_err(err)?;
+                if state == "cancelled" {
+                    return Err("Import cancelled; partial publication requires recovery".into());
+                }
+                Ok(())
+            },
+            |completed, total, output_title| {
+                emit_document_import_progress(
+                    &app,
+                    &id,
+                    None,
+                    "publishing",
+                    completed,
+                    total,
+                    output_title.or(title.as_deref()),
+                );
+            },
+        );
+        if let Err(e) = result {
+            emit_document_import_progress(
+                &app,
+                &id,
+                None,
+                "error",
+                0,
+                outputs_total,
+                title.as_deref(),
+            );
+            set_batch(&c, &batch_id, "recovery_required", Some(&e))?;
+            save_plan(&c, &p, "recovery_required")?;
+            c.execute(
+                "UPDATE knowledge_jobs SET state='failed',error=?2 WHERE id=?1",
+                params![id, e],
+            )
+            .map_err(err)?;
+            return Err(format!(
+                "RECOVERY_REQUIRED: Import {batch_id}: {e}. Recovery versions retained."
+            ));
+        }
+        super::emit(&app, &c, &s.vault_id, "document_imported", &id)?;
+        emit_document_import_progress(
+            &app,
+            &id,
+            None,
+            "done",
+            outputs_total,
+            outputs_total,
+            title.as_deref(),
+        );
+        Ok(
+            serde_json::json!({"operationId":batch_id,"undoAvailable":true,"paths":p.outputs.iter().map(|o|&o.path).collect::<Vec<_>>()}),
         )
-        .map_err(err)?;
-        return Err(format!(
-            "RECOVERY_REQUIRED: Import {batch_id}: {e}. Recovery versions retained."
-        ));
+    })();
+    let elapsed_ms = commit_started.elapsed().as_millis();
+    match &result {
+        Ok(_) => log::info!(
+            "[Prism] document import commit id={} lock_wait_ms={} elapsed_ms={}",
+            id, lock_wait_ms, elapsed_ms
+        ),
+        Err(e) => log::info!(
+            "[Prism] document import commit id={} lock_wait_ms={} elapsed_ms={} error={}",
+            id, lock_wait_ms, elapsed_ms, e
+        ),
     }
-    super::emit(&app, &c, &s.vault_id, "document_imported", &id)?;
-    Ok(
-        serde_json::json!({"operationId":batch_id,"undoAvailable":true,"paths":p.outputs.iter().map(|o|&o.path).collect::<Vec<_>>()}),
-    )
+    result
 }
 fn begin_batch(c: &Connection, s: &Scope, p: &Plan) -> Result<(String, Batch), String> {
     for output in &p.outputs {
@@ -2000,8 +2203,10 @@ fn apply_batch(
     id: &str,
     b: &Batch,
     mut checkpoint: impl FnMut() -> Result<(), String>,
+    mut on_output_applied: impl FnMut(usize, usize, Option<&str>),
 ) -> Result<(), String> {
-    for (output, child) in b.plan.outputs.iter().zip(&b.children) {
+    let total = b.plan.outputs.len();
+    for (index, (output, child)) in b.plan.outputs.iter().zip(&b.children).enumerate() {
         checkpoint()?;
         let mut m = output
             .mutation
@@ -2009,6 +2214,7 @@ fn apply_batch(
             .ok_or_else(|| conflict("Output conflict"))?;
         m.parents.retain(|p| !Path::new(p).exists());
         operations::apply_named(c, s, &m, child)?;
+        on_output_applied(index + 1, total, Some(output.output.name.as_str()));
     }
     finish_import(c, s, b)?;
     record_folders(c, s, id, b)?;
@@ -2379,7 +2585,7 @@ mod tests {
     }
     fn publish(c: &Connection, s: &Scope, p: &Plan) -> String {
         let (id, b) = begin_batch(c, s, p).unwrap();
-        apply_batch(c, s, &id, &b, || Ok(())).unwrap();
+        apply_batch(c, s, &id, &b, || Ok(()), |_, _, _| {}).unwrap();
         id
     }
     #[test]
@@ -2623,7 +2829,7 @@ mod tests {
             } else {
                 Ok(())
             }
-        })
+        }, |_, _, _| {})
         .is_err());
         recover_batches(c, &s).unwrap();
         assert!(Path::new(&p.outputs[0].path).is_file());
@@ -2649,7 +2855,7 @@ mod tests {
         let p = plan(c, &s, &doc);
         let (id, b) = begin_batch(c, &s, &p).unwrap();
         c.execute_batch("CREATE TRIGGER fail_mapping BEFORE INSERT ON document_outputs BEGIN SELECT RAISE(FAIL,'injected'); END").unwrap();
-        assert!(apply_batch(c, &s, &id, &b, || Ok(())).is_err());
+        assert!(apply_batch(c, &s, &id, &b, || Ok(()), |_, _, _| {}).is_err());
         c.execute_batch("DROP TRIGGER fail_mapping").unwrap();
         recover_batches(c, &s).unwrap();
         assert!(operation_views(c, &s).unwrap()[0].undo_available);
@@ -2720,7 +2926,7 @@ mod tests {
             } else {
                 Ok(())
             }
-        })
+        }, |_, _, _| {})
         .is_err());
         recover_batches(c, &s).unwrap();
         rollback_interrupted(c, &s, &id).unwrap();
