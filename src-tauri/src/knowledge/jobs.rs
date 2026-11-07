@@ -115,7 +115,7 @@ pub fn run_with_id<T>(
     let tx = rusqlite::Transaction::new_unchecked(&c, rusqlite::TransactionBehavior::Immediate)
         .map_err(|e| e.to_string())?;
     let count:i64=tx.query_row("SELECT count(*) FROM knowledge_jobs WHERE state IN ('queued','running','waiting_for_approval')",[],|r|r.get(0)).map_err(|e|e.to_string())?;
-    if count >= 256 {
+    if count >= 1024 {
         return Err("Background queue is full; retry when current work finishes".into());
     }
     let inserted=if existing.as_deref() == Some("interrupted") {tx.execute("UPDATE knowledge_jobs SET state='queued',progress=0,error=NULL,payload=?2,updated_at=unixepoch() WHERE id=?1 AND state='interrupted'",params![id,payload.to_string()])}
@@ -217,7 +217,7 @@ impl JobContext {
 pub fn list_knowledge_jobs(app: tauri::AppHandle) -> Result<Vec<Job>, String> {
     let scope = super::current(&app)?;
     let c = crate::db::init_db(&app)?;
-    let mut stmt=c.prepare("SELECT id,kind,state,priority,progress,error FROM knowledge_jobs WHERE vault_id=?1 ORDER BY created_at DESC,id LIMIT 100").map_err(|e|e.to_string())?;
+    let mut stmt=c.prepare("SELECT id,kind,state,priority,progress,error FROM knowledge_jobs WHERE vault_id=?1 ORDER BY created_at DESC,id LIMIT 500").map_err(|e|e.to_string())?;
     let out = stmt
         .query_map([scope.vault_id], |r| {
             Ok(Job {

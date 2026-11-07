@@ -172,6 +172,12 @@ export const tauriAPI = {
   selectFile: async (): Promise<string | null> => {
     return await invoke<string | null>('select_file');
   },
+  selectFiles: async (): Promise<string[]> => {
+    return await invoke<string[]>('select_files');
+  },
+  selectIngestFolder: async (): Promise<string | null> => {
+    return await invoke<string | null>('select_ingest_folder');
+  },
   selectFolder: async (): Promise<string | null> => {
     return await invoke<string | null>('select_folder');
   },
@@ -315,6 +321,12 @@ export const tauriAPI = {
     } catch (err: any) {
       return { success: false, output: err.toString() };
     }
+  },
+  extractorEnvStatus: async (): Promise<{ state: string; detail: string; python: string | null }> => {
+    return await invoke('extractor_env_status');
+  },
+  prepareExtractorEnvironment: async (): Promise<{ state: string; detail: string; python: string | null }> => {
+    return await invoke('prepare_extractor_environment');
   },
   appendIngestionLog: async (level: string, message: string): Promise<void> => {
     try {

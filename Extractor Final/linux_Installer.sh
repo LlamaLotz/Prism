@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 set -e
 
+export PYTHONIOENCODING=utf-8
+export PYTHONUTF8=1
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+
 echo "Installing System Dependencies (FFmpeg & Tkinter)..."
 if command -v apt-get &> /dev/null; then
     sudo apt-get update
@@ -11,20 +16,16 @@ elif command -v pacman &> /dev/null; then
     sudo pacman -S --noconfirm ffmpeg python-tk
 fi
 
-echo "Upgrading pip..."
-python3 -m pip install --upgrade pip
+echo "===================================================="
+echo "Python packages"
+echo "===================================================="
+echo "Prism keeps its Python packages in an isolated environment at"
+echo "  $HOME/.prism/env"
+echo "Preparing that environment now. This is a one-time download and can"
+echo "take several minutes on a slow connection."
+echo "===================================================="
+python3 "$SCRIPT_DIR/master_extractor.py" --bootstrap-only
 
-echo "Installing Python Libraries..."
-python3 -m pip install --upgrade \
-    yt-dlp \
-    faster-whisper \
-    torch \
-    crawl4ai \
-    docling \
-    omniroute \
-    tqdm
-
-echo "Setting up Playwright for Crawl4AI..."
-python3 -m playwright install chromium
-
+echo
+echo "[SUCCESS] Extractor environment ready."
 echo "Linux setup complete! Run: python3 master_extractor.py"
