@@ -1651,7 +1651,7 @@ export default function App() {
   useEffect(()=>{sharedStudy.setContext(settings.vaultPath,activeNote?.relativePath??null,selectedFolder);},[settings.vaultPath,activeNote?.relativePath,selectedFolder]);
   useEffect(()=>{const refresh=()=>{void handleAgentVaultChanged();};window.addEventListener('agent-vault-changed',refresh);return()=>window.removeEventListener('agent-vault-changed',refresh);},[settings.vaultPath]);
   return (
-    <DocumentImports folders={folders} vaultPath={settings.vaultPath} key={settings.vaultPath} request={documentReviewRequest?.vault === settings.vaultPath ? documentReviewRequest : null} onPublished={() => { void fetchNotes(); void handleAgentVaultChanged(); }}>
+    <DocumentImports folders={folders} vaultPath={settings.vaultPath} key={settings.vaultPath} request={documentReviewRequest?.vault === settings.vaultPath ? documentReviewRequest : null} onPublished={() => { void handleAgentVaultChanged(); }} onRequestHandled={() => setDocumentReviewRequest(null)}>
     <RuntimeActivity>
     <ModelServiceRecovery key={settings.vaultPath} />
       {/* Background environment layer (behind the app, viewport-level) */}
@@ -1864,7 +1864,6 @@ export default function App() {
           setDocumentReviewRequest({ id, ts: Date.now(), vault: settings.vaultPath })
         }
         onPublished={() => {
-          void fetchNotes();
           void handleAgentVaultChanged();
         }}
       />

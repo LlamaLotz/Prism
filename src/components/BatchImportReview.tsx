@@ -1,10 +1,21 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { CheckCircle2, X, FolderOpen, File, AlertTriangle } from 'lucide-react';
+import { listen } from '@tauri-apps/api/event';
 import {
   documents,
   type BatchCommitResult,
   type BatchPrepareResult,
 } from '../services/documents';
+
+type BatchPhase = 'idle' | 'committing' | 'committed' | 'error';
+interface DocumentImportProgress {
+  id: string;
+  batchId: string | null;
+  phase: 'verifying' | 'publishing' | 'done' | 'error';
+  completed: number;
+  total: number;
+  title?: string;
+}
 
 interface BatchImportReviewProps {
   batch: BatchPrepareResult | null;
@@ -20,56 +31,79 @@ export const BatchImportReview: React.FC<BatchImportReviewProps> = ({
   onPublished,
 }) => {
   const dialogRef = useRef<HTMLDialogElement | null>(null);
-  const [busy, setBusy] = useState(false);
+  const closeTimer = useRef<number | null>(null);
+  const [phase, setPhase] = useState<BatchPhase>('idle');
+  const [progress, setProgress] = useState<DocumentImportProgress | null>(null);
   const [result, setResult] = useState<BatchCommitResult | null>(null);
   const [error, setError] = useState('');
   const [imported, setImported] = useState<string[]>([]);
 
   useEffect(() => {
     if (!batch) return;
+    setPhase('idle');
+    setProgress(null);
     setResult(null);
     setError('');
     setImported([]);
     const dialog = dialogRef.current;
     if (dialog && !dialog.open) dialog.showModal();
     return () => {
+      if (closeTimer.current != null) window.clearTimeout(closeTimer.current);
       if (dialog?.isConnected && dialog.open) dialog.close();
     };
   }, [batch]);
 
+  useEffect(() => {
+    if (!batch || phase !== 'committing') return;
+    let unlisten: (() => void) | undefined;
+    void listen<DocumentImportProgress>('document-import-progress', (event) => {
+      if (event.payload.batchId === batch.batchId) setProgress(event.payload);
+    }).then((stop) => { unlisten = stop; }).catch(() => {});
+    return () => { unlisten?.(); };
+  }, [batch, phase]);
+
   if (!batch) return null;
 
+  const committing = phase === 'committing';
+  const committed = phase === 'committed';
+  const ready = batch.imports.filter((item) => !imported.includes(item.id)).length;
+  const canCommitAll = !committing && ready > 0;
+
   const commitAll = async () => {
-    setBusy(true);
+    const readyCount = ready;
+    setPhase('committing');
+    setProgress(null);
     setError('');
     try {
       const outcome = await documents.commitBatch(batch.batchId);
       setResult(outcome);
       setImported((current) => [...new Set([...current, ...outcome.committed])]);
       if (outcome.committed.length > 0) onPublished();
+      const fullSuccess = outcome.failed.length === 0 && outcome.skipped.length === 0 && outcome.committed.length === readyCount;
+      setPhase('committed');
+      if (fullSuccess) {
+        closeTimer.current = window.setTimeout(() => onClose(), 900);
+      }
     } catch (err) {
       setError(String(err));
-    } finally {
-      setBusy(false);
+      setPhase('error');
     }
   };
-
-  const ready = batch.imports.filter((item) => !imported.includes(item.id)).length;
-  const canCommitAll = !busy && ready > 0;
 
   return (
     <dialog
       ref={dialogRef}
       className="runtime-dialog runtime-surface document-dialog batch-import-dialog"
       aria-labelledby="batch-review-title"
+      aria-busy={committing || undefined}
       onCancel={(event) => {
         event.preventDefault();
-        if (!busy) onClose();
+        if (!committing) onClose();
       }}
     >
       <header className="runtime-heading">
         <h2 id="batch-review-title">Review batch import</h2>
-        <button className="runtime-button" disabled={busy} onClick={onClose} aria-label="Close batch review">
+        <button className="runtime-button" disabled={committing} onClick={onClose} aria-label="Close batch review">
           Close
         </button>
       </header>
@@ -84,6 +118,16 @@ export const BatchImportReview: React.FC<BatchImportReviewProps> = ({
         Conflicts must be resolved in the individual review.
       </p>
 
+      {committing && (
+        <p role="status" aria-live="polite" className="runtime-local">
+          {progress
+            ? `Importing ${Math.max(progress.completed, 0)} of ${progress.total}${progress.title ? ` · ${progress.title}` : ''}`
+            : 'Importing…'}
+        </p>
+      )}
+      {committed && result && result.failed.length === 0 && result.skipped.length === 0 && (
+        <p role="status" aria-live="polite" className="runtime-local">Imported {result.committed.length} note(s).</p>
+      )}
       {error && <p className="runtime-error" role="alert">{error}</p>}
 
       {batch.failures.length > 0 && (
@@ -139,7 +183,7 @@ export const BatchImportReview: React.FC<BatchImportReviewProps> = ({
                 ) : (
                   <button
                     className="runtime-button"
-                    disabled={busy}
+                    disabled={committing}
                     onClick={() => onReview(item.id)}
                   >
                     Review
@@ -151,7 +195,7 @@ export const BatchImportReview: React.FC<BatchImportReviewProps> = ({
         })}
       </div>
 
-      {result && (
+      {result && (result.skipped.length > 0 || result.failed.length > 0) && (
         <div className="runtime-local">
           <p role="status">
             Committed {result.committed.length} import(s).
@@ -187,11 +231,11 @@ export const BatchImportReview: React.FC<BatchImportReviewProps> = ({
       )}
 
       <div className="runtime-actions">
-        <button className="runtime-button" disabled={busy} onClick={onClose}>
+        <button className="runtime-button" disabled={committing} onClick={onClose}>
           Close
         </button>
         <button className="runtime-button runtime-primary" disabled={!canCommitAll} onClick={() => void commitAll()}>
-          {busy ? 'Committing…' : `Commit all ready · ${ready}`}
+          {committing ? 'Committing…' : `Commit all ready · ${ready}`}
         </button>
       </div>
     </dialog>
