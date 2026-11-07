@@ -2,7 +2,7 @@ import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent } from 
 import { Check } from 'lucide-react';
 
 /** Uses vault-relative paths; the empty path always means the vault root. */
-export function FolderPicker({folders=[],value,onChange,label='Vault folder'}:{folders?:string[];value:string;onChange:(path:string)=>void;label?:string}) {
+export function FolderPicker({folders=[],value,onChange,label='Vault folder',allowCreate=false}:{folders?:string[];value:string;onChange:(path:string)=>void;label?:string;allowCreate?:boolean}) {
   const [query,setQuery]=useState('');
   const paths=useMemo(()=>['',...Array.from(new Set(folders.filter(Boolean))).sort((a,b)=>a.localeCompare(b))],[folders]);
   const normalized=query.trim().toLowerCase();
@@ -60,7 +60,7 @@ export function FolderPicker({folders=[],value,onChange,label='Vault folder'}:{f
   return <div className="runtime-settings folder-picker" onKeyDown={onKeyDown}>
     <label>{label}<input role="combobox" aria-label={`Search ${label.toLowerCase()}`} aria-expanded="true" aria-controls={listboxId} aria-autocomplete="list" aria-activedescendant={matching[active]===undefined?undefined:optionId(active)} placeholder="Search folders…" value={query} onChange={e=>{setQuery(e.target.value);setActiveIndex(0);}}/></label>
     <div id={listboxId} className="folder-picker-listbox" role="listbox" aria-label={label}>
-      {unavailable&&<div className="folder-picker-option folder-picker-option-unavailable" role="option" aria-selected={true} aria-disabled="true">{value} (unavailable)</div>}
+      {unavailable&&<div className="folder-picker-option folder-picker-option-unavailable" role="option" aria-selected={true} aria-disabled="true">{value} {allowCreate ? '(will be created)' : '(unavailable)'}</div>}
       {matching.map((path,index)=>{
         const selected=path===value;
         return <div key={path?`folder:${path}`:'vault-root'} ref={element=>{optionRefs.current[index]=element;}} className="folder-picker-option" role="option" aria-selected={selected} data-active={index===active} data-path={path} id={optionId(index)} onClick={()=>choose(path,index)} onMouseDown={event=>event.preventDefault()}>

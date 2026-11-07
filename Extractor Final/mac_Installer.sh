@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+export PYTHONIOENCODING=utf-8
+export PYTHONUTF8=1
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+
 echo "===================================================="
 echo "PRISM EXTRACTOR INSTALLER - macOS"
 echo "===================================================="
@@ -63,17 +68,16 @@ if command -v rustup >/dev/null 2>&1; then
     rustup target add aarch64-apple-darwin x86_64-apple-darwin 2>/dev/null || true
 fi
 
-echo "Installing Python libraries..."
-"$PYTHON_BIN" -m pip install --break-system-packages --upgrade \
-    yt-dlp \
-    faster-whisper \
-    torch \
-    crawl4ai \
-    docling \
-    omniroute \
-    tqdm
+echo "===================================================="
+echo "Python packages"
+echo "===================================================="
+echo "Prism keeps its Python packages in an isolated environment at"
+echo "  $HOME/.prism/env"
+echo "Preparing that environment now. This is a one-time download and can"
+echo "take several minutes on a slow connection."
+echo "===================================================="
+"$PYTHON_BIN" "$SCRIPT_DIR/master_extractor.py" --bootstrap-only
 
-echo "Setting up Playwright for Crawl4AI..."
-"$PYTHON_BIN" -m playwright install chromium
-
+echo
+echo "[SUCCESS] Extractor environment ready."
 echo "macOS setup complete. The extractor will use Python 3.12 automatically."

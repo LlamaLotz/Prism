@@ -1,5 +1,7 @@
 @echo off
 setlocal EnableExtensions EnableDelayedExpansion
+set "PYTHONIOENCODING=utf-8"
+set "PYTHONUTF8=1"
 
 echo ====================================================
 echo PRISM EXTRACTOR INSTALLER - WINDOWS
@@ -99,21 +101,21 @@ if not errorlevel 1 (
 
 echo.
 echo ====================================================
-echo Installing / Upgrading Python Packages...
+echo Python packages
 echo ====================================================
-
-%PYCMD% -m pip install --upgrade pip
-if errorlevel 1 exit /b 1
-%PYCMD% -m pip install --upgrade yt-dlp faster-whisper torch crawl4ai docling omniroute tqdm
-if errorlevel 1 exit /b 1
-
+echo Prism keeps its Python packages in an isolated environment at
+echo   %USERPROFILE%\.prism\env
+echo Preparing that environment now. This is a one-time download and can
+echo take several minutes on a slow connection.
+echo ====================================================
+%PYCMD% "%~dp0master_extractor.py" --bootstrap-only
+if errorlevel 1 (
+    echo ERROR: The isolated extractor environment could not be prepared.
+    echo Check your network connection and run the installer again.
+    exit /b 1
+)
 echo.
-echo ====================================================
-echo Setting up Playwright Headless Browsers...
-echo ====================================================
-
-%PYCMD% -m playwright install chromium
-if errorlevel 1 exit /b 1
+echo [SUCCESS] Extractor environment ready.
 
 echo.
 echo ====================================================

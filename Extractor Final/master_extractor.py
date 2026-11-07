@@ -2,6 +2,12 @@ import os
 import sys
 import subprocess
 import shutil
+import hashlib
+import json
+import time
+import threading
+import importlib.metadata
+import importlib.util
 from pathlib import Path
 
 # ---------------------------------------------------------------------------
@@ -55,8 +61,8 @@ def _env_python_pip():
     return str(env_dir / "bin" / "python"), str(env_dir / "bin" / "pip")
 
 
-def _is_supported_python(python_bin):
-    """Return whether an interpreter supports the current ingestion stack."""
+def _python_version_of(python_bin):
+    """Return ``(major, minor)`` for an interpreter, or None if it cannot run."""
     try:
         result = subprocess.run(
             [python_bin, "-c", "import sys; print(f'{sys.version_info[0]}.{sys.version_info[1]}')"],
@@ -65,9 +71,15 @@ def _is_supported_python(python_bin):
             check=False,
         )
         major, minor = (int(part) for part in result.stdout.strip().split(".", 1))
-        return _is_supported_python_version((major, minor))
+        return (major, minor)
     except (OSError, ValueError):
-        return False
+        return None
+
+
+def _is_supported_python(python_bin):
+    """Return whether an interpreter supports the current ingestion stack."""
+    version = _python_version_of(python_bin)
+    return version is not None and _is_supported_python_version(version)
 
 
 def _python_candidates():
@@ -147,8 +159,11 @@ def pip_install_args(*packages):
     Inside the venv this is a plain `pip install`. On macOS, if we're still on
     the externally-managed Homebrew interpreter (venv bootstrap failed), add
     `--break-system-packages` to bypass PEP 668.
+
+    ``--prefer-binary`` keeps installs from falling back to source builds
+    (and thus requiring MSVC on Windows) whenever a wheel exists.
     """
-    cmd = [sys.executable, "-m", "pip", "install"]
+    cmd = [sys.executable, "-m", "pip", "install", "--prefer-binary"]
     in_venv = sys.prefix != sys.base_prefix
     if sys.platform == "darwin" and not in_venv:
         cmd.append("--break-system-packages")
@@ -156,27 +171,212 @@ def pip_install_args(*packages):
     return cmd
 
 
-# Everything the extractor imports, so the venv is self-contained on first
-# run. requests + beautifulsoup4 cover the URL ingestion path.
-REQUIRED_PACKAGES = [
-    "yt-dlp",
-    "docling",
-    "faster-whisper",
-    "requests",
-    "beautifulsoup4",
-    "tqdm",
-    "pypdf",
-    "pypdfium2",
-    "PyMuPDF",
-    "crawl4ai",
-    "pandas",
-    "numpy<2",
-    "scipy<1.13",
-    "Pillow",
-    "opencv-python",
-    "pydantic-settings",
-    "typer",
-]
+def _version_tuple(version):
+    """Return ``(major, minor)`` from a version string, ignoring suffixes."""
+    parts = []
+    for part in str(version).split(".")[:2]:
+        digits = "".join(ch for ch in part if ch.isdigit())
+        parts.append(int(digits) if digits else 0)
+    return tuple(parts)
+
+
+def _installed_version(package):
+    """Read an installed distribution version without importing the package."""
+    try:
+        return importlib.metadata.version(package)
+    except importlib.metadata.PackageNotFoundError:
+        return None
+
+
+def _module_available(module_name):
+    """Return whether a module can be located without importing it."""
+    try:
+        return importlib.util.find_spec(module_name) is not None
+    except (ImportError, ValueError):
+        return False
+
+
+def _installed_version_fresh(package):
+    """Read a distribution version in a fresh interpreter (post-install check)."""
+    try:
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-c",
+                "import importlib.metadata as m, sys; print(m.version(sys.argv[1]))",
+                package,
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        return result.stdout.strip() or None
+    except OSError:
+        return None
+
+
+def _pinned_specs(version=None):
+    """Choose NumPy/SciPy/pandas constraints for the target Python.
+
+    NumPy 1.x has no wheels for Python 3.13+, and current ctranslate2 and
+    PyTorch releases support NumPy 2.  Older interpreters keep the pinned
+    NumPy 1.x stack, which torch 2.2.x (macOS Intel) still needs; pandas 3.x
+    requires NumPy >= 2, so those interpreters must stay on pandas 2.x.
+    """
+    version = tuple(version or sys.version_info[:2])
+    if version >= (3, 13):
+        return "numpy>=2", "scipy>=1.13", "pandas"
+    return "numpy<2", "scipy<1.13", "pandas<3"
+
+
+def required_packages(version=None):
+    """Everything the extractor imports, for the target Python version."""
+    numpy_spec, scipy_spec, pandas_spec = _pinned_specs(version)
+    return [
+        "yt-dlp",
+        "docling",
+        "faster-whisper",
+        "requests",
+        "beautifulsoup4",
+        "tqdm",
+        "pypdf",
+        "pypdfium2",
+        "PyMuPDF",
+        "crawl4ai",
+        pandas_spec,
+        numpy_spec,
+        scipy_spec,
+        "Pillow",
+        "opencv-python",
+        "pydantic-settings",
+        "typer",
+    ]
+
+
+ENV_READY_MARKER = PRISM_ENV_DIR / ".prism-ready"
+ENV_LOCK_FILE = PRISM_ENV_DIR.parent / ".env-bootstrap.lock"
+
+
+def _script_hash():
+    try:
+        return hashlib.sha256(Path(__file__).resolve().read_bytes()).hexdigest()
+    except OSError:
+        return ""
+
+
+def _write_env_ready_marker():
+    """Record that the isolated environment is fully prepared.
+
+    The app uses this marker to skip the one-time setup on later launches and
+    to detect when a new build changed the extractor or its requirements.
+    """
+    try:
+        PRISM_ENV_DIR.mkdir(parents=True, exist_ok=True)
+        payload = {
+            "scriptHash": _script_hash(),
+            "python": f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}",
+            "requirements": required_packages(),
+            "completedAt": int(time.time()),
+        }
+        temp = ENV_READY_MARKER.with_suffix(".tmp")
+        temp.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        os.replace(temp, ENV_READY_MARKER)
+    except OSError as exc:
+        print(f"[Prism Ingestion] Could not write environment marker: {exc}")
+
+
+_ENV_LOCK_STOP = None
+
+
+def _env_lock_heartbeat(stop):
+    while not stop.wait(60):
+        try:
+            os.utime(ENV_LOCK_FILE, None)
+        except OSError:
+            return
+
+
+def _acquire_env_lock(timeout_seconds=1800):
+    """Serialize venv creation/installs across setup and extraction processes.
+
+    Returns ``(token, owns_lock)``.  A child relaunched by this process
+    inherits ``PRISM_ENV_LOCK_TOKEN`` and must not release the parent's lock.
+    """
+    global _ENV_LOCK_STOP
+    inherited = os.environ.get("PRISM_ENV_LOCK_TOKEN")
+    if inherited:
+        return inherited, False
+
+    ENV_LOCK_FILE.parent.mkdir(parents=True, exist_ok=True)
+    token = f"{os.getpid()}-{time.time_ns()}"
+    deadline = time.time() + timeout_seconds
+    while True:
+        try:
+            fd = os.open(ENV_LOCK_FILE, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+            try:
+                os.write(fd, token.encode("utf-8"))
+            finally:
+                os.close(fd)
+            os.environ["PRISM_ENV_LOCK_TOKEN"] = token
+            _ENV_LOCK_STOP = threading.Event()
+            threading.Thread(
+                target=_env_lock_heartbeat,
+                args=(_ENV_LOCK_STOP,),
+                daemon=True,
+            ).start()
+            return token, True
+        except FileExistsError:
+            try:
+                age = time.time() - ENV_LOCK_FILE.stat().st_mtime
+                # The owner refreshes the mtime every minute.  A lock that has
+                # not moved for ten minutes belongs to a crashed setup.
+                if age > 600:
+                    ENV_LOCK_FILE.unlink(missing_ok=True)
+                    continue
+            except OSError:
+                pass
+            if time.time() > deadline:
+                raise SystemExit(
+                    "[Prism Ingestion ERROR] Another Prism environment setup is "
+                    "still running. Wait for it to finish and try again."
+                )
+            time.sleep(1)
+
+
+def _release_env_lock(token, owns_lock):
+    global _ENV_LOCK_STOP
+    if _ENV_LOCK_STOP is not None:
+        _ENV_LOCK_STOP.set()
+        _ENV_LOCK_STOP = None
+    if not owns_lock:
+        return
+    try:
+        if ENV_LOCK_FILE.read_text(encoding="utf-8").strip() == token:
+            ENV_LOCK_FILE.unlink(missing_ok=True)
+    except OSError:
+        pass
+    finally:
+        if os.environ.get("PRISM_ENV_LOCK_TOKEN") == token:
+            os.environ.pop("PRISM_ENV_LOCK_TOKEN", None)
+
+
+def _relaunch_inside_venv(python_bin):
+    """Re-run this script under the venv interpreter and wait for it.
+
+    ``os.execv`` cannot replace a process on Windows: it starts a child and
+    exits the parent with success.  Prism's host then believes extraction
+    finished, deletes the staging directory, and reports "Extraction produced
+    no Markdown documents" while the child is still starting.  Running the
+    child synchronously keeps the host blocked until extraction really
+    finishes, and passes the script path explicitly instead of relying on
+    ``sys.argv[0]``.
+    """
+    script = str(Path(__file__).resolve())
+    command = [python_bin, "-u", script, *sys.argv[1:]]
+    print(f"[Prism Ingestion] Relaunching inside isolated environment: {python_bin}")
+    sys.stdout.flush()
+    sys.stderr.flush()
+    raise SystemExit(subprocess.call(command))
 
 
 def bootstrap_isolated_environment():
@@ -202,101 +402,108 @@ def bootstrap_isolated_environment():
                     "or from python.org, then try again."
                 )
             if PRISM_ENV_DIR.exists():
-                print("[Prism Ingestion] Replacing the existing Python <3.10 environment...")
+                print("[Prism Ingestion] Replacing the existing unusable Python environment...")
                 shutil.rmtree(PRISM_ENV_DIR)
             python_bin, _pip_bin = get_prism_env(base_python)
         else:
             python_bin, _pip_bin = get_prism_env()
 
+        target_version = _python_version_of(python_bin) or sys.version_info[:2]
+        packages = required_packages(target_version)
         print("[Prism Ingestion] Installing/upgrading ingestion packages "
               "(first run can take several minutes)...")
         # Use `python -m pip` (not the pip shim) so installs work even if the
         # venv was created without a pip entrypoint script.
         subprocess.run(
-            [python_bin, "-m", "pip", "install", "--upgrade", "pip"],
+            [python_bin, "-m", "pip", "install", "--prefer-binary", "--upgrade", "pip"],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             check=False,
         )
         subprocess.run(
-            [python_bin, "-m", "pip", "install", "--upgrade", *REQUIRED_PACKAGES],
+            [python_bin, "-m", "pip", "install", "--prefer-binary", "--upgrade", *packages],
             check=True,
         )
-
-        print("[Prism Ingestion] Relaunching inside isolated environment...\n")
-        os.execv(python_bin, [python_bin] + sys.argv)
     except Exception as e:
+        # Never install the whole ingestion stack into the system interpreter:
+        # that pollutes the user's Python, can require --break-system-packages,
+        # and leaves a half-broken venv that Prism keeps preferring.
         print(f"[Prism Ingestion ERROR] Failed to set up isolated environment: {e}")
-        print("Falling back to the system interpreter (some imports may fail).\n")
-        if not _is_supported_python_version(sys.version_info):
-            raise RuntimeError(str(e)) from e
-
-    # Never continue with Python 3.9: current Crawl4AI releases use syntax
-    # that Python 3.9 cannot evaluate, which would otherwise fail much later
-    # during the first third-party import with an opaque TypeError.
-    if not _is_supported_python_version(sys.version_info):
-        raise RuntimeError(
-            "Prism could not find Python 3.10 or newer. "
-            "Install Python 3.12 with Homebrew (brew install python@3.12) "
-            "or from python.org, then try again."
+        print(
+            "Prism could not prepare its isolated Python environment. "
+            "Install Python 3.12 (on Windows: "
+            "winget install -e --id Python.Python.3.12) and try again.\n"
         )
+        raise SystemExit(1) from e
+
+    _relaunch_inside_venv(python_bin)
 
 
 # Self-Healing Environment: Check and auto-install core dependencies before importing them
 def _ensure_numpy_v1():
-    """Force NumPy < 2 so ctranslate2 and PyTorch's compiled extensions work.
+    """Force NumPy < 2 where the pinned 1.x ABI stack is required.
 
-    The ingestion stack (faster-whisper → ctranslate2; docling → PyTorch)
-    relies on native modules compiled against the NumPy 1.x ABI. NumPy 2.x
-    changed the ABI, so even a successful import can cause a crash later.
-    This helper downgrades in-place when NumPy >= 2 is present.
+    Python 3.13+ has no NumPy 1.x wheels, and current ctranslate2/PyTorch
+    releases support NumPy 2, so those interpreters use the modern stack.
+    The version is read from metadata without importing NumPy; therefore a
+    downgrade does not need a process restart.
     """
+    if sys.version_info[:2] >= (3, 13):
+        return
+    installed = _installed_version("numpy")
+    if installed is None or installed.startswith("1."):
+        return
+    print(f"[Prism Self-Healing] NumPy {installed} detected — "
+          "ctranslate2/PyTorch require NumPy < 2. Downgrading…")
     try:
-        import numpy as _np
-        if _np.__version__ and not _np.__version__.startswith("1."):
-            print(f"[Prism Self-Healing] NumPy {_np.__version__} detected — "
-                  "ctranslate2/PyTorch require NumPy < 2. Downgrading…")
-            try:
-                subprocess.check_call(
-                    pip_install_args("numpy<2"),
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                )
-            except Exception as e:
-                print(f"[Prism Self-Healing] Failed to downgrade NumPy: {e}")
-                print("ctranslate2 / PyTorch may crash. Try manual: pip install 'numpy<2'\n")
-                return  # Don't re-exec — let the rest of the script try anyway
-            # Re-exec so the old numpy module is out of memory entirely
-            print("[Prism Self-Healing] NumPy downgraded. Restarting…\n")
-            os.execv(sys.executable, [sys.executable] + sys.argv)
-    except ImportError:
-        pass  # Not installed yet — the normal heal path will install numpy<2
+        # Fail fast instead of attempting a source build when no wheel exists.
+        subprocess.check_call(
+            pip_install_args("--only-binary=:all:", "numpy<2"),
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+    except Exception as e:
+        print(f"[Prism Self-Healing] Failed to downgrade NumPy: {e}")
+        print("ctranslate2 / PyTorch may crash. Try manual: pip install 'numpy<2'\n")
 
 
 def _ensure_scipy_compat():
-    """scipy >= 1.13 requires NumPy >= 2.  Since we pin numpy < 2 for
-    ctranslate2 compatibility, scipy must be < 1.13 as well."""
+    """scipy >= 1.13 requires NumPy >= 2.  Since the pinned stack uses
+    NumPy < 2, keep scipy < 1.13 on those interpreters."""
+    if sys.version_info[:2] >= (3, 13):
+        return
+    installed = _installed_version("scipy")
+    if installed is None or _version_tuple(installed) < (1, 13):
+        return
+    print(f"[Prism Self-Healing] scipy {installed} detected — "
+          "scipy >= 1.13 requires NumPy >= 2. Downgrading…")
     try:
-        import scipy as _sp
-        if _sp.__version__:
-            parts = _sp.__version__.split(".")
-            major, minor = int(parts[0]), int(parts[1])
-            if major > 1 or (major == 1 and minor >= 13):
-                print(f"[Prism Self-Healing] scipy {_sp.__version__} detected — "
-                      "scipy >= 1.13 requires NumPy >= 2. Downgrading…")
-                try:
-                    subprocess.check_call(
-                        pip_install_args("scipy<1.13"),
-                        stdout=subprocess.DEVNULL,
-                        stderr=subprocess.DEVNULL,
-                    )
-                except Exception as e:
-                    print(f"[Prism Self-Healing] Failed to downgrade scipy: {e}")
-                    return
-                print("[Prism Self-Healing] scipy downgraded. Restarting…")
-                os.execv(sys.executable, [sys.executable] + sys.argv)
-    except ImportError:
-        pass
+        subprocess.check_call(
+            pip_install_args("--only-binary=:all:", "scipy<1.13"),
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+    except Exception as e:
+        print(f"[Prism Self-Healing] Failed to downgrade scipy: {e}")
+
+
+def _ensure_pandas_compat():
+    """pandas 3.x requires NumPy >= 2; keep pandas 2.x on the NumPy 1 stack."""
+    if sys.version_info[:2] >= (3, 13):
+        return
+    installed = _installed_version("pandas")
+    if installed is None or _version_tuple(installed) < (3, 0):
+        return
+    print(f"[Prism Self-Healing] pandas {installed} detected — "
+          "pandas >= 3 requires NumPy >= 2. Downgrading…")
+    try:
+        subprocess.check_call(
+            pip_install_args("--only-binary=:all:", "pandas<3"),
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+    except Exception as e:
+        print(f"[Prism Self-Healing] Failed to downgrade pandas: {e}")
 
 
 def _ensure_torch_v2_4_plus():
@@ -305,53 +512,36 @@ def _ensure_torch_v2_4_plus():
     newer PyTorch isn't available (e.g., macOS Intel, where the last wheel
     is 2.2.2), we fall back to a compatible transformers version instead.
 
-    A marker file in TEMP prevents an infinite restart loop when pip
-    reports success but doesn't actually upgrade (pyTorch 2.2.2 is the
-    newest pip can find for the current platform tag).  A second
-    persistent marker in the venv skips the check entirely on subsequent
-    runs once the fallback is in place."""
-
-    # Persistent marker: set once the fallback is active so we never
-    # reattempt a doomed upgrade on this venv.
+    The persistent marker in the venv skips the check on later runs once the
+    fallback is in place.  No process restart is used: the version is read
+    from metadata and the upgraded module is not imported yet.
+    """
     _fallback_marker = PRISM_ENV_DIR / ".torch_fallback_active"
     if _fallback_marker.exists():
         return  # Already handled — skip the entire check
 
-    # Temporary marker: survives a single os.execv restart so the next
-    # execution knows the upgrade was already attempted.
-    _attempt_marker = Path(os.environ.get("TEMP", "/tmp")) / ".prism_torch_upgrade_done"
+    installed = _installed_version("torch")
+    if installed is None or _version_tuple(installed) >= (2, 4):
+        return
 
+    print(f"[Prism Self-Healing] PyTorch {installed} detected — "
+          "transformers requires PyTorch >= 2.4. Attempting upgrade…")
     try:
-        import torch as _th
-        if _th.__version__:
-            parts = _th.__version__.split(".")
-            major, minor = int(parts[0]), int(parts[1])
-            if major < 2 or (major == 2 and minor < 4):
-                if _attempt_marker.exists():
-                    # We already tried — this platform cannot get torch >= 2.4.
-                    _attempt_marker.unlink()
-                    _install_compatible_transformers()
-                    _fallback_marker.touch()  # skip on future runs
-                    return
+        subprocess.check_call(
+            pip_install_args("--upgrade", "torch", "torchvision", "torchaudio"),
+        )
+    except Exception as e:
+        print(f"[Prism Self-Healing] Failed to upgrade PyTorch: {e}")
+        _install_compatible_transformers()
+        _fallback_marker.touch()
+        return
 
-                print(f"[Prism Self-Healing] PyTorch {_th.__version__} detected — "
-                      "transformers requires PyTorch >= 2.4. Attempting upgrade…")
-                try:
-                    subprocess.check_call(
-                        pip_install_args("--upgrade", "torch", "torchvision", "torchaudio"),
-                    )
-                except Exception as e:
-                    print(f"[Prism Self-Healing] Failed to upgrade PyTorch: {e}")
-                    _install_compatible_transformers()
-                    _fallback_marker.touch()
-                    return
-                # Touch marker so the *next* execution knows we tried.
-                # If torch is still < 2.4 after restart, we'll fall back.
-                _attempt_marker.touch()
-                print("[Prism Self-Healing] Restarting…\n")
-                os.execv(sys.executable, [sys.executable] + sys.argv)
-    except ImportError:
-        pass  # Will be handled by the existing missing_torch path
+    upgraded = _installed_version_fresh("torch")
+    if upgraded is None or _version_tuple(upgraded) < (2, 4):
+        # pip reported success but this platform has no newer wheel.
+        print(f"[Prism Self-Healing] PyTorch is still {upgraded or 'missing'}.")
+        _install_compatible_transformers()
+        _fallback_marker.touch()
 
 
 def _install_compatible_transformers():
@@ -398,16 +588,24 @@ def _patch_hf_model_configs():
 
 def auto_heal_environment():
     # ---------------------------------------------------------------------
-    # PREFLIGHT: the compiled extensions in ctranslate2 / PyTorch require
-    # NumPy < 2.  Force-downgrade before any import so the version check
-    # succeeds regardless of what was installed previously.
+    # PREFLIGHT: on Python < 3.13 the compiled extensions in ctranslate2 /
+    # PyTorch may need the NumPy 1.x ABI, so force-downgrade before any
+    # import.  Python 3.13+ has no NumPy 1.x wheels and the current stack
+    # supports NumPy 2, so those interpreters keep the modern versions.
     # ---------------------------------------------------------------------
     _ensure_numpy_v1()
 
     # ---------------------------------------------------------------------
-    # PREFLIGHT: scipy >= 1.13 also demands NumPy >= 2 — pin it back too.
+    # PREFLIGHT: scipy >= 1.13 also demands NumPy >= 2 — pin it back too
+    # on interpreters that use the NumPy 1.x stack.
     # ---------------------------------------------------------------------
     _ensure_scipy_compat()
+
+    # ---------------------------------------------------------------------
+    # PREFLIGHT: pandas 3.x also requires NumPy >= 2 — keep pandas 2.x on
+    # the interpreters that use the NumPy 1.x stack.
+    # ---------------------------------------------------------------------
+    _ensure_pandas_compat()
 
     # ---------------------------------------------------------------------
     # PREFLIGHT: transformers (used by docling's layout engine) requires
@@ -438,6 +636,7 @@ def auto_heal_environment():
         
     # Modules to check
     # Maps: "import_module_name": "pip_package_name"
+    numpy_spec, scipy_spec, pandas_spec = _pinned_specs()
     standard_required = {
         "yt_dlp": "yt-dlp",
         "tqdm": "tqdm",
@@ -447,9 +646,9 @@ def auto_heal_environment():
         "crawl4ai": "crawl4ai",
         "faster_whisper": "faster-whisper",
         "docling": "docling",
-        "pandas": "pandas",
-        "numpy": "numpy",
-        "scipy": "scipy",
+        "pandas": pandas_spec,
+        "numpy": numpy_spec,
+        "scipy": scipy_spec,
         "PIL": "Pillow",
         "cv2": "opencv-python",
         "pydantic_settings": "pydantic-settings",
@@ -457,45 +656,63 @@ def auto_heal_environment():
         "requests": "requests",
         "bs4": "beautifulsoup4",
     }
-    
-    missing_standard = []
-    for module_name, package_name in standard_required.items():
-        try:
-            __import__(module_name)
-        except ImportError:
-            missing_standard.append(package_name)
-            
-    # Torch check
-    missing_torch = False
-    try:
-        import torch
-    except ImportError:
-        missing_torch = True
-            
+
+    # find_spec() only checks that a distribution is importable; it does not
+    # execute the package.  Importing docling/crawl4ai here made startup slow
+    # and caused any import-time error to be mistaken for a missing package.
+    missing_standard = [
+        package
+        for module_name, package in standard_required.items()
+        if not _module_available(module_name)
+    ]
+
+    missing_torch = not _module_available("torch")
+
     if missing_standard or missing_torch:
         print(f"\n[Prism Self-Healing] Environment needs repair.")
         try:
             # Upgrade pip first
             subprocess.check_call(pip_install_args("--upgrade", "pip"), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            
+
             # Install Standard Packages
             if missing_standard:
                 print(f"Installing missing packages: {missing_standard}")
                 subprocess.check_call(pip_install_args(*missing_standard))
-            
+
             # Install Torch Packages
             if missing_torch:
                 print("Installing torch, torchvision, torchaudio (this may take a while)...")
                 subprocess.check_call(pip_install_args("torch", "torchvision", "torchaudio"))
-                
-            print("[Prism Self-Healing] Environment repaired! Restarting script...\n")
-            os.execv(sys.executable, [sys.executable] + sys.argv)
+
+            # Nothing heavy has been imported yet, so the current process can
+            # safely continue with the newly installed packages.  Restarting
+            # via os.execv is broken on Windows (spawn + immediate exit), which
+            # made the host treat the still-running child as a finished job.
+            importlib.invalidate_caches()
+            print("[Prism Self-Healing] Environment repaired. Continuing…\n")
         except Exception as e:
             print(f"[Prism Self-Healing ERROR] Failed to auto-install: {e}")
-            print("Please install these packages manually.\n")
+            print("Repair Prism's Python environment and try again.\n")
+            raise SystemExit(1) from e
 
-bootstrap_isolated_environment()
-auto_heal_environment()
+
+_ENV_LOCK_TOKEN, _ENV_LOCK_OWNS = _acquire_env_lock()
+try:
+    bootstrap_isolated_environment()
+    auto_heal_environment()
+    _write_env_ready_marker()
+finally:
+    _release_env_lock(_ENV_LOCK_TOKEN, _ENV_LOCK_OWNS)
+
+if "--bootstrap-only" in sys.argv:
+    # The readiness marker is authoritative. A closed stdout pipe on Windows
+    # must not turn an already-completed setup into a failed one.
+    try:
+        print("[Prism Ingestion] Extractor environment ready.")
+        sys.stdout.flush()
+    except Exception:
+        pass
+    raise SystemExit(0)
 
 import re
 import json
@@ -1497,6 +1714,11 @@ def run_prism():
     parser = argparse.ArgumentParser(description="Prism Master Extractor Pipeline")
     parser.add_argument("--vault", type=str, help="Outputs clean final notes directly to this folder")
     parser.add_argument("--files", type=str, nargs="+", help="Automated batch files processing list")
+    parser.add_argument(
+        "--files-from",
+        type=str,
+        help="JSON manifest containing local files to process (avoids command-line length limits)",
+    )
     parser.add_argument("--urls", type=str, nargs="+", help="Automated batch URLs processing list")
     parser.add_argument("--yt_method", type=str, default="auto", help="YouTube extraction method: 'auto', 'captions', or 'whisper'")
     parser.add_argument("--ocr", type=str, default="adaptive", choices=["on", "off", "adaptive"], help="OCR mode: 'on', 'off', or 'adaptive' (default)")
@@ -1521,7 +1743,7 @@ def run_prism():
     default_ocr_pref = args.ocr
 
     # CLI / Automated Mode Trigger
-    if args.files or args.urls:
+    if args.files or args.files_from or args.urls:
         automated_mode = True
         
         # If OCR mode is passed via CLI, we need to respect it
@@ -1534,6 +1756,15 @@ def run_prism():
         all_sources = []
         if args.files:
             all_sources.extend(args.files)
+        if args.files_from:
+            try:
+                manifest = json.loads(Path(args.files_from).read_text(encoding="utf-8"))
+                if not isinstance(manifest, list) or not all(isinstance(v, str) for v in manifest):
+                    raise ValueError("expected a JSON array of strings")
+                all_sources.extend(manifest)
+            except (OSError, ValueError) as exc:
+                print(f"ERROR: Could not read --files-from manifest: {exc}")
+                raise SystemExit(2) from exc
         if args.urls:
             all_sources.extend(args.urls)
         

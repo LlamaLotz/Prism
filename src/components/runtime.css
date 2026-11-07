@@ -82,3 +82,12 @@
 .document-output { border-top: 1px solid var(--color-border); }
 .document-dialog .runtime-actions { align-items: center; font-size: 12px; }
 @media (max-width: 480px) { .document-dialog { padding: 16px; } .document-options { padding: 10px; } }
+.batch-import-dialog { width: min(860px, calc(100vw - 24px)); }
+.batch-import-list { display: grid; gap: 8px; max-height: 42vh; overflow: auto; margin: 16px 0; padding-right: 4px; }
+.batch-import-list .runtime-job { margin: 0; }
+.batch-import-row { display: flex; align-items: flex-start; gap: 10px; }
+.batch-import-row strong { display: block; overflow-wrap: anywhere; }
+.batch-import-destination { margin: 2px 0 0; font-size: 12px; color: var(--color-text-body); overflow-wrap: anywhere; }
+.batch-import-source { margin: 2px 0 0; font-size: 11px; color: var(--color-text-body); opacity: .75; overflow-wrap: anywhere; }
+.batch-import-status { display: inline-flex; align-items: center; gap: 5px; flex-shrink: 0; font-size: 12px; color: var(--color-brand-500); }
+.batch-import-note { display: flex; align-items: flex-start; gap: 8px; margin: 14px 0; font-size: 12px; color: var(--color-text-body); }
