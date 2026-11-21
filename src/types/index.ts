@@ -165,6 +165,12 @@ export interface AppSettings {
     sidebarStatusText: string;
     /** Opacity of Liquid Gloss glass surfaces (0.0–1.0). Only affects the 'gloss' theme style. */
     liquidGlassOpacity: number;
+    /**
+     * Glass renderer for Liquid Gloss. 'stable' is the CSS material path;
+     * 'optical' requests the WebGPU refraction engine and falls back to
+     * 'stable' automatically when WebGPU is unavailable.
+     */
+    glassEngine: 'stable' | 'optical';
     /** Background environment rendered behind the app canvas (viewport-level). */
     backgroundEnvironment: 'none' | 'solar-system' | 'stars' | 'clouds';
   };

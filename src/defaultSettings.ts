@@ -39,6 +39,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
     appIcon: '',
     sidebarStatusText: '{time}',
     liquidGlassOpacity: 0.93,
+    glassEngine: 'stable',
     backgroundEnvironment: 'none',
   },
   models: {

@@ -49,6 +49,8 @@ const settings = {
     themeStyle: query.get('theme') || 'industrial',
     themeMode: query.get('mode') || 'dark',
     liquidGlassOpacity: 0.93,
+    glassEngine: query.get('glass') || 'stable',
+    backgroundEnvironment: query.get('bg') || 'none',
     // 'notebook' composes the library; any other page composes the AI sidebar
     // (App hides the sidebar on the Notebook page, which owns its own chat).
     startupView: query.get('view') || 'notebook',

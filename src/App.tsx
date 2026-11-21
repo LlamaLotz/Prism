@@ -11,7 +11,7 @@ import {
   MIN_LIQUID_GLASS_OPACITY,
   MIN_LIQUID_GLASS_PANEL_OPACITY,
 } from './defaultSettings';
-import { migrateLegacyGoogleModel } from './services/settingsMigration';
+import { migrateGlassEngine, migrateLegacyGoogleModel } from './services/settingsMigration';
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { APP_PAGES, type AppPage } from './types';
 import { Sidebar } from './components/Sidebar';
@@ -755,8 +755,10 @@ export default function App() {
       // Migrate both the global config and saved generation profiles once.
       const googleMigration = migrateLegacyGoogleModel(merged);
       merged = googleMigration.settings;
+      const glassEngineMigration = migrateGlassEngine(merged);
+      merged = glassEngineMigration.settings;
 
-      if (hadLegacyDefault || hadUnsafeGlassOpacity || hadGlassStyle || hadLegacyAiPrefill || googleMigration.changed) {
+      if (hadLegacyDefault || hadUnsafeGlassOpacity || hadGlassStyle || hadLegacyAiPrefill || googleMigration.changed || glassEngineMigration.changed) {
         tauriAPI.saveRuntimeConfig(merged).catch((e) => {
           console.error('Failed to persist appearance migration:', e);
           appLogger.error('Failed to persist appearance migration', e);
@@ -1673,6 +1675,9 @@ export default function App() {
           <TitleBar
             appIcon={settings.appearance.appIcon}
             themeMode={settings.appearance.themeMode}
+            themeStyle={settings.appearance.themeStyle}
+            glassEngine={settings.appearance.glassEngine}
+            backgroundEnvironment={settings.appearance.backgroundEnvironment}
             layout={layout}
             onLayoutChange={navigateWorkspace}
             showAI={showAICoPilot && layout !== 'notebook'}

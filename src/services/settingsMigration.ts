@@ -4,6 +4,28 @@ export const LEGACY_GEMINI_MODEL = 'gemma-4-31b-it';
 export const DEFAULT_GEMINI_MODEL = 'gemini-3.8-flash';
 const GOOGLE_API = 'https://generativelanguage.googleapis.com';
 
+/**
+ * Normalizes the optional optical-glass engine setting. Settings files written
+ * before the feature have no value, and a hand-edited file can contain junk;
+ * both fall back to the stable CSS renderer.
+ */
+export function migrateGlassEngine(settings: AppSettings): {
+  settings: AppSettings;
+  changed: boolean;
+} {
+  const value = (settings.appearance as { glassEngine?: unknown }).glassEngine;
+  if (value === 'stable' || value === 'optical') {
+    return { settings, changed: false };
+  }
+  return {
+    settings: {
+      ...settings,
+      appearance: { ...settings.appearance, glassEngine: 'stable' },
+    },
+    changed: true,
+  };
+}
+
 function isGoogleHosted(config: OmniRouteConfig): boolean {
   const baseUrl = typeof config.baseUrl === 'string' ? config.baseUrl : '';
   return config.provider === 'google'

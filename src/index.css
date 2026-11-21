@@ -2309,3 +2309,90 @@ html.theme-industrial body .prism-navigation-item { border-radius: 0 !important;
     transition: none;
   }
 }
+
+/* -------------------------------------------------------------------------- */
+/* OPTICAL LIQUID GLASS TITLEBAR PILOT                                        */
+/* -------------------------------------------------------------------------- */
+/* The optical backdrop is a separate bounded layer behind the existing      */
+/* titlebar content. Menus, drag regions and window controls stay on top.    */
+
+.titlebar-host {
+  position: relative;
+  flex: 0 0 auto;
+}
+
+.optical-titlebar-host {
+  margin: 8px 8px 0;
+}
+
+.optical-titlebar-host > .liquid-gloss-header {
+  margin: 0 !important;
+  background: transparent !important;
+  border-color: transparent !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+.optical-titlebar-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+  border-radius: var(--material-chrome-radius, 9999px);
+}
+
+.optical-titlebar-scene,
+.optical-titlebar-content {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+.optical-titlebar-content > .prism-bg-environment {
+  position: absolute !important;
+  top: 0 !important;
+  left: 0 !important;
+  width: 100vw !important;
+  height: 100vh !important;
+  z-index: 0;
+}
+
+.optical-titlebar-glass {
+  position: absolute;
+  inset: 0;
+}
+
+.optical-titlebar-ambient {
+  position: absolute;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  background:
+    radial-gradient(120% 180% at 18% 0%, rgba(56, 189, 248, 0.24), transparent 58%),
+    radial-gradient(90% 140% at 100% 20%, rgba(167, 139, 250, 0.14), transparent 62%),
+    linear-gradient(135deg, #090b10 0%, #11151c 48%, #0a0d14 100%);
+}
+
+.mode-light .optical-titlebar-ambient {
+  background:
+    radial-gradient(120% 180% at 18% 0%, rgba(56, 189, 248, 0.28), transparent 58%),
+    radial-gradient(90% 140% at 100% 20%, rgba(167, 139, 250, 0.16), transparent 62%),
+    linear-gradient(135deg, #eef2f7 0%, #e3e9f1 48%, #eef2f7 100%);
+}
+
+.optical-titlebar-surface {
+  position: relative;
+  z-index: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .optical-titlebar-backdrop {
+    /* The library also honours reduced motion; this keeps any CSS-only
+       fallback motionless as well. */
+    transition: none !important;
+  }
+}

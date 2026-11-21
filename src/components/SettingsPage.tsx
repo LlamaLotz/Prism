@@ -1467,6 +1467,36 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                     </div>
                   </div>
 
+                  {/* ---- Glass Engine (Liquid Gloss only) ---- */}
+                  {draft.appearance.themeStyle === 'gloss' && (
+                    <div className="py-3.5 border-b border-slate-800/60">
+                      <div className="flex items-center justify-between gap-6">
+                        <div className="min-w-0">
+                          <div className="text-[13px] font-medium text-slate-300">Glass engine</div>
+                          <div className="text-xs text-slate-500 mt-0.5 leading-relaxed">
+                            Stable uses the CSS material. Optical adds WebGPU refraction
+                            and falls back automatically when the device cannot render it.
+                          </div>
+                        </div>
+                        <Segmented
+                          themeStyle={draft.appearance.themeStyle}
+                          ariaLabel="Glass engine"
+                          options={[
+                            { value: 'stable', label: 'Stable' },
+                            { value: 'optical', label: 'Optical (Beta)' },
+                          ]}
+                          value={draft.appearance.glassEngine ?? 'stable'}
+                          onChange={(v) =>
+                            patchNested('appearance', {
+                              ...draft.appearance,
+                              glassEngine: v as 'stable' | 'optical',
+                            })
+                          }
+                        />
+                      </div>
+                    </div>
+                  )}
+
                   {/* ---- Color Scheme Selector ---- */}
                   <div className="py-3.5 border-b border-slate-800/60">
                     <div className="flex items-center justify-between gap-6">

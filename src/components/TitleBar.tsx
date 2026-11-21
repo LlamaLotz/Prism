@@ -1,9 +1,17 @@
 import { openPdf } from '../services/research';
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { Minus, Square, Copy, X, FileText, Sparkles } from 'lucide-react';
 import { NavigationMenu } from './NavigationMenu';
 import { getAppIcon } from '../services/appIcon';
+import { useOpticalGlass } from './glass/useOpticalGlass';
+
+// Keep the WebGPU engine and its styles out of the initial bundle. The stable
+// CSS titlebar renders immediately while this chunk loads only for opted-in
+// Liquid Gloss + Optical sessions.
+const TitlebarGlass = lazy(() =>
+  import('./glass/TitlebarGlass').then(module => ({ default: module.TitlebarGlass })),
+);
 
 const isMacOS = navigator.userAgent.includes('Mac');
 
@@ -13,6 +21,12 @@ interface TitleBarProps {
   appIcon?: string;
   /** Current theme mode — used to swap white logos to grey in light mode. */
   themeMode?: 'dark' | 'light';
+  /** Visual archetype; optical glass is only available on Liquid Gloss. */
+  themeStyle?: 'industrial' | 'gloss';
+  /** Selected Liquid Gloss renderer. */
+  glassEngine?: 'stable' | 'optical';
+  /** In-app backdrop used as the optical glass content. */
+  backgroundEnvironment?: 'none' | 'solar-system' | 'stars' | 'clouds';
   layout: Layout;
   onLayoutChange: (layout: Layout) => void;
   showAI: boolean;
@@ -44,6 +58,9 @@ interface MenuItem {
 export const TitleBar: React.FC<TitleBarProps> = ({
   appIcon = '',
   themeMode = 'dark',
+  themeStyle = 'industrial',
+  glassEngine = 'stable',
+  backgroundEnvironment = 'none',
   layout,
   onLayoutChange,
   showAI,
@@ -65,6 +82,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
   const menuRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const pendingMenuFocusRef = useRef<'first' | 'last' | null>(null);
   const appWindow = useMemo(() => getCurrentWindow(), []);
+  const optical = useOpticalGlass(themeStyle, glassEngine);
 
   useEffect(() => {
     let unlisten: (() => void) | undefined;
@@ -308,7 +326,16 @@ export const TitleBar: React.FC<TitleBarProps> = ({
   ] as const;
 
   return (
-    <div ref={barRef} data-tauri-drag-region data-material="chrome" className="liquid-gloss-header relative flex items-center h-9 bg-base shrink-0 select-none z-40 rounded-none">
+    <div className={`titlebar-host${optical.active ? ' optical-titlebar-host' : ''}`}>
+      {optical.active && (
+        <Suspense fallback={null}>
+          <TitlebarGlass
+            appearance={themeMode}
+            backgroundEnvironment={backgroundEnvironment}
+          />
+        </Suspense>
+      )}
+    <div ref={barRef} data-tauri-drag-region data-material="chrome" className={`liquid-gloss-header relative flex items-center h-9 bg-base shrink-0 select-none z-40 rounded-none${optical.active ? ' optical-titlebar-surface' : ''}`}>
       {/* ── macOS: left-side traffic lights (in-app approximation until the
              Tauri window can opt into native macOS chrome). ── */}
       {isMacOS && (
@@ -450,6 +477,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
           </button>
         </div>
       )}
+    </div>
     </div>
   );
 };
